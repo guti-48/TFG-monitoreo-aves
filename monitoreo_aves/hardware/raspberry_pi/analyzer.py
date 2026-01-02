@@ -57,11 +57,12 @@ class BirdAnalyzer:
             top_pred = output_data.argsort()[-3:][::-1]  # top 3 predicciones
 
             for idx in top_pred:
-                puntuacion = output_data[idx]
-                if puntuacion > 0.5:  # umbral de confianza
+                puntuacionRAW = output_data[idx]
+                probabilidad = 1 / (1 + np.exp(-puntuacionRAW)) 
+                if probabilidad > 0.5:  # umbral de confianza
                     detections.append({
                         "species": self.labels[idx],
-                        "confidence": float(puntuacion),
+                        "confidence": float(probabilidad),
                         "time_start": i/rate,
                         "time_end": (i + chunk_sample)/rate
                     })
