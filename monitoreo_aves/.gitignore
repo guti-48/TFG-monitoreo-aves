@@ -1,0 +1,9 @@
+# .gitignore
+__pycache__/
+*.wav        <-- No subas los audios de prueba, ocupan mucho
+*.mp3
+*.png        <-- Espectrogramas generados
+node_modules/
+venv/        <-- Tu entorno virtual de Python
+.env         <-- Aquí irán tus contraseñas de BD (nunca las subas)
+.DS_Store
