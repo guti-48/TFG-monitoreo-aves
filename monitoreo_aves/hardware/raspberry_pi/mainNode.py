@@ -5,6 +5,7 @@ import soundfile as sf
 import librosa.display
 import matplotlib.pyplot as plt
 from datetime import datetime
+from analyzer import BirdAnalyzer
 
 #### CONFIGURACION ####
 
@@ -16,6 +17,9 @@ OUTPUT_FOLDER_IMG = "spectrograms"
 # Aqui lo que haremos sera un check para ver que existen las carpetas
 os.makedirs(OUTPUT_FOLDER_AUDIO, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER_IMG, exist_ok=True)
+
+# Se carga un aunica vez el modelo
+brain = BirdAnalyzer()
 
 def grabacionAudio(duration, fs):
     """
@@ -63,20 +67,31 @@ def generacionEspectograma(audio_path, filename):
 ### Flujo de trabajo principal ###
 if __name__ == "__main__":
     try:
-        # Aqui para cada grabacion lo correcto es generar un nombre unico con la fecha y hora de grabacion
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        filename = f"record_{timestamp}"
-        filenameWAV = f"{filename}.wav"
+        while True:
+            # Aqui para cada grabacion lo correcto es generar un nombre unico con la fecha y hora de grabacion
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+            filename = f"record_{timestamp}"
+            filenameWAV = f"{filename}.wav"
 
-        # 1. Grabaremos el audio
-        audio_data = grabacionAudio(DURATION, SAMPLE_RATE)
+            # 1. Grabaremos el audio
+            audio_data = grabacionAudio(DURATION, SAMPLE_RATE)
 
-        # 2. Guardamos el audio como archivo WAV
-        audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
+            # 2. Guardamos el audio como archivo WAV
+            audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
 
-        # 3. Generaremos un espectograma
-        generacionEspectograma(audio_path, filename)
-        print("Proceso completado, revisa las carpetas de salida.")
+            # 3. Generaremos un espectograma
+            generacionEspectograma(audio_path, filename)
+            print("Proceso completado, revisa las carpetas de salida.")
+
+            print("Analizando especie de ave...")
+            res = brain.predict(audio_path)
+
+            if not res:
+                print("No se ha detectado ninguna especie con suficiente confianza, o ruido desconocido")
+            else:
+                print("Especies detectadas:")
+                for r in res:
+                    print(f" -> {r['species']} ({r['confidence']*100:.1f}%) entre {r['time_start']:.1f}s y {r['time_end']:.1f}s")
 
     except KeyboardInterrupt:
         print("\nPrograma interrumpido")

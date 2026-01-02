@@ -4,3 +4,4 @@ matplotlib
 librosa
 sounddevice
 soundfile
+tensorflow
