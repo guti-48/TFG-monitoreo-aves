@@ -69,7 +69,7 @@ if __name__ == "__main__":
     try:
         while True:
             # Aqui para cada grabacion lo correcto es generar un nombre unico con la fecha y hora de grabacion
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-S")
             filename = f"record_{timestamp}"
             filenameWAV = f"{filename}.wav"
 
