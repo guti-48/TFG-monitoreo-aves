@@ -20,6 +20,22 @@ class Detection(DetectionCreate):
         from_attributes = True
 
 
+# The `DeviceCreate` class is a Python class with attributes for `name` and `location`.
 class DeviceCreate(BaseModel):
     name: str
     location: str
+
+
+'''DOCUMENTACION CREADA AUTOMATICAMENTE POR LA EXTENSION'''
+# The `DetectionResponse` class defines attributes for representing detection responses with Pydantic,
+# including reading data directly from a SQL database.
+class DetectionResponse(BaseModel):
+    id: int
+    species: str
+    confidence: float
+    timestamp: datetime
+    filename: str
+    device_id: int
+
+    class Config:
+        from_attributes = True
