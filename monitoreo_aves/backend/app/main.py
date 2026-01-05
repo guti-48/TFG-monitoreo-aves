@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from . import models, database, schemas
 
@@ -6,6 +7,14 @@ from . import models, database, schemas
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="BirdMonitor API", version="1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite conexiones desde cualquier origen
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite GET, POST...
+    allow_headers=["*"],
+)
 
 ## PRIMER ENDPOINT --> REGISTRAR UN DISPOSITIVO
 @app.post("/devices/", response_model=schemas.DeviceCreate) 
