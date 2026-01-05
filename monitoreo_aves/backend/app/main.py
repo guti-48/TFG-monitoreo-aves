@@ -13,7 +13,11 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.g
     # primero verificaremos de su existencia
     db_device = db.query(models.Device).filter(models.Device.name == device.name).first()
     if db_device:
-        raise HTTPException(status_code=400, detail="Dispositivo ya registrado")
+        if not db_device.location:
+            db_device.location = device.location
+            db.commit()
+            db.refresh(db_device)
+        return db_device
 
     new_device = models.Device(name=device.name, Location=device.location)
     db.add(new_device)

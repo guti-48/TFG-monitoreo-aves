@@ -4,11 +4,15 @@ import sounddevice as sd
 import soundfile as sf
 import librosa.display
 import matplotlib.pyplot as plt
+import requests
 from datetime import datetime
 from analyzer import BirdAnalyzer
 
-#### CONFIGURACION ####
+#### CONFIGURACION DEL NODO ####
+NODE_NAME = "RaspberryPi_01"
+SERVER_URL = "http://127.0.0.1:8000"
 
+#### CONFIGURACION AUDIO####
 SAMPLE_RATE = 48000 # Frecuencia que suele usar birdNet
 DURATION = 10  # Duracion de la grabacion en segundos
 OUTPUT_FOLDER_AUDIO = "records"
@@ -64,12 +68,45 @@ def generacionEspectograma(audio_path, filename):
     plt.close()
     print(f"Espectrograma guardado en: {img_path}")
 
+#### FUNCION DONDE ENVIAREMOS LOS DATOS AL SERVIDOR ####
+def enviarDatosServidor(species, confidence, filename, timestamp_str):
+    url = f"{SERVER_URL}/detections/"
+
+    datos = {
+        "species": species,
+        "confidence": confidence,
+        "timestamp": timestamp_str,
+        "filename": filename,
+        "device_name": NODE_NAME
+    }
+
+    try:
+        response = requests.post(url, json=datos)
+
+        if response.status_code == 200:
+            print(f"Datos guardados correctamente.")
+        else:
+            print(f"Error al enviar datos: {response.status_code} - {response.text}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error de conexion al servidor: {e}")
+
+
 ### Flujo de trabajo principal ###
 if __name__ == "__main__":
     try:
+        #Cuando encienda el dispositivo se registrara en el servidor
+        try:
+            requests.post(f"{SERVER_URL}/devices/", json={"name": NODE_NAME, "location": "Ubicacion_Desconocida"})
+        except:
+            print("No se pudo registrar el dispositivo en el servidor.")
         while True:
             # Aqui para cada grabacion lo correcto es generar un nombre unico con la fecha y hora de grabacion
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-S")
+            now = datetime.now()
+
+            timestampDB = now.isoformat() # Creamos esta debido a problemas con la base de datos y su aceptacion de formato
+
+            timestamp = now.strftime("%Y-%m-%d_%H-%M-S")
             filename = f"record_{timestamp}"
             filenameWAV = f"{filename}.wav"
 
@@ -92,6 +129,13 @@ if __name__ == "__main__":
                 print("Especies detectadas:")
                 for r in res:
                     print(f" -> {r['species']} ({r['confidence']*100:.1f}%) entre {r['time_start']:.1f}s y {r['time_end']:.1f}s")
+
+                    enviarDatosServidor(
+                        species=r['species'],
+                        confidence=r['confidence'],
+                        filename=f"{filenameWAV}.wav",
+                        timestamp_str=timestampDB
+                    )
 
     except KeyboardInterrupt:
         print("\nPrograma interrumpido")
