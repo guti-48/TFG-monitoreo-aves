@@ -133,7 +133,7 @@ if __name__ == "__main__":
                     enviarDatosServidor(
                         species=r['species'],
                         confidence=r['confidence'],
-                        filename=f"{filenameWAV}.wav",
+                        filename=filenameWAV,
                         timestamp_str=timestampDB
                     )
 

@@ -1,110 +1,230 @@
-<!DOCTYPE html>
-<html lang="es">
+<!DOCTYPE <!DOCTYPE html>
+<html lang="es" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BirdMonitor AI - Dashboard</title>
+    <title>BirdMonitor AI | Centro de Control</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="css/styles.css">
-</head>
-<body class="bg-light">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success shadow-sm">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="#">
-                <i class="bi bi-soundwave"></i> BirdMonitor AI
-            </a>
-            <span class="text-white small">Sistema de Monitoreo Acústico v1.0</span>
-        </div>
-    </nav>
-
-    <div class="container my-4">
+    <style>
+        :root { --main-color: #0d6efd; --bg-dark: #121212; --sidebar-bg: #1c1c1c; }
         
-        <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="bg-success bg-opacity-10 p-3 rounded-circle me-3">
-                            <i class="bi bi-broadcast text-success fs-3"></i>
+        body { background-color: var(--bg-dark); color: #e0e0e0; font-family: sans-serif; overflow-x: hidden; margin: 0; }
+        
+        #wrapper { display: flex; width: 100%; min-height: 100vh; }
+        
+        /* Sidebar */
+        #sidebar-wrapper {
+            width: 16rem; flex-shrink: 0; background-color: var(--sidebar-bg);
+            border-right: 1px solid #333; min-height: 100vh;
+        }
+        #sidebar-wrapper .sidebar-heading { padding: 1.5rem; font-size: 1.2rem; border-bottom: 1px solid #333; }
+        
+        /* Contenido */
+        #page-content-wrapper { flex-grow: 1; min-width: 0; }
+        
+        /* Elementos */
+        .list-group-item { border: none; padding: 15px 25px; color: #bbbec5; background: transparent; }
+        .list-group-item.active { color: var(--main-color); font-weight: bold; border-left: 4px solid var(--main-color); }
+        .list-group-item:hover { background-color: #2c2c2c; color: white; }
+        
+        .table-img-preview { height: 40px; border-radius: 4px; border: 1px solid #555; transition: transform 0.2s; }
+        .table-img-preview:hover { transform: scale(3); position: relative; z-index: 10; border-color: white; cursor: zoom-in; }
+        
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .animate-pulse { animation: pulse 2s infinite; }
+    </style>
+</head>
+<body>
+
+    <div id="wrapper">
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading text-center fw-bold text-white text-uppercase">
+                <i class="bi bi-soundwave me-2"></i>BirdNet
+            </div>
+            <div class="list-group list-group-flush my-3">
+                <a href="#" class="list-group-item active"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
+                <a href="#" class="list-group-item" onclick="alert('Histórico completo disponible en v2.0')"><i class="bi bi-database me-2"></i>Histórico</a>
+                <a href="#" class="list-group-item" onclick="alert('Configuración de Nodos disponible en v2.0')"><i class="bi bi-cpu me-2"></i>Nodos</a>
+            </div>
+        </div>
+
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-dark border-bottom border-secondary px-4 py-3" style="background-color: #1c1c1c;">
+                <h2 class="fs-5 m-0 text-white">Monitorización en Tiempo Real</h2>
+            </nav>
+
+            <div class="container-fluid px-4 py-4">
+                
+                <div class="row g-3 my-2">
+                    <div class="col-md-3">
+                        <div class="p-3 bg-dark-subtle rounded shadow-sm d-flex justify-content-between border-start border-4 border-primary">
+                            <div><p class="mb-0 text-muted small text-uppercase">Total Detecciones</p><h3 class="fw-bold mb-0" id="total-counter">0</h3></div>
+                            <i class="bi bi-music-note-list fs-1 text-primary"></i>
                         </div>
-                        <div>
-                            <h6 class="text-muted mb-0">Estado del Sistema</h6>
-                            <h5 class="mb-0 fw-bold text-success">Activo</h5>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-dark-subtle rounded shadow-sm d-flex justify-content-between border-start border-4 border-success">
+                            <div><p class="mb-0 text-muted small text-uppercase">Especie Top</p><h4 class="fw-bold mb-0 fs-5" id="top-species">-</h4></div>
+                            <i class="bi bi-trophy fs-1 text-success"></i>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-dark-subtle rounded shadow-sm d-flex justify-content-between border-start border-4 border-warning">
+                            <div><p class="mb-0 text-muted small text-uppercase">Última Actividad</p><h4 class="fw-bold mb-0 fs-5" id="last-activity">...</h4></div>
+                            <i class="bi bi-clock-history fs-1 text-warning"></i>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-dark-subtle rounded shadow-sm d-flex justify-content-between border-start border-4 border-info">
+                            <div><p class="mb-0 text-muted small text-uppercase">Estado Nodo</p><h4 class="fw-bold mb-0 fs-5 text-info">En Línea</h4></div>
+                            <i class="bi bi-wifi fs-1 text-info"></i>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="bg-primary bg-opacity-10 p-3 rounded-circle me-3">
-                            <i class="bi bi-music-note-beamed text-primary fs-3"></i>
+
+                <div class="row my-5">
+                    <div class="col-lg-5 mb-4">
+                        <div class="card shadow-sm h-100 bg-dark-subtle border-0">
+                            <div class="card-header bg-transparent border-0 d-flex justify-content-between">
+                                <h5 class="fw-bold text-white"><i class="bi bi-broadcast me-2"></i>Feed en Vivo</h5>
+                                <span class="badge bg-danger animate-pulse">LIVE</span>
+                            </div>
+                            <div class="card-body text-center d-flex flex-column justify-content-center" id="live-feed-container">
+                                <p class="text-muted">Esperando primera detección...</p>
+                            </div>
                         </div>
-                        <div>
-                            <h6 class="text-muted mb-0">Total Detecciones</h6>
-                            <h5 class="mb-0 fw-bold" id="total-counter">0</h5>
+                    </div>
+                    <div class="col-lg-7 mb-4">
+                        <div class="card shadow-sm h-100 bg-dark-subtle border-0">
+                            <div class="card-header bg-transparent border-0"><h5 class="fw-bold text-white"><i class="bi bi-pie-chart me-2"></i>Distribución</h5></div>
+                            <div class="card-body"><canvas id="speciesChart" style="max-height: 250px;"></canvas></div>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body d-flex align-items-center">
-                        <div class="bg-warning bg-opacity-10 p-3 rounded-circle me-3">
-                            <i class="bi bi-cpu text-warning fs-3"></i>
-                        </div>
-                        <div>
-                            <h6 class="text-muted mb-0">Última Actividad</h6>
-                            <h5 class="mb-0 fw-bold small" id="last-activity">Esperando...</h5>
+
+                <div class="row my-5">
+                    <h5 class="fs-4 mb-3 text-white">Registro Detallado</h5>
+                    <div class="col">
+                        <div class="table-responsive rounded-3 shadow-sm">
+                            <table class="table table-dark table-hover mb-0 align-middle">
+                                <thead class="table-secondary">
+                                    <tr><th>#ID</th><th>Hora</th><th>Especie</th><th>Confianza</th><th>Espectrograma</th></tr>
+                                </thead>
+                                <tbody id="history-table-body">
+                                    </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <div class="row mb-4">
-            <div class="col-12">
-                <h5 class="text-muted mb-3"><i class="bi bi-bullseye"></i> Último Avistamiento</h5>
-                <div id="latest-detection-card" class="card border-0 shadow-lg border-start border-5 border-success">
-                    <div class="card-body text-center p-5">
-                        <h3 class="text-muted">Cargando datos...</h3>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white py-3">
-                <h5 class="mb-0 fw-bold"><i class="bi bi-clock-history"></i> Historial Reciente</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="bg-light">
-                            <tr>
-                                <th class="ps-4">Hora</th>
-                                <th>Especie</th>
-                                <th>Confianza</th>
-                                <th>Dispositivo</th>
-                                <th>Archivo</th>
-                            </tr>
-                        </thead>
-                        <tbody id="history-table-body">
-                            </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
     </div>
 
-    <footer class="text-center text-muted py-4 mt-5 small">
-        <p>&copy; 2026 TFG Ingeniería Informática - Carlos Gutiérrez</p>
-    </footer>
+    <script>
+        const API_URL = "http://127.0.0.1:8000/detections/";
+        const IMG_BASE_URL = "http://127.0.0.1:8000/spectrograms/";
+        let myChart = null;
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="js/dashboard.js"></script>
+        async function updateDashboard() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error("Backend desconectado");
+                
+                const data = await response.json();
+                
+                // Si la BD está vacía (porque la borraste), muestra aviso pero no falles
+                if (!data || data.length === 0) {
+                    console.log("Base de datos vacía, esperando grabaciones...");
+                    return;
+                }
+
+                const sortedData = data.reverse(); // Lo más nuevo primero
+                const latest = sortedData[0];
+
+                // 1. Actualizar Contadores
+                document.getElementById('total-counter').innerText = sortedData.length;
+                document.getElementById('last-activity').innerText = new Date(latest.timestamp).toLocaleTimeString();
+                
+                // Especie Top
+                const counts = {};
+                sortedData.forEach(d => { counts[d.species] = (counts[d.species] || 0) + 1; });
+                const topSpecies = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+                document.getElementById('top-species').innerText = cleanName(topSpecies);
+
+                // 2. Pintar Feed en Vivo
+                renderLiveFeed(latest);
+
+                // 3. Pintar Tabla (Top 10)
+                renderTable(sortedData.slice(0, 10));
+
+                // 4. Actualizar Gráfica
+                updateChart(counts);
+
+            } catch (error) {
+                console.error("Error conectando con API:", error);
+                document.getElementById('live-feed-container').innerHTML = `<p class="text-danger">Error: Backend no responde.<br><small>Asegúrate de ejecutar uvicorn</small></p>`;
+            }
+        }
+
+        function cleanName(name) { return name ? (name.split('_')[1] || name) : "Desconocido"; }
+
+        function renderLiveFeed(d) {
+            const container = document.getElementById('live-feed-container');
+            const species = cleanName(d.species);
+            const percent = (d.confidence * 100).toFixed(1);
+            const imgUrl = `${IMG_BASE_URL}${d.filename.replace('.wav', '.png')}`;
+
+            container.innerHTML = `
+                <h2 class="display-6 fw-bold text-white mb-0">${species}</h2>
+                <p class="text-success mb-3 fw-bold">Confianza: ${percent}%</p>
+                <div class="mt-2">
+                    <img src="${imgUrl}" class="img-fluid rounded border border-secondary" style="max-height: 180px;" 
+                         onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=text-muted>Imagen no disponible</span>'">
+                    <div class="mt-1 text-muted small">${d.filename}</div>
+                </div>`;
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('history-table-body');
+            tbody.innerHTML = "";
+            data.forEach(d => {
+                const imgUrl = `${IMG_BASE_URL}${d.filename.replace('.wav', '.png')}`;
+                const row = `<tr>
+                    <td>${d.id}</td>
+                    <td>${new Date(d.timestamp).toLocaleTimeString()}</td>
+                    <td class="fw-bold text-info">${cleanName(d.species)}</td>
+                    <td>${(d.confidence * 100).toFixed(0)}%</td>
+                    <td><a href="${imgUrl}" target="_blank"><img src="${imgUrl}" class="table-img-preview" onerror="this.style.display='none'"></a></td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        }
+
+        function updateChart(counts) {
+            const ctx = document.getElementById('speciesChart');
+            const labels = Object.keys(counts).map(cleanName);
+            const values = Object.values(counts);
+
+            if (myChart) {
+                myChart.data.labels = labels;
+                myChart.data.datasets[0].data = values;
+                myChart.update();
+            } else {
+                myChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#0dcaf0', '#d63384'], borderWidth: 0 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: 'white' } } } }
+                });
+            }
+        }
+
+        // Iniciar
+        updateDashboard();
+        setInterval(updateDashboard, 3000);
+    </script>
 </body>
 </html>

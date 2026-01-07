@@ -1,5 +1,7 @@
+import os
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import models, database, schemas
 
@@ -16,6 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SPECTOGRAM_DIR = os.path.join(BASE_DIR, "hardware", "raspberry_pi","spectograms")
+
+os.makedirs(SPECTOGRAM_DIR, exist_ok=True) #creamos carpeta si no existe
+
+#carpeta montada en la ruta /spectograms
+app.mount("/spectograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectograms")
+
 ## PRIMER ENDPOINT --> REGISTRAR UN DISPOSITIVO
 @app.post("/devices/", response_model=schemas.DeviceCreate) 
 def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.get_db)):
@@ -28,7 +38,7 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.g
             db.refresh(db_device)
         return db_device
 
-    new_device = models.Device(name=device.name, Location=device.location)
+    new_device = models.Device(name=device.name, location=device.location)
     db.add(new_device)
     db.commit()
     db.refresh(new_device)
@@ -42,7 +52,7 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
 
     # su el dispoistivo no existe los creamos automaticamente
     if not db_device:
-        db_device = models.Device(name=detection.device_name, Location="Desconocida")
+        db_device = models.Device(name=detection.device_name, location="Desconocida")
         db.add(db_device)
         db.commit()
         db.refresh(db_device)

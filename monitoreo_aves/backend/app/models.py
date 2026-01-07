@@ -11,7 +11,7 @@ class Device(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
-    Location = Column(String)
+    location = Column(String)
 
     detections = relationship("Detection", back_populates="device")
 
