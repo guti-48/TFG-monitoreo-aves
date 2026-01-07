@@ -126,14 +126,26 @@ if __name__ == "__main__":
             if not res:
                 print("No se ha detectado ninguna especie con suficiente confianza, o ruido desconocido")
             else:
-                print("Especies detectadas:")
-                for r in res:
-                    print(f" -> {r['species']} ({r['confidence']*100:.1f}%) entre {r['time_start']:.1f}s y {r['time_end']:.1f}s")
+                print(f"Detecciones brutas: {len(res)}")
+                detecciones_unicas = {}
 
+                for r in res:
+                    especie = r['species']
+                    confianza = r['confidence']
+                    
+                    # Si la especie no está en la lista, o si la nueva detección tiene MÁS confianza que la anterior
+                    if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
+                        detecciones_unicas[especie] = r
+                
+                # --- ENVIAR SOLO LAS ÚNICAS ---
+                print("Especies únicas enviadas:")
+                for especie, datos in detecciones_unicas.items():
+                    print(f" -> {especie} ({datos['confidence']*100:.1f}%)")
+                    
                     enviarDatosServidor(
-                        species=r['species'],
-                        confidence=r['confidence'],
-                        filename=filenameWAV,
+                        species=datos['species'],
+                        confidence=datos['confidence'],
+                        filename=filenameWAV, 
                         timestamp_str=timestampDB
                     )
 
