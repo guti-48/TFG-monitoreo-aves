@@ -5,3 +5,4 @@ librosa
 sounddevice
 soundfile
 tensorflow
+birdnetlib

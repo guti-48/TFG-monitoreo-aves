@@ -1,7 +1,7 @@
-import os
-import numpy as np
-import tensorflow as tf
-import librosa
+import os, requests
+from datetime import datetime
+from birdnetlib import Recording
+from birdnetlib.analyzer import Analyzer
 
 #### CONFIGURACION ####
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -10,61 +10,67 @@ LABELS_PATH = os.path.join(CURRENT_DIR, "model", "birdnet_labels.txt")
 
 class BirdAnalyzer:
     def __init__(self):
-        # Cargamos el model TFLite
-        self.interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-        self.interpreter.allocate_tensors()
+        # Cargamos el model TFLite que nos permite filtros de ubicacion y fecha
+        print("Motor de BirdNet Cargando...")
+        try: 
+            self.analyzer = Analyzer()
+            print("El modelo BirdNet se ha cargado correctamente.")
+        except Exception as e:
+            print(f"[ERROR] No se ha podido cargar el modelo BirdNet: {e}")
 
-        # Obtenemos los inputs y outpus del modelo
-        self.input_details = self.interpreter.get_input_details()
-        self.output_details = self.interpreter.get_output_details()
+        #Aqui detectaremos la ubicacion mediante geolocalizacion IP
+        self.lat, self.lon = self.get_auto_location()
+        print(f"Ubicación detectada: Latitud {self.lat}, Longitud {self.lon}")        
 
-        # IMPORTANTE AQUI CARGAMOS LA LISTA DE NOMBRE DE PAJAROS
-        self.labels = self._load_labels(LABELS_PATH)
-        print("El modelo cargo de manera correcta")
+    def get_auto_location(self):
+        """Aqui consulatremos una APi de localizacion basada en la IP publica"""
+        try:
+            # Timeout de 5s para no bloquear el arranque si no hay red
+            response = requests.get('http://ip-api.com/json/', timeout=5)
+            data = response.json()
+            if data['status'] == 'success':
+                # Devolvemos las coordenadas reales detectadas
+                return data['lat'], data['lon']
+        except Exception as e:
+            print(f"[WARN] Fallo en geolocalización ({e}).")
+        
+        # FALLBACK: Si no hay internet o falla la API, usamos coordenadas centrales
+        # (Madrid) para que el software no se rompa.
+        print("[WARN] Usando ubicación por defecto (Centro de España).")
+        return 40.4168, -3.7038
 
     def _load_labels(self, path):
         with open(path, 'r', encoding='utf-8') as f:
             return [line.strip() for line in f.readlines()]
         
-    def predict(self, audio_data):
+    def predict(self, audio_path):
         """
-        Analiza un archivo de audio y deveuvle las predicciones del modelo, sabiend que birdNet trabaja
-        analiza con chunks de 3 segundos a 48.000 Hz
+        Analiza el audio usando la librería oficial.
         """
-        #1. Cargamos el audio a 48.000
-        sig, rate = librosa.load(audio_data, sr=48000, mono = True)
+        try:
+            recording = Recording(
+                self.analyzer,
+                audio_path,
+                lat=self.lat,
+                lon=self.lon,
+                date=datetime.now(), # Filtra aves migratorias según la fecha
+                min_conf=0.7,        # Filtramos detecciones malas (<70%)
+            )
+            
+            recording.analyze()
+            
+            # Tu mainNode espera una lista de diccionarios: {'species', 'confidence', 'time_start', ...}
+            detections = []
+            for d in recording.detections:
+                detections.append({
+                    "species": d['common_name'], # O d['scientific_name'] si prefieres
+                    "confidence": d['confidence'],
+                    "time_start": d['start_time'],
+                    "time_end": d['end_time']
+                })
+                
+            return detections
 
-        #2. importante definit el tamaño de los chunk 
-        chunk_size = 3.0
-        chunk_sample = int(chunk_size * rate)
-
-        detections = []
-
-        #3.Recorreremos el audio en espacios de 3 seegundos
-        for i in range(0, len(sig), chunk_sample):
-            chunk = sig[i:i + chunk_sample]
-
-            #si el trozo es mas pequeño qie el espacio de 3 segundo lo ignoramos
-            if len(chunk) < chunk_sample:
-                break #se ignora por simplicidad
-
-            input_data = np.array([chunk],dtype=np.float32)
-
-            self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
-            self.interpreter.invoke()
-            output_data = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
-
-            top_pred = output_data.argsort()[-3:][::-1]  # top 3 predicciones
-
-            for idx in top_pred:
-                puntuacionRAW = output_data[idx]
-                probabilidad = 1 / (1 + np.exp(-puntuacionRAW)) 
-                if probabilidad > 0.5:  # umbral de confianza
-                    detections.append({
-                        "species": self.labels[idx],
-                        "confidence": float(probabilidad),
-                        "time_start": i/rate,
-                        "time_end": (i + chunk_sample)/rate
-                    })
-        
-        return detections
+        except Exception as e:
+            print(f"Error en análisis: {e}")
+            return []
