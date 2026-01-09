@@ -59,11 +59,10 @@ class BirdAnalyzer:
             
             recording.analyze()
             
-            # Tu mainNode espera una lista de diccionarios: {'species', 'confidence', 'time_start', ...}
             detections = []
             for d in recording.detections:
                 detections.append({
-                    "species": d['common_name'], # O d['scientific_name'] si prefieres
+                    "species": d['common_name'], 
                     "confidence": d['confidence'],
                     "time_start": d['start_time'],
                     "time_end": d['end_time']

@@ -1,0 +1,169 @@
+/* --- VARIABLES DE COLOR PROFESIONALES --- */
+:root {
+    /* Paleta Naturaleza Nocturna */
+    --bg-main: #121214;       /* Fondo principal muy oscuro */
+    --bg-secondary: #1c1c1f;  /* Fondo de tarjetas/sidebar */
+    --bg-tertiary: #252529;   /* Fondo elementos hover */
+    
+    --color-text-main: #e0e0e0;
+    --color-text-muted: #8f9199;
+    
+    /* Acentos */
+    --accent-success: #2E7D32; /* Verde bosque profundo */
+    --accent-earth: #C49A6C;   /* Dorado tierra apagado */
+    --accent-info: #0288D1;    /* Azul técnico */
+    
+    --sidebar-width: 260px;
+}
+
+/* --- ESTILOS GENERALES --- */
+body {
+    background-color: var(--bg-main);
+    color: var(--color-text-main);
+    font-family: 'Roboto', sans-serif; /* Fuente legible para datos */
+    overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, .brand-text {
+    font-family: 'Montserrat', sans-serif; /* Fuente elegante para títulos */
+}
+
+/* Estructura */
+#wrapper {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+}
+
+/* --- SIDEBAR PROFESIONAL --- */
+#sidebar-wrapper {
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    background-color: var(--bg-secondary);
+    border-right: 1px solid #2a2a2e;
+}
+
+.brand-text { color: white; letter-spacing: 1px; }
+.text-accent { color: var(--accent-success); }
+
+#sidebar-wrapper .list-group-item {
+    border: none;
+    padding: 18px 30px;
+    color: var(--color-text-muted);
+    background: transparent;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+#sidebar-wrapper .list-group-item:hover {
+    color: white;
+    background-color: var(--bg-tertiary);
+}
+
+#sidebar-wrapper .list-group-item.active {
+    color: white;
+    background: linear-gradient(90deg, rgba(46,125,50,0.2) 0%, transparent 100%);
+    border-left-color: var(--accent-success);
+}
+
+/* --- NAVBAR Y CONTENIDO --- */
+#page-content-wrapper { flex-grow: 1; }
+.main-navbar { background-color: var(--bg-secondary); }
+
+/* --- TARJETAS (CARDS) --- */
+.card {
+    background-color: var(--bg-secondary);
+    border: 1px solid #2a2a2e;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+/* KPI Cards */
+.kpi-card { transition: transform 0.2s; }
+.kpi-card:hover { transform: translateY(-3px); }
+.icon-box {
+    width: 50px; height: 50px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+}
+
+/* Bordes de color para KPIs */
+.border-start-success { border-left: 4px solid var(--accent-success)!important; }
+.border-start-earth { border-left: 4px solid var(--accent-earth)!important; }
+.border-start-info { border-left: 4px solid var(--accent-info)!important; }
+
+/* Colores de texto custom */
+.text-success { color: var(--accent-success)!important; }
+.text-earth { color: var(--accent-earth)!important; }
+
+/* Fondos sutiles */
+.bg-success-subtle { background-color: rgba(46,125,50,0.15)!important; }
+.bg-earth-subtle { background-color: rgba(196,154,108,0.15)!important; }
+.bg-info-subtle { background-color: rgba(2,136,209,0.15)!important; }
+
+
+/* --- MAIN DETECTION CARD (EL NUEVO DISEÑO SPLIT) --- */
+.main-detection-split {
+    display: flex;
+    height: 350px; /* Altura fija para diseño robusto */
+}
+
+.split-photo {
+    flex: 1; /* Toma el espacio izquierdo */
+    background-size: cover;
+    background-position: center;
+    min-width: 40%;
+    border-right: 1px solid #2a2a2e;
+    position: relative;
+}
+
+.photo-overlay-label {
+    position: absolute; bottom: 20px; left: 20px;
+    background: rgba(0,0,0,0.7);
+    color: white; padding: 5px 15px; border-radius: 20px;
+    font-size: 0.85rem; font-weight: bold;
+    backdrop-filter: blur(4px);
+}
+
+.split-info {
+    flex: 1.5; /* Toma el espacio derecho (más ancho) */
+    padding: 2rem;
+    display: flex; flex-direction: column; justify-content: center;
+}
+
+.spectrogram-container {
+    margin-top: 1.5rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #333;
+}
+
+/* --- TABLA --- */
+.table-hover tbody tr:hover {
+    background-color: var(--bg-tertiary);
+}
+.table-img-preview {
+    height: 35px; width: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #444;
+    transition: transform 0.2s;
+}
+.table-img-preview:hover {
+    transform: scale(3); z-index: 10; position: relative;
+    border-color: var(--accent-success); cursor: zoom-in;
+}
+.species-thumb-small {
+    width: 40px; height: 40px;
+    border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--bg-tertiary);
+    margin-right: 10px;
+}
+
+/* Animación de pulso vivo */
+@keyframes pulse-green {
+    0% { box-shadow: 0 0 0 0 rgba(46,125,50, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(46,125,50, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(46,125,50, 0); }
+}
+.animate-pulse { animation: pulse-green 2s infinite; }

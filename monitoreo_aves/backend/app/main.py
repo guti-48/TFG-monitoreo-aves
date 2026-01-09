@@ -19,12 +19,12 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SPECTOGRAM_DIR = os.path.join(BASE_DIR, "hardware", "raspberry_pi","spectograms")
+SPECTOGRAM_DIR = os.path.join(BASE_DIR, "hardware", "raspberry_pi","spectrograms")
 
 os.makedirs(SPECTOGRAM_DIR, exist_ok=True) #creamos carpeta si no existe
 
 #carpeta montada en la ruta /spectograms
-app.mount("/spectograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectograms")
+app.mount("/spectrograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectrograms")
 
 ## PRIMER ENDPOINT --> REGISTRAR UN DISPOSITIVO
 @app.post("/devices/", response_model=schemas.DeviceCreate) 
