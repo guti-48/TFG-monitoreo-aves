@@ -105,16 +105,19 @@ h1, h2, h3, h4, h5, .brand-text {
 /* --- MAIN DETECTION CARD (EL NUEVO DISEÑO SPLIT) --- */
 .main-detection-split {
     display: flex;
-    height: 350px; /* Altura fija para diseño robusto */
+    height: 480px; /* Altura fija para diseño robusto */
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 .split-photo {
     flex: 1; /* Toma el espacio izquierdo */
     background-size: cover;
-    background-position: center;
+    background-position: center center;
     min-width: 40%;
     border-right: 1px solid #2a2a2e;
     position: relative;
+    background-repeat: no-repeat;
 }
 
 .photo-overlay-label {
@@ -126,16 +129,18 @@ h1, h2, h3, h4, h5, .brand-text {
 }
 
 .split-info {
-    flex: 1.5; /* Toma el espacio derecho (más ancho) */
+    flex: 1.4; 
     padding: 2rem;
     display: flex; flex-direction: column; justify-content: center;
 }
 
 .spectrogram-container {
-    margin-top: 1.5rem;
+    margin-top: auto; 
     border-radius: 8px;
     overflow: hidden;
-    border: 1px solid #333;
+    border: 1px solid #444; 
+    background-color: #000; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
 }
 
 /* --- TABLA --- */
@@ -167,3 +172,17 @@ h1, h2, h3, h4, h5, .brand-text {
     100% { box-shadow: 0 0 0 0 rgba(46,125,50, 0); }
 }
 .animate-pulse { animation: pulse-green 2s infinite; }
+
+.node-card:hover {
+    transform: translateY(-5px);
+    border: 1px solid var(--accent-success)!important;
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}

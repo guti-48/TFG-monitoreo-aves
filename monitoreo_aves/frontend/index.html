@@ -17,22 +17,34 @@
 <body>
 
     <div id="wrapper">
+        
         <div id="sidebar-wrapper" class="d-flex flex-column">
             <div class="sidebar-heading text-center py-4 fs-4 fw-bold text-uppercase brand-text">
                 <i class="bi bi-feather me-2"></i>BirdMonitor<span class="text-accent">.AI</span>
             </div>
             <div class="list-group list-group-flush my-3 flex-grow-1">
-                <a href="#" class="list-group-item active"><i class="bi bi-activity me-3"></i>Tiempo Real</a>
-                <a href="#" class="list-group-item text-muted"><i class="bi bi-collection-play me-3"></i>Histórico</a>
-                <a href="#" class="list-group-item text-muted"><i class="bi bi-hdd-network me-3"></i>Nodos</a>
-                <a href="#" class="list-group-item text-muted mt-auto"><i class="bi bi-gear me-3"></i>Ajustes</a>
+                <a href="#" id="btn-dashboard" class="list-group-item active" onclick="switchView('dashboard')">
+                    <i class="bi bi-activity me-3"></i>Tiempo Real
+                </a>
+                <a href="#" class="list-group-item text-muted disabled">
+                    <i class="bi bi-collection-play me-3"></i>Histórico
+                </a>
+                <a href="#" id="btn-nodes" class="list-group-item text-muted" onclick="switchView('nodes')">
+                    <i class="bi bi-hdd-network me-3"></i>Nodos
+                </a>
+                <a href="#" class="list-group-item text-muted mt-auto">
+                    <i class="bi bi-gear me-3"></i>Ajustes
+                </a>
             </div>
         </div>
 
         <div id="page-content-wrapper">
+            
             <nav class="navbar navbar-expand-lg navbar-dark px-4 py-3 border-bottom border-dark-subtle main-navbar">
                 <div class="container-fluid">
-                    <h2 class="fs-5 m-0 fw-semibold"><i class="bi bi-broadcast text-success me-2 animate-pulse"></i>Monitorización Activa</h2>
+                    <h2 class="fs-5 m-0 fw-semibold">
+                        <span id="dashboard-title"><i class="bi bi-broadcast text-success me-2 animate-pulse"></i>Monitorización Global</span>
+                    </h2>
                     <div class="ms-auto d-flex align-items-center status-indicator">
                         <span class="me-2 text-muted small">Estado del Sistema:</span>
                         <span class="badge bg-success-subtle text-success border border-success px-3 py-2 rounded-pill"><i class="bi bi-check-circle-fill me-2"></i>En Línea</span>
@@ -40,109 +52,9 @@
                 </div>
             </nav>
 
-            <div class="container-fluid px-4 py-4">
-                <div class="row g-4 mb-4">
-                    <div class="col-md-3">
-                        <div class="card kpi-card border-start-success">
-                            <div class="card-body d-flex align-items-center justify-content-between">
-                                <div>
-                                    <p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p>
-                                    <h3 class="fw-bold mb-0" id="total-counter">0</h3>
-                                </div>
-                                <div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card kpi-card border-start-earth">
-                            <div class="card-body d-flex align-items-center justify-content-between">
-                                <div>
-                                    <p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p>
-                                    <h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species" style="max-width: 150px;">-</h4>
-                                </div>
-                                <div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card kpi-card border-start-info">
-                            <div class="card-body d-flex align-items-center justify-content-between">
-                                <div>
-                                    <p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p>
-                                    <h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4>
-                                </div>
-                                <div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div>
-                            </div>
-                        </div>
-                    </div>
-                     <div class="col-md-3">
-                        <div class="card kpi-card border-start-earth">
-                             <div class="card-body d-flex align-items-center justify-content-between opacity-50">
-                                <div>
-                                    <p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p>
-                                    <h4 class="fw-bold mb-0 fs-5">Próximamente</h4>
-                                </div>
-                                <div class="icon-box bg-secondary-subtle"><i class="bi bi-boombox fs-3"></i></div>
-                            </div>
-                        </div>
-                    </div>
+            <div class="container-fluid px-4 py-4" id="main-content">
                 </div>
 
-                <div class="row g-4 mb-5">
-                    <div class="col-lg-7">
-                        <div class="card h-100 shadow-sm main-detection-card border-0 overflow-hidden">
-                            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center py-3">
-                                <h5 class="fw-bold m-0"><i class="bi bi-binoculars-fill me-2 text-success"></i>Último Avistamiento</h5>
-                                <span class="badge bg-danger animate-pulse px-3"><i class="bi bi-circle-fill small me-2"></i>LIVE FEED</span>
-                            </div>
-                            <div class="card-body p-0" id="live-feed-container">
-                                <div class="d-flex align-items-center justify-content-center h-100 text-muted py-5">
-                                    <div class="text-center">
-                                        <i class="bi bi-ear-fill fs-1 mb-3 d-block opacity-50"></i>
-                                        <p>Esperando datos del nodo...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-lg-5">
-                        <div class="card h-100 shadow-sm border-0">
-                            <div class="card-header bg-transparent border-0 py-3">
-                                <h5 class="fw-bold m-0"><i class="bi bi-pie-chart-fill me-2 text-earth"></i>Distribución de Especies</h5>
-                            </div>
-                            <div class="card-body">
-                                <canvas id="speciesChart" style="max-height: 300px;"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-12">
-                        <div class="card shadow-sm border-0">
-                            <div class="card-header bg-transparent border-0 py-3 d-flex justify-content-between align-items-center">
-                                <h5 class="fw-bold m-0">Registro Reciente</h5>
-                                <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-download me-2"></i>Exportar CSV</button>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table table-hover align-middle mb-0" style="border-color: #333;">
-                                    <thead class="bg-dark-subtle text-uppercase small text-muted fw-bold">
-                                        <tr>
-                                            <th class="ps-4">Hora</th>
-                                            <th>Especie / Fuente</th>
-                                            <th>Confianza</th>
-                                            <th>Espectrograma</th>
-                                            <th class="text-end pe-4">ID</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-table-body" class="border-top-0">
-                                        </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div> </div> </div> <script src="js/dashboard.js"></script>
+        </div> </div> <script src="js/dashboard.js"></script>
 </body>
 </html>

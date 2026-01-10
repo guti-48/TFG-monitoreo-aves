@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException, Depends
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -18,8 +19,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SPECTOGRAM_DIR = os.path.join(BASE_DIR, "hardware", "raspberry_pi","spectrograms")
+
+current_file = Path(__file__).resolve()
+# 2. Subimos 3 niveles: app -> backend -> monitoreo_aves
+project_root = current_file.parent.parent.parent
+# 3. Construimos la ruta bajando a hardware
+SPECTOGRAM_DIR = project_root / "hardware" / "raspberry_pi" / "spectrograms"
 
 os.makedirs(SPECTOGRAM_DIR, exist_ok=True) #creamos carpeta si no existe
 
@@ -73,7 +78,7 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
 
 ## TERCER ENDPOINT --> OBTENER DETECCIONES TODAS LAS DETECCIONES PARA PODER OBSERVARLAS
 @app.get("/detections/")
-def read_detections(skip: int = 0, limit: int = 10, db: Session = Depends(database.get_db)):
+def read_detections(skip: int = 0, limit: int = 50, db: Session = Depends(database.get_db)):
     detections = db.query(models.Detection).offset(skip).limit(limit).all()
     return detections
 
