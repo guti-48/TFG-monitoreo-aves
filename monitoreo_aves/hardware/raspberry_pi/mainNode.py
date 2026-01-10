@@ -12,6 +12,11 @@ from analyzer import BirdAnalyzer
 NODE_NAME = "RaspberryPi_01"
 SERVER_URL = "http://127.0.0.1:8000"
 
+###CONFIGFURACION PARA EL USO DE BIRDWEATHER####
+###NODO DE ALGECIRAS
+BIRDWEATHER_ID = "BgQxkL7v2DA8A3V9BwgQMwAp" # Aqui va el ID que nos proporciona BirdWeather para este nodo registrado
+BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
+
 #### CONFIGURACION AUDIO####
 SAMPLE_RATE = 48000 # Frecuencia que suele usar birdNet
 DURATION = 10  # Duracion de la grabacion en segundos
@@ -24,6 +29,36 @@ os.makedirs(OUTPUT_FOLDER_IMG, exist_ok=True)
 
 # Se carga un aunica vez el modelo
 brain = BirdAnalyzer()
+
+def enviarDatosBirdWeather(species, confidence, filename, lat, lon):
+    """
+    Enviaremos todos los datos sobre PAJAROS a la app BirdWeather
+    """
+
+    if BIRDWEATHER_ID == "":
+        return
+
+    datos_publicos = {
+        "token": BIRDWEATHER_ID,
+        "timestamp": timestamp,
+        "species": species.split('_')[1],
+        "confidence": confidence,
+        "lat": lat,
+        "lon": lon,
+        "source": "BirdMonitor13 Guti"
+    } 
+
+    try:
+        response = requests.post(BIRDWEATHER_URL, json=datos_publicos, timeout=5)
+
+        if response.status_code == 200:
+            print(f"Datos enviados a BirdWeather correctamente.")
+        else:
+            print(f"BirdWeather rechazó los datos: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        print(f"Error al conectar con BirdWeather: {e}")
+
 
 def grabacionAudio(duration, fs):
     """
@@ -148,6 +183,16 @@ if __name__ == "__main__":
                         filename=filenameWAV, 
                         timestamp_str=timestampDB
                     )
+
+                    nombre_especie = datos['species']
+                    if "Human" not in nombre_especie and "Motor" not in nombre_especie:
+                        enviarDatosBirdWeather(
+                            species=nombre_especie,
+                            confidence=datos['confidence'],
+                            timestamp=timestampDB,
+                            lat=brain.lat, 
+                            lon=brain.lon
+                        )
 
     except KeyboardInterrupt:
         print("\nPrograma interrumpido")
