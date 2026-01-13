@@ -9,7 +9,8 @@ class DetectionCreate(BaseModel):
     confidence: float
     timestamp: datetime
     filename: str
-    device_name: str  # Nombre del dispositivo que hizo la detección
+    device_name: str
+    amplitude: float
 
 #Esto es lo que se devolvera al usuario leyendolo de la DB
 class Detection(DetectionCreate):

@@ -30,18 +30,24 @@ os.makedirs(OUTPUT_FOLDER_IMG, exist_ok=True)
 # Se carga un aunica vez el modelo
 brain = BirdAnalyzer()
 
-def enviarDatosBirdWeather(species, confidence, filename, lat, lon):
+def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
     """
     Enviaremos todos los datos sobre PAJAROS a la app BirdWeather
     """
 
     if BIRDWEATHER_ID == "":
         return
+    
+    ##Con esto resulvo el problema de los guiones bajos
+    if "_" in species:
+        cleanSpecies = species.split('_')[1]
+    else:
+        cleanSpecies = species
 
     datos_publicos = {
         "token": BIRDWEATHER_ID,
         "timestamp": timestamp,
-        "species": species.split('_')[1],
+        "species": cleanSpecies,
         "confidence": confidence,
         "lat": lat,
         "lon": lon,
@@ -103,8 +109,8 @@ def generacionEspectograma(audio_path, filename):
     plt.close()
     print(f"Espectrograma guardado en: {img_path}")
 
-#### FUNCION DONDE ENVIAREMOS LOS DATOS AL SERVIDOR ####
-def enviarDatosServidor(species, confidence, filename, timestamp_str):
+####FUNCION DONDE ENVIAREMOS LOS DATOS AL SERVIDOR ####
+def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude):
     url = f"{SERVER_URL}/detections/"
 
     datos = {
@@ -112,7 +118,8 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str):
         "confidence": confidence,
         "timestamp": timestamp_str,
         "filename": filename,
-        "device_name": NODE_NAME
+        "device_name": NODE_NAME,
+        "amplitude":float(amplitude)
     }
 
     try:
@@ -128,71 +135,88 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str):
 
 
 ### Flujo de trabajo principal ###
+# Asegúrate de tener esto arriba del todo: import numpy as np
+
 if __name__ == "__main__":
     try:
-        #Cuando encienda el dispositivo se registrara en el servidor
+        # Registro inicial del dispositivo
         try:
             requests.post(f"{SERVER_URL}/devices/", json={"name": NODE_NAME, "location": "Ubicacion_Desconocida"})
         except:
             print("No se pudo registrar el dispositivo en el servidor.")
+
         while True:
-            # Aqui para cada grabacion lo correcto es generar un nombre unico con la fecha y hora de grabacion
             now = datetime.now()
-
-            timestampDB = now.isoformat() # Creamos esta debido a problemas con la base de datos y su aceptacion de formato
-
+            timestampDB = now.isoformat() 
             timestamp = now.strftime("%Y-%m-%d_%H-%M-S")
             filename = f"record_{timestamp}"
             filenameWAV = f"{filename}.wav"
 
-            # 1. Grabaremos el audio
+            #Grabacion de audio
+            # audio_data es el "array" de números que representa el sonido
             audio_data = grabacionAudio(DURATION, SAMPLE_RATE)
 
-            # 2. Guardamos el audio como archivo WAV
-            audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
+            #Aqui calcularemos el ruido mediante RMS
+            # Calculamos la energía del audio que acabamos de grabar
+            rms_amplitude = np.sqrt(np.mean(audio_data**2))
+            print(f"Nivel de Audio (RMS): {rms_amplitude:.4f}")
 
-            # 3. Generaremos un espectograma
+            #Guardado de archivo
+            audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
             generacionEspectograma(audio_path, filename)
             print("Proceso completado, revisa las carpetas de salida.")
 
+            # Analisis de BirdNET
             print("Analizando especie de ave...")
             res = brain.predict(audio_path)
 
-            if not res:
-                print("No se ha detectado ninguna especie con suficiente confianza, o ruido desconocido")
-            else:
-                print(f"Detecciones brutas: {len(res)}")
-                detecciones_unicas = {}
+            detecciones_unicas = {}
+            
+            # Umbral que decidira el ruido (ajustable)
+            UMBRAL_RUIDO_ALTO = 0.02 
 
+            if res:
+                print(f"Detecciones brutas: {len(res)}")
                 for r in res:
                     especie = r['species']
                     confianza = r['confidence']
-                    
-                    # Si la especie no está en la lista, o si la nueva detección tiene MÁS confianza que la anterior
                     if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
                         detecciones_unicas[especie] = r
-                
-                # --- ENVIAR SOLO LAS ÚNICAS ---
-                print("Especies únicas enviadas:")
+            else:
+                if rms_amplitude > UMBRAL_RUIDO_ALTO:
+                    print("Mucho ruido pero sin clasificación. Marcando como Ruido Ambiente.")
+                    detecciones_unicas['Noise_Ambiente'] = {
+                        'species': 'Noise_Ruido Ambiente',
+                        'confidence': 1.0
+                    }
+
+            #Aqui enviamos los resultados
+            if detecciones_unicas:
+                print("Enviando datos...")
                 for especie, datos in detecciones_unicas.items():
-                    print(f" -> {especie} ({datos['confidence']*100:.1f}%)")
+                    print(f" -> {especie} ({datos['confidence']*100:.1f}%) [Vol: {rms_amplitude:.3f}]")
                     
+                    # Estos seran los datos que seran enviados a mi servidor
                     enviarDatosServidor(
                         species=datos['species'],
                         confidence=datos['confidence'],
                         filename=filenameWAV, 
-                        timestamp_str=timestampDB
+                        timestamp_str=timestampDB,
+                        amplitude=rms_amplitude 
                     )
 
+                    # Solo enviaremos a BirdWeather datos de pajaros
                     nombre_especie = datos['species']
-                    if "Human" not in nombre_especie and "Motor" not in nombre_especie:
-                        enviarDatosBirdWeather(
+                    if "Human" not in nombre_especie and "Motor" not in nombre_especie and "Noise" not in nombre_especie:
+                        enviarDatosBirdWeather( 
                             species=nombre_especie,
                             confidence=datos['confidence'],
                             timestamp=timestampDB,
                             lat=brain.lat, 
                             lon=brain.lon
                         )
+            else:
+                print("Silencio o ruido bajo irrelevante. No se guarda nada.")
 
     except KeyboardInterrupt:
         print("\nPrograma interrumpido")

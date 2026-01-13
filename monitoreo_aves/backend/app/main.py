@@ -19,11 +19,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 current_file = Path(__file__).resolve()
-# 2. Subimos 3 niveles: app -> backend -> monitoreo_aves
+# Subimos 3 niveles: app -> backend -> monitoreo_aves
 project_root = current_file.parent.parent.parent
-# 3. Construimos la ruta bajando a hardware
+#Construimos la ruta bajando a hardware
 SPECTOGRAM_DIR = project_root / "hardware" / "raspberry_pi" / "spectrograms"
 
 os.makedirs(SPECTOGRAM_DIR, exist_ok=True) #creamos carpeta si no existe
@@ -68,7 +67,8 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
         confidence=detection.confidence,
         timestamp=detection.timestamp,
         filename=detection.filename,
-        device_id=db_device.id
+        device_id=db_device.id,
+        amplitude=detection.amplitude
     )
 
     db.add(new_detection)

@@ -28,6 +28,7 @@ class Detection(Base):
     species = Column(String, index=True)
     confidence = Column(Float)
     filename = Column(String)
+    amplitude = Column(Float, default = 0.0)
 
     device_id = Column(Integer, ForeignKey("devices.id"))
     device = relationship("Device", back_populates="detections")
