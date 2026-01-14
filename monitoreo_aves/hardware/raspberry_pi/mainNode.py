@@ -144,7 +144,7 @@ def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
     with open(csvDeBackup, mode='a', newline='') as f:
         escritura = csv.writer(f)
         if not existe:
-            escritura.writerow(['Timestamp, Species, Confidence, Amplitude, Filename'])
+            escritura.writerow(['Timestamp', 'Species', 'Confidence', 'Amplitude', 'Filename'])
         escritura.writerow([timestamp, species, confidence, amplitude, filename])
     print(f"Datos guardados en el respalado local {csvDeBackup}")
 
@@ -186,13 +186,13 @@ def sincronizarRespaldo():
     csvDeBackup = "backup_data.csv"
 
     # sin nada escrito en este csv no se hara nada
-    if not os.path(csvDeBackup):
+    if not os.path.isfile(csvDeBackup):
         return
 
     print("Intento de sincronizacion de datos offline con el servidor")
 
     filasPendientes = []
-    filasEnviadas = []
+    filasEnviadas = 0
 
     try:
         with open(csvDeBackup, mode='r')as f:
@@ -204,7 +204,7 @@ def sincronizarRespaldo():
             
             #Primera fila son cabeceras si existen
             cabeceras = filas[0]
-            datos = filas[:1]
+            datos = filas[1:]
 
             for fila in datos:
                 try:
@@ -233,7 +233,7 @@ def sincronizarRespaldo():
             with open(csvDeBackup, mode='w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(cabeceras)
-                writer.writerow(filasPendientes) #escribiremos solo las que faltan
+                writer.writerows(filasPendientes) #escribiremos solo las que faltan
             print(f"Sincronizacion terminada, {filasEnviadas} enviados, {len(filasPendientes)} pendientes")
 
     except Exception as e:
