@@ -6,3 +6,7 @@ sounddevice
 soundfile
 tensorflow
 birdnetlib
+fastapi
+uvicorn
+pydantic
+sqlalchemy
