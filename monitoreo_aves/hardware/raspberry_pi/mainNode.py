@@ -1,4 +1,4 @@
-import os, time, librosa
+import os, time, librosa, csv
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
@@ -123,20 +123,125 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude)
     }
 
     try:
-        response = requests.post(url, json=datos)
-
+        response = requests.post(url, json=datos, timeout=5)
         if response.status_code == 200:
-            print(f"Datos guardados correctamente.")
+            print(f"Enviado al servidor: {species}")
+            sincronizarRespaldo()
         else:
-            print(f"Error al enviar datos: {response.status_code} - {response.text}")
+            print(f"Servidor rechazó ({response.status_code}). Guardando local...")
+            guardarBackupLocal(species, confidence, timestamp_str, amplitude, filename)
+            
+    except Exception as e:
+        print(f"Error de conexión con servidor: {e}. Guardando local...")
+        guardarBackupLocal(species, confidence, timestamp_str, amplitude, filename)
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error de conexion al servidor: {e}")
+#Con esta funcioon crearemos una backup local, de la tarjetaSD los recogeremos posteriormente
+def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
+    '''Guardaremos los datos en un csv local si el servidor lo apgamos'''
+    csvDeBackup = "backup_data.csv"
+    existe = os.path.isfile(csvDeBackup)
+
+    with open(csvDeBackup, mode='a', newline='') as f:
+        escritura = csv.writer(f)
+        if not existe:
+            escritura.writerow(['Timestamp, Species, Confidence, Amplitude, Filename'])
+        escritura.writerow([timestamp, species, confidence, amplitude, filename])
+    print(f"Datos guardados en el respalado local {csvDeBackup}")
+
+def limpiarArchivosAntiguos():
+    """
+    Mantiene la salud del sistema borrando archivos WAV y PNG antiguos
+    para no llenar la tarjeta SD.
+    Se conservan los archivos de las últimas 24 horas (ajustable).
+    """
+    carpetas = [OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG]
+    ahora = time.time()
+    # 86400 segundos = 1 dia. Borramos lo que tenga más de 1 día.
+    # Si quieres guardar más días, multiplica 86400 * dias
+    TIEMPO_VIDA = 86400 * 1 
+
+    print("Iniciando limpieza de disco...")
+    archivos_borrados = 0
+    
+    for carpeta in carpetas:
+        for archivo in os.listdir(carpeta):
+            ruta_completa = os.path.join(carpeta, archivo)
+            # Si es un archivo (no carpeta)
+            if os.path.isfile(ruta_completa):
+                stat = os.stat(ruta_completa)
+                # Si la fecha de creación es más antigua que el TIEMPO_VIDA
+                if stat.st_mtime < (ahora - TIEMPO_VIDA):
+                    try:
+                        os.remove(ruta_completa)
+                        archivos_borrados += 1
+                    except Exception as e:
+                        print(f"Error borrando {archivo}: {e}")
+    
+    if archivos_borrados > 0:
+        print(f"Limpieza completada: {archivos_borrados} archivos eliminados para liberar espacio.")
+
+#Sincronizacion del respaldo de backup
+def sincronizarRespaldo():
+    '''Revisa si hay datos pendientes en el csv local, y si tentemos conexion sube al servidor y limpia el archivo'''
+    csvDeBackup = "backup_data.csv"
+
+    # sin nada escrito en este csv no se hara nada
+    if not os.path(csvDeBackup):
+        return
+
+    print("Intento de sincronizacion de datos offline con el servidor")
+
+    filasPendientes = []
+    filasEnviadas = []
+
+    try:
+        with open(csvDeBackup, mode='r')as f:
+            lectura = csv.reader(f)
+            filas = list(lectura) #lectura de las filas de la memoria
+
+            if not filas:
+                return
+            
+            #Primera fila son cabeceras si existen
+            cabeceras = filas[0]
+            datos = filas[:1]
+
+            for fila in datos:
+                try:
+                    ts, sp, conf, amp, fname = fila
+
+                    datos = {
+                        "species": sp,
+                        "confidence": float(conf),
+                        "timestamp": ts,
+                        "filename": fname,
+                        "device_name": NODE_NAME,
+                        "amplitude": float(amp)
+                    }
+
+                    response = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=4)
+
+                    if response.status_code == 200:
+                        filasEnviadas += 1
+                        print(f"Sincronizadas: {sp} ({ts})")
+                    else:
+                        filasPendientes.append(fila)
+                except Exception as e:
+                    print(f"Error procesando una de las filas de backup: {e}")
+        
+        if filasEnviadas > 0:
+            with open(csvDeBackup, mode='w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(cabeceras)
+                writer.writerow(filasPendientes) #escribiremos solo las que faltan
+            print(f"Sincronizacion terminada, {filasEnviadas} enviados, {len(filasPendientes)} pendientes")
+
+    except Exception as e:
+        print(f"Error de sincronizacion {e}")
+
 
 
 ### Flujo de trabajo principal ###
-# Asegúrate de tener esto arriba del todo: import numpy as np
-
 if __name__ == "__main__":
     try:
         # Registro inicial del dispositivo
@@ -153,7 +258,6 @@ if __name__ == "__main__":
             filenameWAV = f"{filename}.wav"
 
             #Grabacion de audio
-            # audio_data es el "array" de números que representa el sonido
             audio_data = grabacionAudio(DURATION, SAMPLE_RATE)
 
             #Aqui calcularemos el ruido mediante RMS
@@ -217,6 +321,8 @@ if __name__ == "__main__":
                         )
             else:
                 print("Silencio o ruido bajo irrelevante. No se guarda nada.")
+            
+            limpiarArchivosAntiguos()
 
     except KeyboardInterrupt:
         print("\nPrograma interrumpido")
