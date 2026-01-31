@@ -30,12 +30,14 @@ function switchView(viewName, nodeFilter = null) {
     // Gestión visual de botones
     const btnDash = document.getElementById('btn-dashboard');
     const btnNodes = document.getElementById('btn-nodes');
-    const btnHist = document.getElementById('btn-history'); 
+    const btnHist = document.getElementById('btn-history');
+    const btnScience = document.getElementById('btn-science'); 
 
     // Resetear clases
     if(btnDash) btnDash.className = 'list-group-item text-muted';
     if(btnNodes) btnNodes.className = 'list-group-item text-muted';
     if(btnHist) btnHist.className = 'list-group-item text-muted';
+    if(btnScience) btnScience.className = 'list-group-item list-group-item-action bg-transparent text-white-50 border-0 py-3';
 
     // Activar el actual
     if (viewName === 'dashboard' && btnDash) {
@@ -47,6 +49,7 @@ function switchView(viewName, nodeFilter = null) {
     }
     if (viewName === 'nodes' && btnNodes) btnNodes.className = 'list-group-item active';
     if (viewName === 'history' && btnHist) btnHist.className = 'list-group-item active';
+    if (viewName === 'science' && btnScience) btnScience.className = 'list-group-item list-group-item-action bg-transparent text-white border-0 py-3 active-nav-item';
 
     const container = document.getElementById('main-content');
     
@@ -58,6 +61,8 @@ function switchView(viewName, nodeFilter = null) {
     } else if (viewName === 'dashboard') {
         // El dashboard ya se gestiona en updateDashboard, pero forzamos update si cambiamos filtro
         updateDashboard();
+    } else if(viewName === 'science') {
+        renderScienceView(container);
     }
 }
 
@@ -374,6 +379,156 @@ function updateChart(counts) {
 function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.innerText = text; }
 function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.split('_')[1] || name; return cleaned.charAt(0).toUpperCase() + cleaned.slice(1); }
 
+async function renderScienceView(container) {
+    container.innerHTML = `
+        <div class="d-flex justify-content-center align-items-center py-5">
+            <div class="spinner-grow text-info" role="status"></div>
+            <span class="ms-3 text-white">Calculando índices de biodiversidad (Shannon, Simpson, Pielou)...</span>
+        </div>`;
+
+    try {
+        // Pedimos los datos al endpoint nuevo que creamos
+        const response = await fetch("http://127.0.0.1:8000/analytics/biodiversity");
+        const report = await response.json();
+
+        if (!report || report.length === 0) {
+            container.innerHTML = `<div class="alert alert-warning">No hay suficientes datos para generar el informe científico.</div>`;
+            return;
+        }
+
+        let cardsHtml = '';
+        let zones = [];
+        let shannonValues = [];
+        let pielouValues = [];
+
+        // Generamos una tarjeta por cada Zona
+        report.forEach(r => {
+            zones.push(r.zona);
+            shannonValues.push(r.shannon);
+            pielouValues.push(r.pielou);
+
+            let colorCalidad = 'success';
+            if (r.calidad === 'Moderado') colorCalidad = 'warning';
+            if (r.calidad === 'Pobre') colorCalidad = 'danger';
+
+            cardsHtml += `
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-dark text-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill me-2 text-info"></i>${r.zona}</h5>
+                        <span class="badge bg-${colorCalidad}">${r.calidad}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center g-3">
+                            <div class="col-4">
+                                <h6 class="text-muted small text-uppercase">Riqueza (S)</h6>
+                                <h3 class="fw-bold">${r.riqueza}</h3>
+                                <small class="text-muted">Especies</small>
+                            </div>
+                            <div class="col-4">
+                                <h6 class="text-muted small text-uppercase">Abundancia (N)</h6>
+                                <h3 class="fw-bold">${r.abundancia}</h3>
+                                <small class="text-muted">Detecciones</small>
+                            </div>
+                            <div class="col-4">
+                                <h6 class="text-muted small text-uppercase">Shannon (H')</h6>
+                                <h3 class="fw-bold text-${colorCalidad}">${r.shannon}</h3>
+                                <small class="text-muted">Diversidad</small>
+                            </div>
+                        </div>
+                        <hr class="my-4" style="border-color: #ffffff20;">
+                        <div class="d-flex justify-content-between px-2">
+                            <span><i class="bi bi-pie-chart me-2"></i>Equilibrio (Pielou):</span>
+                            <span class="fw-bold">${r.pielou} / 1.0</span>
+                        </div>
+                        <div class="progress mt-2" style="height: 6px;">
+                            <div class="progress-bar bg-info" role="progressbar" style="width: ${r.pielou * 100}%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between px-2 mt-3">
+                            <span><i class="bi bi-exclamation-triangle me-2"></i>Dominancia (Simpson):</span>
+                            <span class="fw-bold">${r.simpson}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        // HTML Completo de la vista
+        container.innerHTML = `
+            <div class="row mb-4 animate-fade-in">
+                <div class="col-12">
+                    <h3 class="fw-bold text-white"><i class="bi bi-clipboard-data me-2 text-info"></i>Informe Científico de Biodiversidad</h3>
+                    <p class="text-muted">Comparativa ecológica basada en índices de Shannon-Wiener y Pielou.</p>
+                </div>
+            </div>
+            
+            <div class="row animate-fade-in">
+                ${cardsHtml}
+            </div>
+
+            <div class="row mt-4 animate-fade-in">
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-transparent border-0 py-3">
+                            <h5 class="fw-bold m-0">Comparativa Visual de Zonas</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="scienceChart" style="max-height: 400px;"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Generamos la gráfica comparativa
+        const ctx = document.getElementById('scienceChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: zones,
+                datasets: [
+                    {
+                        label: "Índice de Shannon (Biodiversidad)",
+                        data: shannonValues,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: "Índice de Pielou (Equilibrio)",
+                        data: pielouValues,
+                        backgroundColor: 'rgba(153, 102, 255, 0.6)',
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#ffffff10' },
+                        ticks: { color: '#aaa' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#fff' }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: '#fff' } }
+                }
+            }
+        });
+
+    } catch (e) {
+        container.innerHTML = `<div class="alert alert-danger">Error cargando informe: ${e.message}</div>`;
+        console.error(e);
+    }
+}
+
 // --- ARRANQUE ---
 document.addEventListener('DOMContentLoaded', () => {
     // IMPORTANTE: Primero inyectamos el HTML del dashboard
@@ -384,3 +539,4 @@ document.addEventListener('DOMContentLoaded', () => {
     // Y el bucle
     setInterval(updateDashboard, 4000);
 });
+

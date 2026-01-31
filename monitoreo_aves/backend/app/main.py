@@ -1,10 +1,12 @@
-import os
+import os, sys
 from fastapi import FastAPI, HTTPException, Depends
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import models, database, schemas
+###AQUI DEBO RESOLVER PROBLEMA DE LA RUTA
+from analisisBiodiversidad import obtener_reporte_biodiversidad
 
 ## Creamos las tablas automaticamente en la base de datos
 models.Base.metadata.create_all(bind=database.engine)
@@ -81,6 +83,23 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
 def read_detections(skip: int = 0, limit: int = 50, db: Session = Depends(database.get_db)):
     detections = db.query(models.Detection).offset(skip).limit(limit).all()
     return detections
+
+'''
+CUARTO ENDPOINT --> OBTENER REPORTE DE BIODIVERSIDAD
+Esta API nos devolvera el reporte de biodeiversidad generado con los datos almacenados en la base de datos,
+es el siguiente paso de todo el proyecto.
+'''
+@app.get("analytics/biodiversity/")
+def get_biodiversity_report():
+    '''
+    Calculamos los indices ecologicos en tiempo real basado en las detecciones almacenadas en la base de datos
+    '''
+    try:
+        reporte = obtener_reporte_biodiversidad()
+        return reporte
+    except Exception as e:
+        print(f"Error al obtener el reporte de biodiversidad: {e}")
+        return []
 
 @app.get("/")
 def read_root():
