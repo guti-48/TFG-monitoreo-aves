@@ -2,9 +2,9 @@ const API_URL = "http://127.0.0.1:8000/detections/";
 const IMG_BASE_URL = "http://127.0.0.1:8000/spectrograms/";
 
 // --- CONFIGURACIÓN DE IMÁGENES ---
-const ASSETS_PATH = 'images/'; 
+const ASSETS_PATH = 'assets/'; 
 const NOISE_MAP = {
-    'Human vocal': 'human.jpg',
+    'Human vocal': 'human.png',
     'Motor': 'ruido_amb.png', 
 };
 const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
@@ -311,7 +311,7 @@ async function getSpeciesImageUrl(speciesRawName) {
     clean = clean.replace(/_/g, ' ').trim();
 
     if (NOISE_MAP[clean] || clean.includes("Human") || clean.includes("Motor")) {
-        if (clean.includes("Human")) return ASSETS_PATH + 'human.jpg';
+        if (clean.includes("Human")) return ASSETS_PATH + 'human.png';
         if (clean.includes("Motor") || clean.includes("Ruido")) return ASSETS_PATH + 'ruido_amb.png'; 
         return PLACEHOLDER_IMG;
     }

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 ###DIRECTORIO DE LA BASE DE DATOS Y UMBRAL
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'app', 'bird_monitor.db')
+DB_PATH = os.path.join(BASE_DIR, 'app', 'birdmonitor.db')
 UMBRA_CONFIANZA = 0.0 #estipulado en el documento 
 
 def conectar_db():
@@ -55,11 +55,12 @@ def calculo_de_indices(zona):
         pielou_j = 0
 
     return {
-        'Abundancia (N)': N,
-        'Riqueza (S)': S,
-        "Indice de Shannon (H')": round(shannon,3),
-        "Indice de Simpson (D)": round(simps_index,3),
-        "Indice de Pielou (J')": round(pielou_j,3)
+        'abundancia': N,
+        'riqueza': S,
+        'shannon': round(shannon,3),
+        'simpson': round(simps_index,3),
+        'pielou': round(pielou_j,3),
+        'calidad': evaluar_shannon(shannon)
     }
 
 def evaluar_shannon(valor):

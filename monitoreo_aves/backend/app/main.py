@@ -95,7 +95,7 @@ CUARTO ENDPOINT --> OBTENER REPORTE DE BIODIVERSIDAD
 Esta API nos devolvera el reporte de biodeiversidad generado con los datos almacenados en la base de datos,
 es el siguiente paso de todo el proyecto.
 '''
-@app.get("/analytics/biodiversity/")
+@app.get("/analytics/biodiversity")
 def get_biodiversity_report():
     '''
     Calculamos los indices ecologicos en tiempo real basado en las detecciones almacenadas en la base de datos

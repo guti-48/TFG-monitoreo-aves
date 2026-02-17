@@ -20,8 +20,11 @@ BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
 #### CONFIGURACION AUDIO####
 SAMPLE_RATE = 48000 # Frecuencia que suele usar birdNet
 DURATION = 10  # Duracion de la grabacion en segundos
-OUTPUT_FOLDER_AUDIO = "records"
-OUTPUT_FOLDER_IMG = "spectrograms"
+
+BASER_DIR = os.path.dirname(os.path.abspath(__file__))
+
+OUTPUT_FOLDER_AUDIO = os.path.join(BASER_DIR, "records") 
+OUTPUT_FOLDER_IMG = os.path.join(BASER_DIR, "spectrograms")
 
 # Aqui lo que haremos sera un check para ver que existen las carpetas
 os.makedirs(OUTPUT_FOLDER_AUDIO, exist_ok=True)
