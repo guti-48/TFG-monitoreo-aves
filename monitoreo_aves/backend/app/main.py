@@ -5,6 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import models, database, schemas
+
+current_file = Path(__file__).resolve()
+backend_dir = current_file.parent.parent
+sys.path.append(str(backend_dir)) 
+
+
 ###AQUI DEBO RESOLVER PROBLEMA DE LA RUTA
 from analisisBiodiversidad import obtener_reporte_biodiversidad
 
@@ -89,7 +95,7 @@ CUARTO ENDPOINT --> OBTENER REPORTE DE BIODIVERSIDAD
 Esta API nos devolvera el reporte de biodeiversidad generado con los datos almacenados en la base de datos,
 es el siguiente paso de todo el proyecto.
 '''
-@app.get("analytics/biodiversity/")
+@app.get("/analytics/biodiversity/")
 def get_biodiversity_report():
     '''
     Calculamos los indices ecologicos en tiempo real basado en las detecciones almacenadas en la base de datos

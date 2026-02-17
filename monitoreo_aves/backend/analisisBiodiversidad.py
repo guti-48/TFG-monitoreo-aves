@@ -1,11 +1,12 @@
-import sqlite3
+import sqlite3, os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 ###DIRECTORIO DE LA BASE DE DATOS Y UMBRAL
-DB_PATH = 'app/birdmonitor.db'
-UMBRA_CONFIANZA = 0.7 #estipulado en el documento 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'app', 'bird_monitor.db')
+UMBRA_CONFIANZA = 0.0 #estipulado en el documento 
 
 def conectar_db():
     '''Nos conectaremos a la base de datos y descargaremos las detecciones de esta'''
