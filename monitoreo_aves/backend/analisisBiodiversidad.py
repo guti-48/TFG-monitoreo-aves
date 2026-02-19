@@ -1,11 +1,19 @@
-import sqlite3, os
+import sqlite3, os, glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from maad import sound, features
+import warnings
+warnings.filterwarnings("ignore")
 
 ###DIRECTORIO DE LA BASE DE DATOS Y UMBRAL
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'app', 'birdmonitor.db')
+
+#ruta para los archivos wav
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+RECORDS_DIR = os.path.join(PROJECT_ROOT, 'hardware', 'raspberry_pi', 'records')
+
 UMBRA_CONFIANZA = 0.0 #estipulado en el documento 
 
 def conectar_db():
@@ -68,6 +76,67 @@ def evaluar_shannon(valor):
     if valor < 3.0: return "MODERADO"
     return "EXCELENTE"
 
+def calcular_indices_acusticos():
+    archivos = glob.glob(os.path.join(RECORDS_DIR, "*.wav"))
+    if not archivos:
+        return None
+    
+    #Cogemos los 5 arhchivos mas recientes para que la web cargue
+    archivos = sorted(archivos, key=os.path.getmtime, reverse=True)[:5]
+    resultados = {'aci': [], 'adi': [], 'aei': [], 'bio': [], 'ndsi': []}
+
+    for wav in archivos:
+        try:
+            s, fs = sound.load(wav)
+            Sxx, tn, fn, ext = sound.spectrogram(s, fs)
+
+            #ACI: Indice de Complejidad (Pajaros = alto // Motor = bajo)
+            _, _, aci = features.acoustic_complexity_index(Sxx)
+            resultados['aci'].append(np.sum(aci))
+
+            #ADI Y AEI: DIversidad y uniformidad acustica
+            adi = features.acoustic_diversity_index(Sxx, fn)
+            aei = features.acoustic_evenness_index(Sxx, fn)
+            resultados['adi'].append(adi)
+            resultados['aei'].append(aei)
+
+            #BIO: Indice Bioacustico (Rango de cantos de ave)
+            bio = features.bioacoustic_index(Sxx, fn)
+            resultados['bio'].append(bio)
+
+            #NDSI: Naturaleza vs antropogénico
+            ndsi, _, _, _ = features.soundscape_index(Sxx, fn)
+            resultados['ndsi'].append(ndsi)
+
+            try:
+                aei = features.acoustic_evenness_index(Sxx, fn)
+            except AttributeError:
+                # Si la librería no lo tiene, aplicamos una derivación básica desde el ADI
+                # El ADI (Shannon) y AEI (Gini) son inversamente proporcionales en bioacústica
+                aei = 1.0 - (adi / 3.0) if not np.isnan(adi) else 0.5
+
+        except Exception as e:
+            print(f'Omitiendo audio por error: {e}')
+
+    if not resultados['aci']:
+        return None
+
+    aci_avg = float(np.mean(resultados['aci'])) if resultados['aci'] else 0.0
+    adi_avg = float(np.mean(resultados['adi'])) if resultados['adi'] else 0.0
+    aei_avg = float(np.mean(resultados['aei'])) if resultados['aei'] else 0.0
+    bio_avg = float(np.mean(resultados['bio'])) if resultados['bio'] else 0.0
+    ndsi_avg = float(np.mean(resultados['ndsi'])) if resultados['ndsi'] else 0.0
+
+    #retirno de la media acustica de la zona
+    return {
+        'aci_avg': round(aci_avg, 2) if not np.isnan(aci_avg) else 0.0,
+        'adi_avg': round(adi_avg, 2) if not np.isnan(adi_avg) else 0.0,
+        'aei_avg': round(aei_avg, 2) if not np.isnan(aei_avg) else 0.0,
+        'bio_avg': round(bio_avg, 2) if not np.isnan(bio_avg) else 0.0,
+        'ndsi_avg': round(ndsi_avg, 2) if not np.isnan(ndsi_avg) else 0.0
+    }  
+
+
 def obtener_reporte_biodiversidad():
     """Esta es la función que llamará la API"""
     df = conectar_db()
@@ -80,17 +149,21 @@ def obtener_reporte_biodiversidad():
     df['species'] = df['species'].apply(lambda x: x.split('_')[1] if '_' in x else x)
     df = df[~df['species'].str.contains("Noise|Ruido|Human|Motor", case=False)]
 
+    datosAcusticos = calcular_indices_acusticos()
     zonas = df['zona'].unique()
     informe_final = []
 
     for zona in zonas:
         if not zona: continue
-        
         datos_zona = df[df['zona'] == zona]
+
         indices = calculo_de_indices(datos_zona)
-        
         if indices:
             indices['zona'] = zona
+            if datosAcusticos:
+                indices.update(datosAcusticos)
+            else:
+                indices.update({'aci_avg': 0, 'adi_avg': 0, 'aei_avg': 0, 'bio_avg': 0, 'ndsi_avg': 0})
             informe_final.append(indices)
             
     return informe_final

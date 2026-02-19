@@ -10,5 +10,8 @@ fastapi
 uvicorn
 pydantic
 sqlalchemy
-pydantic
 pandas
+#geopandas
+contextily
+#pyproj
+scikit-maad

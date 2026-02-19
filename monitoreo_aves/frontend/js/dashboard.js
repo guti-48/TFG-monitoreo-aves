@@ -383,16 +383,15 @@ async function renderScienceView(container) {
     container.innerHTML = `
         <div class="d-flex justify-content-center align-items-center py-5">
             <div class="spinner-grow text-info" role="status"></div>
-            <span class="ms-3 text-white">Calculando índices de biodiversidad (Shannon, Simpson, Pielou)...</span>
+            <span class="ms-3 text-white">Calculando IA Acústica y Ecológica (Procesando Audios)...</span>
         </div>`;
 
     try {
-        // Pedimos los datos al endpoint nuevo que creamos
         const response = await fetch("http://127.0.0.1:8000/analytics/biodiversity");
         const report = await response.json();
 
         if (!report || report.length === 0) {
-            container.innerHTML = `<div class="alert alert-warning">No hay suficientes datos para generar el informe científico.</div>`;
+            container.innerHTML = `<div class="alert alert-warning">No hay datos suficientes para el informe.</div>`;
             return;
         }
 
@@ -401,15 +400,12 @@ async function renderScienceView(container) {
         let shannonValues = [];
         let pielouValues = [];
 
-        // Generamos una tarjeta por cada Zona
-        report.forEach(r => {
+        report.forEach((r, index) => {
             zones.push(r.zona);
             shannonValues.push(r.shannon);
             pielouValues.push(r.pielou);
 
-            let colorCalidad = 'success';
-            if (r.calidad === 'Moderado') colorCalidad = 'warning';
-            if (r.calidad === 'Pobre') colorCalidad = 'danger';
+            let colorCalidad = r.calidad === 'Excelente' ? 'success' : (r.calidad === 'Moderado' ? 'warning' : 'danger');
 
             cardsHtml += `
             <div class="col-md-6 mb-4">
@@ -419,114 +415,68 @@ async function renderScienceView(container) {
                         <span class="badge bg-${colorCalidad}">${r.calidad}</span>
                     </div>
                     <div class="card-body">
-                        <div class="row text-center g-3">
+                        <div class="row text-center g-3 mb-4">
                             <div class="col-4">
                                 <h6 class="text-muted small text-uppercase">Riqueza (S)</h6>
                                 <h3 class="fw-bold">${r.riqueza}</h3>
-                                <small class="text-muted">Especies</small>
                             </div>
                             <div class="col-4">
-                                <h6 class="text-muted small text-uppercase">Abundancia (N)</h6>
+                                <h6 class="text-muted small text-uppercase">Abundancia</h6>
                                 <h3 class="fw-bold">${r.abundancia}</h3>
-                                <small class="text-muted">Detecciones</small>
                             </div>
                             <div class="col-4">
                                 <h6 class="text-muted small text-uppercase">Shannon (H')</h6>
                                 <h3 class="fw-bold text-${colorCalidad}">${r.shannon}</h3>
-                                <small class="text-muted">Diversidad</small>
                             </div>
                         </div>
-                        <hr class="my-4" style="border-color: #ffffff20;">
-                        <div class="d-flex justify-content-between px-2">
-                            <span><i class="bi bi-pie-chart me-2"></i>Equilibrio (Pielou):</span>
-                            <span class="fw-bold">${r.pielou} / 1.0</span>
-                        </div>
-                        <div class="progress mt-2" style="height: 6px;">
-                            <div class="progress-bar bg-info" role="progressbar" style="width: ${r.pielou * 100}%"></div>
-                        </div>
-                        <div class="d-flex justify-content-between px-2 mt-3">
-                            <span><i class="bi bi-exclamation-triangle me-2"></i>Dominancia (Simpson):</span>
-                            <span class="fw-bold">${r.simpson}</span>
+                        <h6 class="fw-bold border-bottom pb-2 mb-3">Huella Acústica (Soundscape)</h6>
+                        <div class="row align-items-center">
+                            <div class="col-7">
+                                <canvas id="radarChart-${index}" style="max-height: 250px;"></canvas>
+                            </div>
+                            <div class="col-5 small text-muted">
+                                <p class="mb-1"><strong>ACI:</strong> ${r.aci_avg} <br><em>(Complejidad Vida)</em></p>
+                                <p class="mb-1"><strong>ADI:</strong> ${r.adi_avg} <br><em>(Diversidad Bandas)</em></p>
+                                <p class="mb-1"><strong>NDSI:</strong> ${r.ndsi_avg} <br><em>(Naturaleza vs Ciudad)</em></p>
+                                <p class="mb-0"><strong>BIO:</strong> ${r.bio_avg} <br><em>(Frecuencia Aves)</em></p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>`;
         });
 
-        // HTML Completo de la vista
         container.innerHTML = `
-            <div class="row mb-4 animate-fade-in">
-                <div class="col-12">
-                    <h3 class="fw-bold text-white"><i class="bi bi-clipboard-data me-2 text-info"></i>Informe Científico de Biodiversidad</h3>
-                    <p class="text-muted">Comparativa ecológica basada en índices de Shannon-Wiener y Pielou.</p>
-                </div>
-            </div>
-            
-            <div class="row animate-fade-in">
-                ${cardsHtml}
-            </div>
+            <div class="row mb-4 animate-fade-in"><div class="col-12"><h3 class="fw-bold text-white"><i class="bi bi-cpu me-2 text-info"></i>Análisis Híbrido: Ecología + Bioacústica</h3><p class="text-muted">Extrayendo datos de la DB y procesando ondas de los archivos WAV en tiempo real.</p></div></div>
+            <div class="row animate-fade-in">${cardsHtml}</div>
+            <div class="row mt-4 animate-fade-in"><div class="col-12"><div class="card border-0 shadow-sm"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold m-0">Comparativa Global (BBDD)</h5></div><div class="card-body"><canvas id="scienceChart" style="max-height: 300px;"></canvas></div></div></div></div>`;
 
-            <div class="row mt-4 animate-fade-in">
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-transparent border-0 py-3">
-                            <h5 class="fw-bold m-0">Comparativa Visual de Zonas</h5>
-                        </div>
-                        <div class="card-body">
-                            <canvas id="scienceChart" style="max-height: 400px;"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // Generamos la gráfica comparativa
-        const ctx = document.getElementById('scienceChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: zones,
-                datasets: [
-                    {
-                        label: "Índice de Shannon (Biodiversidad)",
-                        data: shannonValues,
-                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1
-                    },
-                    {
-                        label: "Índice de Pielou (Equilibrio)",
-                        data: pielouValues,
-                        backgroundColor: 'rgba(153, 102, 255, 0.6)',
-                        borderColor: 'rgba(153, 102, 255, 1)',
-                        borderWidth: 1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: '#ffffff10' },
-                        ticks: { color: '#aaa' }
-                    },
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#fff' }
-                    }
+        // Generar las gráficas de Radar para cada tarjeta
+        report.forEach((r, index) => {
+            new Chart(document.getElementById(`radarChart-${index}`).getContext('2d'), {
+                type: 'radar',
+                data: {
+                    labels: ['ACI', 'ADI', 'AEI', 'BIO', 'NDSI'],
+                    datasets: [{
+                        label: 'Perfil Acústico',
+                        data: [r.aci_avg/100, r.adi_avg, r.aei_avg, r.bio_avg/10, r.ndsi_avg+1], // Normalizados para que quepan en el gráfico
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        pointBackgroundColor: 'rgba(54, 162, 235, 1)'
+                    }]
                 },
-                plugins: {
-                    legend: { labels: { color: '#fff' } }
-                }
-            }
+                options: { responsive: true, maintainAspectRatio: false, scales: { r: { ticks: { display: false }, grid: { color: '#ffffff20' }, pointLabels: { color: '#aaa' } } }, plugins: { legend: { display: false } } }
+            });
         });
 
-    } catch (e) {
-        container.innerHTML = `<div class="alert alert-danger">Error cargando informe: ${e.message}</div>`;
-        console.error(e);
-    }
+        // Generar la gráfica de barras global
+        new Chart(document.getElementById('scienceChart').getContext('2d'), {
+            type: 'bar',
+            data: { labels: zones, datasets: [ { label: "Shannon (Biodiversidad)", data: shannonValues, backgroundColor: '#4bc0c0' }, { label: "Pielou (Equilibrio)", data: pielouValues, backgroundColor: '#9966ff' } ] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#ffffff10' }, ticks: { color: '#aaa' } }, x: { grid: { display: false }, ticks: { color: '#fff' } } }, plugins: { legend: { labels: { color: '#fff' } } } }
+        });
+
+    } catch (e) { container.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`; }
 }
 
 // --- ARRANQUE ---
