@@ -114,13 +114,14 @@ def generacionEspectograma(audio_path, filename):
 
 ####FUNCION DONDE ENVIAREMOS LOS DATOS AL SERVIDOR ####
 def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude):
+    #datos en json
     url = f"{SERVER_URL}/detections/"
 
     datos = {
         "species": species,
         "confidence": confidence,
         "timestamp": timestamp_str,
-        "filename": filename,
+        "filename": f"{filename}.wav",
         "device_name": NODE_NAME,
         "amplitude":float(amplitude)
     }
@@ -128,8 +129,38 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude)
     try:
         response = requests.post(url, json=datos, timeout=5)
         if response.status_code == 200:
-            print(f"Enviado al servidor: {species}")
+            url_archivos = f"{SERVER_URL}/upload/"
+            ruta_audio = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename}.wav")
+            ruta_img = os.path.join(OUTPUT_FOLDER_IMG, f"{filename}.png")
+            
+            # Preparamos los archivos para enviarlos por HTTP (Multipart form data)
+            archivos = {}
+            archivos_abiertos = [] # Para cerrarlos después
+            
+            try:
+                if os.path.exists(ruta_audio):
+                    f_audio = open(ruta_audio, 'rb')
+                    archivos['audio_file'] = (f"{filename}.wav", f_audio, 'audio/wav')
+                    archivos_abiertos.append(f_audio)
+                    
+                if os.path.exists(ruta_img):
+                    f_img = open(ruta_img, 'rb')
+                    archivos['img_file'] = (f"{filename}.png", f_img, 'image/png')
+                    archivos_abiertos.append(f_img)
+                
+                if archivos:
+                    # Hacemos el POST de los archivos
+                    response_archivos = requests.post(url_archivos, files=archivos, timeout=10)
+                    if response_archivos.status_code == 200:
+                        print(" -> Archivos de audio e imagen subidos correctamente.")
+                    else:
+                        print(f" -> Error subiendo archivos: {response_archivos.status_code}")
+            finally:
+                for f in archivos_abiertos:
+                    f.close()
+            
             sincronizarRespaldo()
+
         else:
             print(f"Servidor rechazó ({response.status_code}). Guardando local...")
             guardarBackupLocal(species, confidence, timestamp_str, amplitude, filename)
@@ -161,7 +192,7 @@ def limpiarArchivosAntiguos():
     ahora = time.time()
     # 86400 segundos = 1 dia. Borramos lo que tenga más de 1 día.
     # Si quieres guardar más días, multiplica 86400 * dias
-    TIEMPO_VIDA = 86400 * 1 
+    TIEMPO_VIDA = 86400 * 2 
 
     print("Iniciando limpieza de disco...")
     archivos_borrados = 0
@@ -192,7 +223,7 @@ def sincronizarRespaldo():
     if not os.path.isfile(csvDeBackup):
         return
 
-    print("Intento de sincronizacion de datos offline con el servidor")
+    print("Intento de sincronizacion de datos offline con el servidor...")
 
     filasPendientes = []
     filasEnviadas = 0
@@ -200,20 +231,19 @@ def sincronizarRespaldo():
     try:
         with open(csvDeBackup, mode='r')as f:
             lectura = csv.reader(f)
-            filas = list(lectura) #lectura de las filas de la memoria
+            filas = list(lectura)
 
-            if not filas:
+            if not filas or len(filas) <= 1:
                 return
             
-            #Primera fila son cabeceras si existen
             cabeceras = filas[0]
             datos = filas[1:]
 
             for fila in datos:
                 try:
                     ts, sp, conf, amp, fname = fila
-
-                    datos = {
+                    
+                    datos_json = {
                         "species": sp,
                         "confidence": float(conf),
                         "timestamp": ts,
@@ -222,30 +252,67 @@ def sincronizarRespaldo():
                         "amplitude": float(amp)
                     }
 
-                    response = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=4)
+                    response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=5)
 
                     if response.status_code == 200:
+                        # enviamos archivos retrasados
+                        filename_base = fname.replace(".wav", "")
+                        url_archivos = f"{SERVER_URL}/upload/"
+                        ruta_audio = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename_base}.wav")
+                        ruta_img = os.path.join(OUTPUT_FOLDER_IMG, f"{filename_base}.png")
+                        
+                        archivos = {}
+                        archivos_abiertos = []
+                        
+                        try:
+                            if os.path.exists(ruta_audio):
+                                f_audio = open(ruta_audio, 'rb')
+                                archivos['audio_file'] = (f"{filename_base}.wav", f_audio, 'audio/wav')
+                                archivos_abiertos.append(f_audio)
+                                
+                            if os.path.exists(ruta_img):
+                                f_img = open(ruta_img, 'rb')
+                                archivos['img_file'] = (f"{filename_base}.png", f_img, 'image/png')
+                                archivos_abiertos.append(f_img)
+                            
+                            if archivos:
+                                requests.post(url_archivos, files=archivos, timeout=15)
+                        finally:
+                            for arc in archivos_abiertos:
+                                arc.close()
+
                         filasEnviadas += 1
-                        print(f"Sincronizadas: {sp} ({ts})")
+                        print(f" -> Sincronizado offline: {sp} ({ts}) con sus archivos.")
                     else:
+                        #si el servidor falló de nuevo, lo dejamos en la lista de pendientes
                         filasPendientes.append(fila)
+                        
                 except Exception as e:
-                    print(f"Error procesando una de las filas de backup: {e}")
+                    print(f"Error procesando una fila de backup: {e}")
+                    filasPendientes.append(fila)
         
+        #reescribimos el CSV solo con los que NO se pudieron enviar
         if filasEnviadas > 0:
             with open(csvDeBackup, mode='w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(cabeceras)
-                writer.writerows(filasPendientes) #escribiremos solo las que faltan
-            print(f"Sincronizacion terminada, {filasEnviadas} enviados, {len(filasPendientes)} pendientes")
+                writer.writerows(filasPendientes)
+            print(f"Sincronizacion terminada: {filasEnviadas} recuperados, {len(filasPendientes)} aún pendientes.")
 
     except Exception as e:
-        print(f"Error de sincronizacion {e}")
+        print(f"Error general de sincronizacion: {e}")
 
 
 
 ### Flujo de trabajo principal ###
 if __name__ == "__main__":
+
+    print("Verificando reloj interno de la Raspberry Pi...")
+    while datetime.now().year < 2024:
+        print("Esperando a que el sistema sincronice la hora por WiFi...")
+        time.sleep(5)
+    print("Hora correcta sincronizada. Arrancando nodo.")
+    
     try:
         # Registro inicial del dispositivo
         try:

@@ -155,39 +155,28 @@ async function updateDashboard() {
     if (currentView !== 'dashboard') return; 
 
     try {
-        const response = await fetch(API_URL);
+        const response = await fetch(`${API_URL}?t=${new Date().getTime()}`, {
+            cache: 'no-store'
+        });
         let data = await response.json();
         
-        // Filtro por nodo (si está activo)
-        if (activeNodeFilter) {
-            data = data.filter(d => d.device_name === activeNodeFilter);
-            const nodeName = MOCK_NODES.find(n => n.id === activeNodeFilter)?.name || activeNodeFilter;
-            const titleEl = document.getElementById('dashboard-title');
-            if(titleEl) titleEl.innerHTML = `<i class="bi bi-funnel-fill me-2 text-warning"></i>${nodeName}`;
-        } else {
-             const titleEl = document.getElementById('dashboard-title');
-             if(titleEl) titleEl.innerHTML = `<i class="bi bi-broadcast text-success me-2 animate-pulse"></i>Monitorización Global`;
-        }
-
+        // Si no hay datos, mostramos 0
         if (!data || data.length === 0) {
             safeSetText('total-counter', '0');
             return;
         }
 
-        const sortedData = data.reverse(); // Aquí están TODOS (Pájaros + Ruido)
+        const sortedData = data; 
 
-        // Calculamos volumen promedio basado en la nueva columna 'amplitude'
+        // --- CÁLCULO DEL NIVEL DE RUIDO GLOBAL ---
         let totalAmp = 0;
         sortedData.forEach(d => { totalAmp += (d.amplitude || 0); });
-        
-        // Ajusta el factor 500 según tu micro
         let avgAmp = (sortedData.length > 0) ? (totalAmp / sortedData.length) * 500 : 0;
         if (avgAmp > 100) avgAmp = 100;
 
         let noiseLabel = "Silencioso";
         let noiseColor = "success"; 
         let noiseIcon = "bi-tree-fill";
-
         if (avgAmp > 10) { noiseLabel = "Moderado"; noiseColor = "warning"; noiseIcon = "bi-people-fill"; }
         if (avgAmp > 30) { noiseLabel = "Ruidoso"; noiseColor = "danger"; noiseIcon = "bi-speaker-fill"; }
 
@@ -200,40 +189,40 @@ async function updateDashboard() {
             document.getElementById('noise-icon').className = `bi ${noiseIcon} fs-3`;
         }
 
+        // --- FILTRO DE AVES REALES ---
         const birdsOnly = sortedData.filter(d => 
-            !d.species.includes("Noise") && 
-            !d.species.includes("Ruido") &&
-            !d.species.includes("Ambiente")
+            !d.species.toLowerCase().includes("noise") && 
+            !d.species.toLowerCase().includes("ruido") &&
+            !d.species.toLowerCase().includes("ambiente")
         );
 
-        // Actualizamos los contadores
-        safeSetText('total-counter', birdsOnly.length); // Muestra total de AVES, no de registros totales
+        // Actualizamos contador principal de AVES
+        safeSetText('total-counter', birdsOnly.length); 
 
         if (birdsOnly.length > 0) {
-            const latestBird = birdsOnly[0];
+            const latestBird = birdsOnly[0]; // El más reciente
             
-            // Última actividad, de pajaros no de ruido
+            // Última actividad (Hora)
             safeSetText('last-activity', new Date(latestBird.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
             
-            // Especie dominante, de pajaros
+            // Cálculo de Especie Dominante
             const counts = {};
             birdsOnly.forEach(d => { counts[d.species] = (counts[d.species] || 0) + 1; });
             const topSpecies = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+            
             safeSetText('top-species', cleanName(topSpecies));
 
-            // tarjeta que nos interesa mostrar el pajato solo
-            await renderLiveFeedSplit(latestBird);
-
-            renderTable(birdsOnly.slice(0, 10));
-
-            // grafica con los pajaros
-            updateChart(counts);
+            // Actualizar la tarjeta gigante y la tabla pequeña inferior
+            if (typeof renderLiveFeedSplit === "function") await renderLiveFeedSplit(latestBird);
+            if (typeof renderTable === "function") renderTable(birdsOnly.slice(0, 10));
+            if (typeof updateChart === "function") updateChart(counts);
         } else {
-            // Si solo hay ruido y ningún pájaro todavía...
             console.log("Solo hay ruido ambiente, esperando aves...");
         }
 
-    } catch (error) { console.error("Error Dashboard:", error); }
+    } catch (error) { 
+        console.error("Error Dashboard:", error); 
+    }
 }
 
 function getDashboardHTML() {
@@ -383,7 +372,7 @@ async function renderScienceView(container) {
     container.innerHTML = `
         <div class="d-flex justify-content-center align-items-center py-5">
             <div class="spinner-grow text-info" role="status"></div>
-            <span class="ms-3 text-white">Calculando IA Acústica y Ecológica (Procesando Audios)...</span>
+            <span class="ms-3 text-white">Procesando datos del nodo (Ecología + Bioacústica)...</span>
         </div>`;
 
     try {
@@ -391,90 +380,113 @@ async function renderScienceView(container) {
         const report = await response.json();
 
         if (!report || report.length === 0) {
-            container.innerHTML = `<div class="alert alert-warning">No hay datos suficientes para el informe.</div>`;
+            container.innerHTML = `<div class="alert alert-warning text-center">Esperando detecciones reales del nodo...</div>`;
             return;
         }
 
-        let cardsHtml = '';
-        let zones = [];
-        let shannonValues = [];
-        let pielouValues = [];
+        // Como trabajaremos con un único nodo principal, cogemos el primero
+        const r = report[0]; 
+        let colorCalidad = r.calidad === 'Excelente' ? 'success' : (r.calidad === 'Moderado' ? 'warning' : 'danger');
 
-        report.forEach((r, index) => {
-            zones.push(r.zona);
-            shannonValues.push(r.shannon);
-            pielouValues.push(r.pielou);
-
-            let colorCalidad = r.calidad === 'Excelente' ? 'success' : (r.calidad === 'Moderado' ? 'warning' : 'danger');
-
-            cardsHtml += `
-            <div class="col-md-6 mb-4">
-                <div class="card shadow-sm border-0 h-100">
-                    <div class="card-header bg-dark text-white border-0 py-3 d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill me-2 text-info"></i>${r.zona}</h5>
-                        <span class="badge bg-${colorCalidad}">${r.calidad}</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="row text-center g-3 mb-4">
-                            <div class="col-4">
-                                <h6 class="text-muted small text-uppercase">Riqueza (S)</h6>
-                                <h3 class="fw-bold">${r.riqueza}</h3>
-                            </div>
-                            <div class="col-4">
-                                <h6 class="text-muted small text-uppercase">Abundancia</h6>
-                                <h3 class="fw-bold">${r.abundancia}</h3>
-                            </div>
-                            <div class="col-4">
-                                <h6 class="text-muted small text-uppercase">Shannon (H')</h6>
-                                <h3 class="fw-bold text-${colorCalidad}">${r.shannon}</h3>
-                            </div>
+        container.innerHTML = `
+            <div class="row mb-4 animate-fade-in text-center">
+                <div class="col-12">
+                    <h3 class="fw-bold text-white"><i class="bi bi-cpu me-2 text-info"></i>Análisis Científico del Nodo</h3>
+                    <p class="text-muted">Procesamiento Edge en tiempo real.</p>
+                </div>
+            </div>
+            
+            <div class="row justify-content-center animate-fade-in mb-4">
+                <div class="col-lg-8">
+                    <div class="card shadow-sm border-0 bg-dark text-white">
+                        <div class="card-header border-0 py-3 d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill me-2 text-info"></i>${r.zona}</h5>
+                            <span class="badge bg-${colorCalidad}">${r.calidad}</span>
                         </div>
-                        <h6 class="fw-bold border-bottom pb-2 mb-3">Huella Acústica (Soundscape)</h6>
-                        <div class="row align-items-center">
-                            <div class="col-7">
-                                <canvas id="radarChart-${index}" style="max-height: 250px;"></canvas>
-                            </div>
-                            <div class="col-5 small text-muted">
-                                <p class="mb-1"><strong>ACI:</strong> ${r.aci_avg} <br><em>(Complejidad Vida)</em></p>
-                                <p class="mb-1"><strong>ADI:</strong> ${r.adi_avg} <br><em>(Diversidad Bandas)</em></p>
-                                <p class="mb-1"><strong>NDSI:</strong> ${r.ndsi_avg} <br><em>(Naturaleza vs Ciudad)</em></p>
-                                <p class="mb-0"><strong>BIO:</strong> ${r.bio_avg} <br><em>(Frecuencia Aves)</em></p>
+                        <div class="card-body">
+                            <div class="row text-center g-3">
+                                <div class="col-4">
+                                    <h6 class="text-muted small text-uppercase">Riqueza (S)</h6>
+                                    <h3 class="fw-bold">${r.riqueza}</h3>
+                                </div>
+                                <div class="col-4">
+                                    <h6 class="text-muted small text-uppercase">Abundancia</h6>
+                                    <h3 class="fw-bold">${r.abundancia}</h3>
+                                </div>
+                                <div class="col-4">
+                                    <h6 class="text-muted small text-uppercase">Shannon (H')</h6>
+                                    <h3 class="fw-bold text-${colorCalidad}">${r.shannon}</h3>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+            
+            <div class="row animate-fade-in mb-4">
+                <div class="col-lg-6 mb-3">
+                    <div class="card border-0 shadow-sm bg-dark text-white h-100">
+                        <div class="card-header border-0 py-3"><h6 class="fw-bold m-0">Huella Acústica (WAV)</h6></div>
+                        <div class="card-body"><canvas id="radarChart" style="max-height: 250px;"></canvas></div>
+                    </div>
+                </div>
+                <div class="col-lg-6 mb-3">
+                    <div class="card border-0 shadow-sm bg-dark text-white h-100">
+                        <div class="card-header border-0 py-3"><h6 class="fw-bold m-0">Equilibrio del Ecosistema (BBDD)</h6></div>
+                        <div class="card-body"><canvas id="scienceChart" style="max-height: 250px;"></canvas></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row animate-fade-in">
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm bg-dark text-white">
+                        <div class="card-header border-0 py-3">
+                            <h5 class="fw-bold m-0"><i class="bi bi-map-fill me-2 text-info"></i>Cobertura Geoespacial</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="biodiversityMap" style="height: 400px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; z-index: 1;"></div>
+                        </div>
+                    </div>
+                </div>
             </div>`;
+
+        //dibujo radar grafica
+        new Chart(document.getElementById('radarChart').getContext('2d'), {
+            type: 'radar',
+            data: {
+                labels: ['ACI', 'ADI', 'AEI', 'BIO', 'NDSI'],
+                datasets: [{
+                    label: 'Perfil Acústico',
+                    data: [r.aci_avg/100, r.adi_avg, r.aei_avg, r.bio_avg/10, r.ndsi_avg+1],
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)', borderColor: 'rgba(54, 162, 235, 1)', pointBackgroundColor: 'rgba(54, 162, 235, 1)'
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { r: { ticks: { display: false }, grid: { color: '#ffffff20' }, pointLabels: { color: '#aaa' } } }, plugins: { legend: { display: false } } }
         });
 
-        container.innerHTML = `
-            <div class="row mb-4 animate-fade-in"><div class="col-12"><h3 class="fw-bold text-white"><i class="bi bi-cpu me-2 text-info"></i>Análisis Híbrido: Ecología + Bioacústica</h3><p class="text-muted">Extrayendo datos de la DB y procesando ondas de los archivos WAV en tiempo real.</p></div></div>
-            <div class="row animate-fade-in">${cardsHtml}</div>
-            <div class="row mt-4 animate-fade-in"><div class="col-12"><div class="card border-0 shadow-sm"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold m-0">Comparativa Global (BBDD)</h5></div><div class="card-body"><canvas id="scienceChart" style="max-height: 300px;"></canvas></div></div></div></div>`;
-
-        // Generar las gráficas de Radar para cada tarjeta
-        report.forEach((r, index) => {
-            new Chart(document.getElementById(`radarChart-${index}`).getContext('2d'), {
-                type: 'radar',
-                data: {
-                    labels: ['ACI', 'ADI', 'AEI', 'BIO', 'NDSI'],
-                    datasets: [{
-                        label: 'Perfil Acústico',
-                        data: [r.aci_avg/100, r.adi_avg, r.aei_avg, r.bio_avg/10, r.ndsi_avg+1], // Normalizados para que quepan en el gráfico
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        pointBackgroundColor: 'rgba(54, 162, 235, 1)'
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, scales: { r: { ticks: { display: false }, grid: { color: '#ffffff20' }, pointLabels: { color: '#aaa' } } }, plugins: { legend: { display: false } } }
-            });
-        });
-
-        // Generar la gráfica de barras global
+        // dibujo barras grafica
         new Chart(document.getElementById('scienceChart').getContext('2d'), {
             type: 'bar',
-            data: { labels: zones, datasets: [ { label: "Shannon (Biodiversidad)", data: shannonValues, backgroundColor: '#4bc0c0' }, { label: "Pielou (Equilibrio)", data: pielouValues, backgroundColor: '#9966ff' } ] },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#ffffff10' }, ticks: { color: '#aaa' } }, x: { grid: { display: false }, ticks: { color: '#fff' } } }, plugins: { legend: { labels: { color: '#fff' } } } }
+            data: { 
+                labels: ['Shannon (Diversidad)', 'Pielou (Equilibrio)', 'Simpson (Dominancia)'], 
+                datasets: [{ label: "Índices", data: [r.shannon, r.pielou, r.simpson], backgroundColor: ['#4bc0c0', '#9966ff', '#ff9f40'] }] 
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#ffffff10' }, ticks: { color: '#aaa' } }, x: { grid: { display: false }, ticks: { color: '#fff' } } }, plugins: { legend: { display: false } } }
         });
+
+        //dibujo mapa
+        fetch("http://127.0.0.1:8000/analytics/map")
+            .then(res => res.json())
+            .then(mapData => {
+                if(mapData.error) return;
+                const map = L.map('biodiversityMap').setView([mapData.lat, mapData.lon], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
+                const marker = L.marker([mapData.lat, mapData.lon]).addTo(map);
+                marker.bindPopup(`<b>Nodo: ${mapData.ciudad}</b><br>Biodiversidad (H'): ${mapData.shannon}`).openPopup();
+                const circleColor = mapData.shannon > 1.5 ? '#28a745' : '#dc3545';
+                L.circle([mapData.lat, mapData.lon], { color: circleColor, fillColor: circleColor, fillOpacity: 0.2, radius: mapData.radio_km * 1000 }).addTo(map);
+            });
 
     } catch (e) { container.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`; }
 }

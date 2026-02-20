@@ -13,5 +13,7 @@ sqlalchemy
 pandas
 #geopandas
 contextily
-#pyproj
+pyproj
+geocoder
 scikit-maad
+python-multipart

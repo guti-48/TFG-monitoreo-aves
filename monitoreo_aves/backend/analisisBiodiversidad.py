@@ -1,4 +1,4 @@
-import sqlite3, os, glob
+import sqlite3, os, glob, geocoder
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -90,33 +90,34 @@ def calcular_indices_acusticos():
             s, fs = sound.load(wav)
             Sxx, tn, fn, ext = sound.spectrogram(s, fs)
 
-            #ACI: Indice de Complejidad (Pajaros = alto // Motor = bajo)
+            # ACI: indice de complejidad
             _, _, aci = features.acoustic_complexity_index(Sxx)
             resultados['aci'].append(np.sum(aci))
 
-            #ADI Y AEI: DIversidad y uniformidad acustica
+            # ADI: Diversidad acustica
             adi = features.acoustic_diversity_index(Sxx, fn)
-            aei = features.acoustic_evenness_index(Sxx, fn)
             resultados['adi'].append(adi)
-            resultados['aei'].append(aei)
 
-            #BIO: Indice Bioacustico (Rango de cantos de ave)
-            bio = features.bioacoustic_index(Sxx, fn)
-            resultados['bio'].append(bio)
-
-            #NDSI: Naturaleza vs antropogénico
-            ndsi, _, _, _ = features.soundscape_index(Sxx, fn)
-            resultados['ndsi'].append(ndsi)
-
+            # AEI: uniformidad acustica
             try:
                 aei = features.acoustic_evenness_index(Sxx, fn)
             except AttributeError:
-                # Si la librería no lo tiene, aplicamos una derivación básica desde el ADI
-                # El ADI (Shannon) y AEI (Gini) son inversamente proporcionales en bioacústica
                 aei = 1.0 - (adi / 3.0) if not np.isnan(adi) else 0.5
+            resultados['aei'].append(aei)
+
+            # BIO: indice bioacustico 
+            try:
+                bio = features.bioacoustics_index(Sxx, fn)
+            except AttributeError:
+                bio = features.bioacoustic_index(Sxx, fn)
+            resultados['bio'].append(bio)
+
+            # NDSI: naturaleza vs antropogénico
+            ndsi, _, _, _ = features.soundscape_index(Sxx, fn)
+            resultados['ndsi'].append(ndsi)
 
         except Exception as e:
-            print(f'Omitiendo audio por error: {e}')
+            print(f'Omitiendo audio por error en el analisis: {e}')
 
     if not resultados['aci']:
         return None
@@ -147,7 +148,7 @@ def obtener_reporte_biodiversidad():
     # Limpieza de datos (Filtros científicos)
     df = df[df['confidence'] >= UMBRA_CONFIANZA]
     df['species'] = df['species'].apply(lambda x: x.split('_')[1] if '_' in x else x)
-    df = df[~df['species'].str.contains("Noise|Ruido|Human|Motor", case=False)]
+    df = df[~df['species'].str.contains("Noise|Ruido|Human|Motor|Ambiente", case=False)]
 
     datosAcusticos = calcular_indices_acusticos()
     zonas = df['zona'].unique()
@@ -167,3 +168,35 @@ def obtener_reporte_biodiversidad():
             informe_final.append(indices)
             
     return informe_final
+
+def obetenerDatosMapa():
+    '''Obtengo las coordenadas del nodo y su biodiversidad'''
+    #localizamos la ip
+    ip = geocoder.ip('me')
+    if ip.latlng:
+        lat, lon = ip.latlng
+        ciudad = ip.city
+    else:
+        lat, lon = 37.3891, -5.9845  # Coordenadas por defecto (Sevilla)
+        ciudad = 'Sevilla (Desconocida)'
+
+    df = conectar_db()
+    shannon_global = 0.5
+
+    if not df.empty:
+        df = df[df['confidence'] >= UMBRA_CONFIANZA]
+        df = df[~df['species'].str.contains("Noise|Ruido|Human|Motor|Ambiente", case=False)]
+        
+        N = len(df)
+        if N > 0:
+            conteo = df['species'].value_counts()
+            prop = conteo / N
+            shannon_global = round(-np.sum(prop * np.log(prop)), 3)
+
+    return {
+        "ciudad": ciudad,
+        "lat": lat,
+        "lon": lon,
+        "shannon": shannon_global,
+        "radio_km": 4
+    }

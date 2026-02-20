@@ -22,14 +22,16 @@ El sistema se encuentra en fase de validación técnica con funcionalidad comple
     * Clasificación de fuentes de ruido antropogénico (voces humanas, motores).
 
 * **Arquitectura de Datos Híbrida:**
-    * **Persistencia Local:** Almacenamiento de metadatos, niveles de amplitud y espectrogramas en base de datos relacional propia.
-    * **Integración Cloud:** Envío selectivo de identificaciones positivas a la API de **BirdWeather** para el mapeo global de biodiversidad.
+    * **Upload Activo de Archivos:** La Raspberry Pi envía el JSON de inferencia junto con los archivos `.wav` y `.png` a la API central para su análisis bioacústico en profundidad.
+    * **Tolerancia a Fallos (Offline Sync):** Si el servidor central cae o hay pérdida de red, el nodo encola las detecciones y audios localmente en la MicroSD. Al recuperar la conexión, el nodo sincroniza automáticamente el backlog histórico.
+    * **Rotación de Logs y Limpieza (Wear Leveling):** Algoritmo automatizado que elimina audios mayores a 48-72h para preservar la vida útil de la MicroSD.
+    * **Protección RTC (Real Time Clock):** Rutina de bloqueo pre-arranque que evita la generación de datos corruptos ('Síndrome de 1970') tras cortes de luz en entornos sin internet.
 
 * **Interfaz de Visualización y Control (Dashboard):**
-    * Aplicación web de página única para monitoreo en tiempo real.
-    * Integración dinámica con la API de Wikipedia para recuperación de imágenes de especies.
-    * Indicadores de calidad acústica basados en análisis RMS.
-    * Módulo de exportación de datos históricos en formato CSV para análisis estadístico externo.
+    * **Telemetría en Tiempo Real:** Interfaz SPA con actualizaciones sin recarga (Polling) y evasión inteligente de caché HTTP.
+    * **Análisis Ecológico:** Cálculo automático de Índices de Biodiversidad (Shannon $H'$, Pielou $J'$, Simpson $1-D$).
+    * **Radar de Bioacústica (Paisaje Sonoro):** Análisis matricial del archivo `.wav` en el servidor utilizando `scikit-maad` para extraer los índices ACI, ADI, AEI, BIO y NDSI, midiendo la salud acústica del entorno y dibujando una huella sonora en gráfico de radar.
+    * **Cartografía Dinámica:** Generación automática de mapas interactivos (Leaflet.js) basados en la geolocalización IP del nodo, mostrando radios de cobertura ponderados por el índice de Shannon local.
 
 ## Arquitectura Técnica
 
@@ -96,25 +98,26 @@ desde nuestro navegador.
 
 ```text
 monitoreo_aves/
-├── backend/                  # Módulo Servidor
+├── backend/                        # Módulo Servidor
 │   ├── app/
-│   │   ├── main.py           # Definición de API REST y endpoints
-│   │   ├── models.py         # Modelos de Base de Datos (SQLAlchemy)
-│   │   ├── schemas.py        # Esquemas de validación de datos
-│   │   └── database.py       # Configuración de conexión SQL
-│   └── birdmonitor.db        # Archivo de base de datos (Autogenerado)
+│   │   ├── main.py                 # Definición de API REST y endpoints (Uploads/JSON)
+│   │   ├── models.py               # Modelos de BBDD (SQLAlchemy)
+│   │   ├── schemas.py              # Esquemas de validación (Pydantic)
+│   │   └── database.py             # Configuración SQL
+│   ├── analisisBiodiversidad.py    # Motor matemático (Bioacústica + Ecología)
+│   └── birdmonitor.db              # Base de datos local (Autogenerado)
 │
-├── frontend/                 # Módulo de Interfaz Web
-│   ├── css/                  # Hojas de estilo
-│   ├── js/                   # Lógica de cliente (Dashboard dinámico)
-│   ├── images/               # Recursos gráficos estáticos
-│   └── index.html            # Punto de entrada de la aplicación
+├── frontend/                       # Módulo de Interfaz Web
+│   ├── css/                        # Hojas de estilo y UI oscura
+│   ├── js/                         # Lógica de cliente y Fetchers
+│   ├── assets/                     # Imágenes estáticas y placeholders
+│   └── index.html                  # Punto de entrada
 │
-├── hardware/raspberry_pi/    # Código fuente del Nodo Sensor
-│   ├── model/                # Modelo BirdNET (.tflite) y etiquetas
-│   ├── records/              # Almacenamiento temporal de audio (.wav)
-│   ├── spectrograms/         # Almacenamiento temporal de imágenes
-│   ├── analyzer.py           # Clase de abstracción para el modelo IA
-│   └── mainNode.py           # Script principal de ejecución y control
+├── hardware/raspberry_pi/          # Código fuente del Nodo Edge
+│   ├── model/                      # Modelo BirdNET TFLite y etiquetas
+│   ├── records/                    # Buffer de audio (.wav) local y remoto
+│   ├── spectrograms/               # Buffer de imágenes (.png)
+│   ├── analyzer.py                 # Abstracción para el modelo IA
+│   └── mainNode.py                 # Orquestador del nodo y gestor Offline
 │
-└── requirements.txt          # Listado de dependencias del proyecto```
+└── requirements.txt                # Dependencias (FastAPI, scikit-maad...)```

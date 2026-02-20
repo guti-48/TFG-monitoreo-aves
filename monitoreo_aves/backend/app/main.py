@@ -1,18 +1,16 @@
-import os, sys
-from fastapi import FastAPI, HTTPException, Depends
+import os, sys, shutil
 from pathlib import Path
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import models, database, schemas
+from backend.analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_biodiversidad
 
 current_file = Path(__file__).resolve()
 backend_dir = current_file.parent.parent
 sys.path.append(str(backend_dir)) 
 
-
-###AQUI DEBO RESOLVER PROBLEMA DE LA RUTA
-from analisisBiodiversidad import obtener_reporte_biodiversidad
 
 ## Creamos las tablas automaticamente en la base de datos
 models.Base.metadata.create_all(bind=database.engine)
@@ -32,11 +30,36 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent
 #Construimos la ruta bajando a hardware
 SPECTOGRAM_DIR = project_root / "hardware" / "raspberry_pi" / "spectrograms"
+SERVER_AUDIO_DIR = os.path.join(project_root, "hardware", "raspberry_pi", "records")
 
+os.makedirs(SERVER_AUDIO_DIR, exist_ok=True)
 os.makedirs(SPECTOGRAM_DIR, exist_ok=True) #creamos carpeta si no existe
 
 #carpeta montada en la ruta /spectograms
 app.mount("/spectrograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectrograms")
+
+@app.post('/upload/')
+async def subida_archivos(audio: UploadFile = File(None), specto: UploadFile = File(None)):
+    '''Endpoints para poder recibir audio y espectrogramas desde la raspberry pi'''
+    saved_files = []
+    
+    if audio:
+        audio_path = os.path.join(SERVER_AUDIO_DIR, audio.filename)
+        with open(audio_path, "wb") as buffer:
+            shutil.copyfileobj(audio.file, buffer)
+        saved_files.append(audio.filename)
+        
+    if specto:
+        img_path = os.path.join(SPECTOGRAM_DIR, specto.filename)
+        with open(img_path, "wb") as buffer:
+            shutil.copyfileobj(specto.file, buffer)
+        saved_files.append(specto.filename)
+
+    if not saved_files:
+        raise HTTPException(status_code=400, detail="No se enviaron archivos")
+        
+    return {"message": "Archivos subidos correctamente", "files": saved_files}
+
 
 ## PRIMER ENDPOINT --> REGISTRAR UN DISPOSITIVO
 @app.post("/devices/", response_model=schemas.DeviceCreate) 
@@ -86,8 +109,8 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
 
 ## TERCER ENDPOINT --> OBTENER DETECCIONES TODAS LAS DETECCIONES PARA PODER OBSERVARLAS
 @app.get("/detections/")
-def read_detections(skip: int = 0, limit: int = 50, db: Session = Depends(database.get_db)):
-    detections = db.query(models.Detection).offset(skip).limit(limit).all()
+def read_detections(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
+    detections = db.query(models.Detection).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
     return detections
 
 '''
@@ -106,6 +129,15 @@ def get_biodiversity_report():
     except Exception as e:
         print(f"Error al obtener el reporte de biodiversidad: {e}")
         return []
+    
+'''QUINTO ENDPOINT --> OBTENER DATOS PARA EL MAPA DE CALOR'''
+@app.get("/analytics/map")
+def get_map_data():
+    try:
+        return obetenerDatosMapa()
+    except Exception as e:
+        print(f"Error en mapa: {e}")
+        return {"error": str(e)}
 
 @app.get("/")
 def read_root():
