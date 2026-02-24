@@ -323,7 +323,7 @@ if __name__ == "__main__":
         while True:
             now = datetime.now()
             timestampDB = now.isoformat() 
-            timestamp = now.strftime("%Y-%m-%d_%H-%M-S")
+            timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
             filename = f"record_{timestamp}"
             filenameWAV = f"{filename}.wav"
 
@@ -339,26 +339,54 @@ if __name__ == "__main__":
             audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
             generacionEspectograma(audio_path, filename)
             print("Proceso completado, revisa las carpetas de salida.")
-
+            
             # Analisis de BirdNET
-            print("Analizando especie de ave...")
+            print("Analizando especies de aves y ruidos...")
             res = brain.predict(audio_path)
 
             detecciones_unicas = {}
             
-            # Umbral que decidira el ruido (ajustable)
-            UMBRAL_RUIDO_ALTO = 0.02 
+            # umbrales para la deteccion para mejorar detecciones de sonidos
+            UMBRAL_AVES = 0.65          # Exigimos 65% para creernos que es un pájaro (evita falsos positivos)
+            UMBRAL_HUMANOS = 0.35       # A la mínima que parezca voz humana (35%), lo cazamos como ruido
+            UMBRAL_MOTORES = 0.40       # A la mínima que parezca motor/ruido ambiente, lo cazamos
+            UMBRAL_RUIDO_ALTO = 0.02    # Nivel de amplitud RMS para ruido blanco
 
             if res:
-                print(f"Detecciones brutas: {len(res)}")
                 for r in res:
                     especie = r['species']
                     confianza = r['confidence']
-                    if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
-                        detecciones_unicas[especie] = r
+
+                    # Clasificamos qué tipo de sonido es
+                    es_humano = "Human" in especie
+                    es_motor = "Motor" in especie or "Noise" in especie
+                    es_ruido = es_humano or es_motor
+
+                    # Aplicamos el filtro dependiendo de qué sea
+                    if es_humano and confianza >= UMBRAL_HUMANOS:
+                        if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
+                            detecciones_unicas[especie] = r
+                    
+                    elif es_motor and confianza >= UMBRAL_MOTORES:
+                        if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
+                            detecciones_unicas[especie] = r
+                            
+                    elif not es_ruido and confianza >= UMBRAL_AVES:
+                        if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
+                            detecciones_unicas[especie] = r
+
+                if detecciones_unicas:
+                    print(f"Captadas {len(detecciones_unicas)} fuentes sonoras.")
+                else:
+                    if rms_amplitude > UMBRAL_RUIDO_ALTO:
+                        print("Mucho ruido, no existe clasificación clara. Marcando como Ruido Ambiente.")
+                        detecciones_unicas['Noise_Ambiente'] = {
+                            'species': 'Noise_Ruido Ambiente',
+                            'confidence': 1.0
+                        }
             else:
                 if rms_amplitude > UMBRAL_RUIDO_ALTO:
-                    print("Mucho ruido pero sin clasificación. Marcando como Ruido Ambiente.")
+                    print("Ruido alto detectado. Marcando como Ruido Ambiente.")
                     detecciones_unicas['Noise_Ambiente'] = {
                         'species': 'Noise_Ruido Ambiente',
                         'confidence': 1.0

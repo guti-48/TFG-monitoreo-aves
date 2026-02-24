@@ -45,7 +45,8 @@ class BirdAnalyzer:
         
     def predict(self, audio_path):
         """
-        Analiza el audio usando la librería oficial.
+        analiza el audio usando la librería oficiale e implementamos filtros avanzados
+        detectando multiples especies y ruidos de fondo
         """
         try:
             recording = Recording(
@@ -54,7 +55,9 @@ class BirdAnalyzer:
                 lat=self.lat,
                 lon=self.lon,
                 date=datetime.now(), # Filtra aves migratorias según la fecha
-                min_conf=0.7,        # Filtramos detecciones malas (<70%)
+                min_conf=0.5,        # Filtramos detecciones malas (<70%)
+                overlap = 1.5,       # Solapamiento de 1.5 seg, analizamos 0-3, 1.5-4.5, 3-6
+                sensitivity = 1.25   # Sensibildad para escuchar aves en la leajania
             )
             
             recording.analyze()

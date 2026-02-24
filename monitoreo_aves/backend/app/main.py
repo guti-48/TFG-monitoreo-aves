@@ -109,7 +109,7 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
 
 ## TERCER ENDPOINT --> OBTENER DETECCIONES TODAS LAS DETECCIONES PARA PODER OBSERVARLAS
 @app.get("/detections/")
-def read_detections(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
+def read_detections(skip: int = 0, limit: int = 500, db: Session = Depends(database.get_db)):
     detections = db.query(models.Detection).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
     return detections
 

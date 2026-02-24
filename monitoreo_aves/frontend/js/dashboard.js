@@ -27,52 +27,38 @@ function switchView(viewName, nodeFilter = null) {
     currentView = viewName;
     activeNodeFilter = nodeFilter;
     
-    // Gestión visual de botones
     const btnDash = document.getElementById('btn-dashboard');
     const btnNodes = document.getElementById('btn-nodes');
     const btnHist = document.getElementById('btn-history');
     const btnScience = document.getElementById('btn-science'); 
 
-    // Resetear clases
     if(btnDash) btnDash.className = 'list-group-item text-muted';
     if(btnNodes) btnNodes.className = 'list-group-item text-muted';
     if(btnHist) btnHist.className = 'list-group-item text-muted';
     if(btnScience) btnScience.className = 'list-group-item list-group-item-action bg-transparent text-white-50 border-0 py-3';
 
-    // Activar el actual
+    const container = document.getElementById('main-content');
+    // Aseguramos que el contenedor sea siempre elástico
+    if(container) container.className = "d-flex flex-column flex-grow-1 w-100";
+
     if (viewName === 'dashboard' && btnDash) {
         btnDash.className = 'list-group-item active';
-        // Si venimos de otra vista, reconstruimos el dashboard
-        const container = document.getElementById('main-content');
         container.innerHTML = getDashboardHTML();
         updateDashboard();
     }
     if (viewName === 'nodes' && btnNodes) btnNodes.className = 'list-group-item active';
     if (viewName === 'history' && btnHist) btnHist.className = 'list-group-item active';
     if (viewName === 'science' && btnScience) btnScience.className = 'list-group-item list-group-item-action bg-transparent text-white border-0 py-3 active-nav-item';
-
-    const container = document.getElementById('main-content');
     
-    // Renderizado según la vista
-    if (viewName === 'nodes') {
-        renderNodesView(container);
-    } else if (viewName === 'history') {
-        renderHistoryView(container);
-    } else if (viewName === 'dashboard') {
-        // El dashboard ya se gestiona en updateDashboard, pero forzamos update si cambiamos filtro
-        updateDashboard();
-    } else if(viewName === 'science') {
-        renderScienceView(container);
-    }
+    if (viewName === 'nodes') renderNodesView(container);
+    else if (viewName === 'history') renderHistoryView(container);
+    else if (viewName === 'dashboard') updateDashboard();
+    else if(viewName === 'science') renderScienceView(container);
 }
 
-// --- VISTA HISTÓRICO (TABLA GIGANTE) ---
+// --- VISTA HISTÓRICO (TOTALMENTE ADAPTADA AL 100% DE LA PANTALLA) ---
 async function renderHistoryView(container) {
-    container.innerHTML = `
-        <div class="d-flex justify-content-center align-items-center py-5">
-            <div class="spinner-border text-success" role="status"></div>
-            <span class="ms-3 text-muted">Cargando base de datos completa...</span>
-        </div>`;
+    container.innerHTML = `<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-success" role="status"></div><span class="ms-3 text-muted">Cargando base de datos completa...</span></div>`;
 
     try {
         const response = await fetch(`${API_URL}?limit=500`);
@@ -84,15 +70,15 @@ async function renderHistoryView(container) {
             const timeDate = new Date(d.timestamp);
             const dateStr = timeDate.toLocaleDateString();
             const timeStr = timeDate.toLocaleTimeString();
-            const imgUrl = `${IMG_BASE_URL}${d.filename.replace('.wav', '.png')}`;
+            const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
             const clean = cleanName(d.species);
-
+            
             let icon = '<i class="bi bi-music-note-beamed text-success"></i>';
-            if(d.species.includes("Human") || d.species.includes("Motor")) icon = '<i class="bi bi-boombox text-warning"></i>';
+            if(d.species.includes("Human") || d.species.includes("Motor") || d.species.includes("Noise")) icon = '<i class="bi bi-boombox text-warning"></i>';
 
             rowsHtml += `
             <tr>
-                <td><span class="font-monospace text-muted small">${d.id}</span></td>
+                <td class="text-white-50 small">${d.id}</td>
                 <td>${dateStr} <small class="text-muted">${timeStr}</small></td>
                 <td><div class="d-flex align-items-center"><div class="me-2">${icon}</div><span class="fw-bold text-white">${clean}</span></div></td>
                 <td>${d.device_name || 'RaspberryPi'}</td>
@@ -110,16 +96,22 @@ async function renderHistoryView(container) {
                 <div class="col-12 d-flex justify-content-between align-items-center">
                     <div>
                         <h3 class="fw-bold text-white"><i class="bi bi-database-fill me-2 text-accent"></i>Histórico</h3>
-                        <p class="text-muted">Total registros: ${sortedData.length}</p>
+                        <p class="text-muted mb-0">Total registros: ${sortedData.length}</p>
                     </div>
                     <button class="btn btn-success" onclick="downloadCSV()"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar Excel</button>
                 </div>
             </div>
-            <div class="card shadow-sm border-0 animate-fade-in">
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover table-striped align-middle mb-0">
-                            <thead class="bg-dark text-white text-uppercase small"><tr><th>ID</th><th>Fecha</th><th>Especie</th><th>Nodo</th><th>Confianza</th><th>Foto</th></tr></thead>
+            
+            <div class="card bg-dark shadow-sm border-0 flex-grow-1 d-flex flex-column animate-fade-in history-card-container">
+                <div class="card-body p-0 d-flex flex-column">
+                    <div class="table-container">
+                        <table class="table table-dark table-hover mb-0">
+                            <thead class="table-sticky-header">
+                                <tr>
+                                    <th class="py-3 ps-3">ID</th><th class="py-3">Fecha</th><th class="py-3">Especie</th>
+                                    <th class="py-3">Nodo</th><th class="py-3">Confianza</th><th class="py-3 pe-3">Foto</th>
+                                </tr>
+                            </thead>
                             <tbody>${rowsHtml}</tbody>
                         </table>
                     </div>
@@ -130,53 +122,22 @@ async function renderHistoryView(container) {
     }
 }
 
-// --- VISTA NODOS ---
-function renderNodesView(container) {
-    let cardsHtml = '';
-    MOCK_NODES.forEach(node => {
-        let statusColor = node.status === 'online' ? 'success' : 'secondary';
-        cardsHtml += `
-        <div class="col-md-4">
-            <div class="card h-100 border-0 shadow-sm node-card" onclick="switchView('dashboard', '${node.id}')" style="cursor: pointer;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between mb-3"><div class="icon-box bg-dark text-${statusColor} border border-${statusColor} rounded-circle"><i class="bi bi-hdd-network fs-4"></i></div><span class="badge bg-${statusColor}-subtle text-${statusColor} border border-${statusColor} px-3 rounded-pill">${node.status}</span></div>
-                    <h5 class="fw-bold text-white mb-1">${node.name}</h5>
-                    <p class="text-muted small mb-3">${node.location}</p>
-                    <button class="btn btn-outline-${statusColor} w-100 btn-sm">Ver Telemetría</button>
-                </div>
-            </div>
-        </div>`;
-    });
-    container.innerHTML = `<div class="row mb-4"><div class="col-12"><h3 class="fw-bold text-white">Mis Nodos</h3></div></div><div class="row g-4 animate-fade-in">${cardsHtml}</div>`;
-}
-
-//VISTA DASHBOARD (TIEMPO REAL)
+// --- DASHBOARD TIEMPO REAL ---
 async function updateDashboard() {
     if (currentView !== 'dashboard') return; 
-
     try {
-        const response = await fetch(`${API_URL}?t=${new Date().getTime()}`, {
-            cache: 'no-store'
-        });
+        const response = await fetch(`${API_URL}?t=${new Date().getTime()}`, { cache: 'no-store' });
         let data = await response.json();
         
-        // Si no hay datos, mostramos 0
-        if (!data || data.length === 0) {
-            safeSetText('total-counter', '0');
-            return;
-        }
+        if (!data || data.length === 0) { safeSetText('total-counter', '0'); return; }
 
         const sortedData = data; 
-
-        // --- CÁLCULO DEL NIVEL DE RUIDO GLOBAL ---
         let totalAmp = 0;
         sortedData.forEach(d => { totalAmp += (d.amplitude || 0); });
         let avgAmp = (sortedData.length > 0) ? (totalAmp / sortedData.length) * 500 : 0;
         if (avgAmp > 100) avgAmp = 100;
 
-        let noiseLabel = "Silencioso";
-        let noiseColor = "success"; 
-        let noiseIcon = "bi-tree-fill";
+        let noiseLabel = "Silencioso", noiseColor = "success", noiseIcon = "bi-tree-fill";
         if (avgAmp > 10) { noiseLabel = "Moderado"; noiseColor = "warning"; noiseIcon = "bi-people-fill"; }
         if (avgAmp > 30) { noiseLabel = "Ruidoso"; noiseColor = "danger"; noiseIcon = "bi-speaker-fill"; }
 
@@ -189,90 +150,43 @@ async function updateDashboard() {
             document.getElementById('noise-icon').className = `bi ${noiseIcon} fs-3`;
         }
 
-        // --- FILTRO DE AVES REALES ---
         const birdsOnly = sortedData.filter(d => 
-            !d.species.toLowerCase().includes("noise") && 
-            !d.species.toLowerCase().includes("ruido") &&
-            !d.species.toLowerCase().includes("ambiente")
+            !d.species.toLowerCase().includes("noise") && !d.species.toLowerCase().includes("ruido") && !d.species.toLowerCase().includes("ambiente")
         );
 
-        // Actualizamos contador principal de AVES
         safeSetText('total-counter', birdsOnly.length); 
 
         if (birdsOnly.length > 0) {
-            const latestBird = birdsOnly[0]; // El más reciente
-            
-            // Última actividad (Hora)
+            const latestBird = birdsOnly[0]; 
             safeSetText('last-activity', new Date(latestBird.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
             
-            // Cálculo de Especie Dominante
             const counts = {};
             birdsOnly.forEach(d => { counts[d.species] = (counts[d.species] || 0) + 1; });
             const topSpecies = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
             
             safeSetText('top-species', cleanName(topSpecies));
 
-            // Actualizar la tarjeta gigante y la tabla pequeña inferior
             if (typeof renderLiveFeedSplit === "function") await renderLiveFeedSplit(latestBird);
             if (typeof renderTable === "function") renderTable(birdsOnly.slice(0, 10));
             if (typeof updateChart === "function") updateChart(counts);
-        } else {
-            console.log("Solo hay ruido ambiente, esperando aves...");
         }
-
-    } catch (error) { 
-        console.error("Error Dashboard:", error); 
-    }
+    } catch (error) { console.error("Error Dashboard:", error); }
 }
 
 function getDashboardHTML() {
     return `
     <h4 class="mb-4 fw-bold" id="dashboard-title">Monitorización Global</h4>
     <div class="row g-4 mb-4">
-        <div class="col-md-3">
-            <div class="card kpi-card border-start-success">
-                <div class="card-body d-flex align-items-center justify-content-between">
-                    <div><p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p><h3 class="fw-bold mb-0" id="total-counter">0</h3></div>
-                    <div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card kpi-card border-start-earth">
-                <div class="card-body d-flex align-items-center justify-content-between">
-                    <div><p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p><h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species">-</h4></div>
-                    <div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card kpi-card border-start-info">
-                <div class="card-body d-flex align-items-center justify-content-between">
-                    <div><p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p><h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4></div>
-                    <div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card kpi-card border-start-secondary" id="noise-card">
-                <div class="card-body d-flex align-items-center justify-content-between">
-                    <div>
-                        <p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p>
-                        <h4 class="fw-bold mb-0 fs-5" id="noise-metric">Calculando...</h4>
-                    </div>
-                    <div class="icon-box bg-secondary-subtle" id="noise-icon-box">
-                        <i class="bi bi-boombox fs-3" id="noise-icon"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <div class="col-md-3"><div class="card kpi-card border-start-success"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p><h3 class="fw-bold mb-0" id="total-counter">0</h3></div><div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div></div></div></div>
+        <div class="col-md-3"><div class="card kpi-card border-start-earth"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p><h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species">-</h4></div><div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div></div></div></div>
+        <div class="col-md-3"><div class="card kpi-card border-start-info"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p><h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4></div><div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div></div></div></div>
+        <div class="col-md-3"><div class="card kpi-card border-start-secondary" id="noise-card"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p><h4 class="fw-bold mb-0 fs-5" id="noise-metric">Calculando...</h4></div><div class="icon-box bg-secondary-subtle" id="noise-icon-box"><i class="bi bi-boombox fs-3" id="noise-icon"></i></div></div></div></div>
     </div>
-
     <div class="row g-4 mb-5">
-        <div class="col-lg-7"><div class="card h-100 shadow-sm main-detection-split border-0 overflow-hidden"><div class="card-body p-0" id="live-feed-container"><div class="d-flex align-items-center justify-content-center h-100 text-muted"><p>Esperando datos...</p></div></div></div></div>
+        <div class="col-lg-7"><div class="card shadow-sm border-0 bg-dark overflow-hidden" style="min-height: 420px;"><div class="card-body p-0 d-flex flex-column h-100" id="live-feed-container"><div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted"><p>Esperando datos...</p></div></div></div></div>
         <div class="col-lg-5"><div class="card h-100 shadow-sm border-0"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold m-0">Distribución de Especies</h5></div><div class="card-body"><canvas id="speciesChart" style="max-height: 300px;"></canvas></div></div></div>
     </div>
-    <div class="row"><div class="col-12"><div class="card shadow-sm border-0"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold m-0">Registro Reciente</h5></div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="bg-dark-subtle text-uppercase small"><tr><th class="ps-4">Hora</th><th>Especie</th><th>Confianza</th><th>Espectrograma</th><th class="text-end pe-4">ID</th></tr></thead><tbody id="history-table-body"></tbody></table></div></div></div></div>`;
+    <div class="row"><div class="col-12"><div class="card shadow-sm border-0 bg-dark"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold text-white m-0">Registro Reciente</h5></div><div class="table-responsive"><table class="table table-dark table-hover align-middle mb-0"><thead class="bg-dark-subtle text-uppercase small"><tr><th class="ps-4">Hora</th><th>Especie</th><th>Confianza</th><th>Espectrograma</th><th class="text-end pe-4">ID</th></tr></thead><tbody id="history-table-body"></tbody></table></div></div></div></div>`;
 }
 
 async function downloadCSV() {
@@ -298,14 +212,16 @@ async function getSpeciesImageUrl(speciesRawName) {
     let clean = speciesRawName;
     if (speciesRawName.includes('_')) clean = speciesRawName.split('_')[1]; 
     clean = clean.replace(/_/g, ' ').trim();
-
-    if (NOISE_MAP[clean] || clean.includes("Human") || clean.includes("Motor")) {
+    if (NOISE_MAP[clean] || clean.includes("Human") || clean.includes("Motor") || clean.includes("Noise")) {
         if (clean.includes("Human")) return ASSETS_PATH + 'human.png';
-        if (clean.includes("Motor") || clean.includes("Ruido")) return ASSETS_PATH + 'ruido_amb.png'; 
+        if (clean.includes("Motor") || clean.includes("Ruido") || clean.includes("Noise")) return ASSETS_PATH + 'ruido_amb.png'; 
         return PLACEHOLDER_IMG;
     }
+    const WIKI_EXACT_PAGES = { 'Merlin': 'Merlin (bird)', 'Kite': 'Kite (bird)' };
+    let searchTitle = WIKI_EXACT_PAGES[clean] || clean;
+
     try {
-        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(clean)}&prop=pageimages&format=json&pithumbsize=600&redirects=1&origin=*`;
+        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTitle)}&prop=pageimages&format=json&pithumbsize=600&redirects=1&origin=*`;
         const res = await fetch(wikiUrl);
         const data = await res.json();
         const pages = data.query.pages;
@@ -315,28 +231,41 @@ async function getSpeciesImageUrl(speciesRawName) {
     return PLACEHOLDER_IMG;
 }
 
+// --- FOTO Y BARRA DE PROGRESO ARREGLADA ---
 async function renderLiveFeedSplit(d) {
     const container = document.getElementById('live-feed-container');
     if (!container) return;
     const species = cleanName(d.species);
     const percent = (d.confidence * 100).toFixed(0);
-    const spectrogramUrl = `${IMG_BASE_URL}${d.filename.replace('.wav', '.png')}`;
+    const spectrogramUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
     const timeStr = new Date(d.timestamp).toLocaleTimeString();
-    
-    // Solo si cambia la especie, buscamos foto nueva (optimización simple)
-    // Para simplificar, la pedimos siempre aquí:
     const speciesPhotoUrl = await getSpeciesImageUrl(d.species);
 
     container.innerHTML = `
-        <div class="main-detection-split">
-            <div class="split-photo" style="background-image: url('${speciesPhotoUrl}');">
+        <div class="main-detection-split w-100">
+            <div class="split-photo">
+                <img src="${speciesPhotoUrl}" class="bird-photo" onerror="this.src='${PLACEHOLDER_IMG}'">
                 <div class="photo-overlay-label"><i class="bi bi-camera-fill me-2"></i>Imagen de Referencia</div>
             </div>
+            
             <div class="split-info">
                 <h6 class="text-muted text-uppercase fw-bold mb-1">Detección en vivo - ${timeStr}</h6>
-                <h2 class="display-6 fw-bold text-white mb-3">${species}</h2>
-                <div class="d-flex align-items-center mb-2"><span class="badge bg-success me-2 fs-6">${percent}% Confianza</span><div class="progress flex-grow-1" style="height: 8px; background-color: #333;"><div class="progress-bar bg-success" role="progressbar" style="width: ${percent}%"></div></div></div>
-                <div class="spectrogram-container"><img src="${spectrogramUrl}" class="img-fluid w-100" style="height: 200px; object-fit: fill; filter: contrast(1.1) brightness(1.1);" onerror="this.style.opacity='0.3';"><div class="bg-dark text-muted small px-2 py-1 d-flex justify-content-between"><span><i class="bi bi-soundwave me-2"></i>Espectrograma</span><span class="font-monospace text-white-50">${d.filename}</span></div></div>
+                <h2 class="display-6 fw-bold text-white mb-3 text-truncate" title="${species}">${species}</h2>
+                
+                <div class="d-flex align-items-center mb-4 w-100">
+                    <span class="badge bg-success me-3 fs-6 px-3 py-2">${percent}% Confianza</span>
+                    <div class="progress w-100" style="height: 12px; background-color: rgba(255,255,255,0.2);">
+                        <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" role="progressbar" style="width: ${percent}%;"></div>
+                    </div>
+                </div>
+                
+                <div class="spectrogram-container mt-auto d-flex flex-column">
+                    <img src="${spectrogramUrl}" class="spectrogram-img" onerror="this.style.opacity='0.3';">
+                    <div class="bg-dark text-muted small px-3 py-2 d-flex justify-content-between align-items-center border-top border-secondary mt-auto">
+                        <span><i class="bi bi-soundwave me-2"></i>Espectrograma</span>
+                        <span class="font-monospace text-white-50 text-truncate" style="max-width: 50%;" title="${d.filename}">${d.filename}</span>
+                    </div>
+                </div>
             </div>
         </div>`;
 }
@@ -346,7 +275,7 @@ function renderTable(data) {
     if (!tbody) return;
     tbody.innerHTML = "";
     data.forEach(d => {
-        const imgUrl = `${IMG_BASE_URL}${d.filename.replace('.wav', '.png')}`;
+        const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
         const clean = cleanName(d.species);
         let icon = '<i class="bi bi-feather text-success me-2"></i>';
         if(NOISE_MAP[clean] || d.species.includes("Human") || d.species.includes("Motor")) icon = '<i class="bi bi-boombox text-muted me-2"></i>';
@@ -368,12 +297,9 @@ function updateChart(counts) {
 function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.innerText = text; }
 function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.split('_')[1] || name; return cleaned.charAt(0).toUpperCase() + cleaned.slice(1); }
 
+// --- VISTA ANÁLISIS ECO (TOTALMENTE ADAPTADA AL 100% DE LA PANTALLA) ---
 async function renderScienceView(container) {
-    container.innerHTML = `
-        <div class="d-flex justify-content-center align-items-center py-5">
-            <div class="spinner-grow text-info" role="status"></div>
-            <span class="ms-3 text-white">Procesando datos del nodo (Ecología + Bioacústica)...</span>
-        </div>`;
+    container.innerHTML = `<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-grow text-info" role="status"></div><span class="ms-3 text-white">Procesando datos del nodo...</span></div>`;
 
     try {
         const response = await fetch("http://127.0.0.1:8000/analytics/biodiversity");
@@ -384,7 +310,6 @@ async function renderScienceView(container) {
             return;
         }
 
-        // Como trabajaremos con un único nodo principal, cogemos el primero
         const r = report[0]; 
         let colorCalidad = r.calidad === 'Excelente' ? 'success' : (r.calidad === 'Moderado' ? 'warning' : 'danger');
 
@@ -392,31 +317,19 @@ async function renderScienceView(container) {
             <div class="row mb-4 animate-fade-in text-center">
                 <div class="col-12">
                     <h3 class="fw-bold text-white"><i class="bi bi-cpu me-2 text-info"></i>Análisis Científico del Nodo</h3>
-                    <p class="text-muted">Procesamiento Edge en tiempo real.</p>
                 </div>
             </div>
-            
             <div class="row justify-content-center animate-fade-in mb-4">
                 <div class="col-lg-8">
                     <div class="card shadow-sm border-0 bg-dark text-white">
                         <div class="card-header border-0 py-3 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill me-2 text-info"></i>${r.zona}</h5>
-                            <span class="badge bg-${colorCalidad}">${r.calidad}</span>
+                            <h5 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill me-2 text-info"></i>${r.zona}</h5><span class="badge bg-${colorCalidad}">${r.calidad}</span>
                         </div>
                         <div class="card-body">
                             <div class="row text-center g-3">
-                                <div class="col-4">
-                                    <h6 class="text-muted small text-uppercase">Riqueza (S)</h6>
-                                    <h3 class="fw-bold">${r.riqueza}</h3>
-                                </div>
-                                <div class="col-4">
-                                    <h6 class="text-muted small text-uppercase">Abundancia</h6>
-                                    <h3 class="fw-bold">${r.abundancia}</h3>
-                                </div>
-                                <div class="col-4">
-                                    <h6 class="text-muted small text-uppercase">Shannon (H')</h6>
-                                    <h3 class="fw-bold text-${colorCalidad}">${r.shannon}</h3>
-                                </div>
+                                <div class="col-4"><h6 class="text-muted small text-uppercase">Riqueza (S)</h6><h3 class="fw-bold">${r.riqueza}</h3></div>
+                                <div class="col-4"><h6 class="text-muted small text-uppercase">Abundancia</h6><h3 class="fw-bold">${r.abundancia}</h3></div>
+                                <div class="col-4"><h6 class="text-muted small text-uppercase">Shannon (H')</h6><h3 class="fw-bold text-${colorCalidad}">${r.shannon}</h3></div>
                             </div>
                         </div>
                     </div>
@@ -438,67 +351,46 @@ async function renderScienceView(container) {
                 </div>
             </div>
             
-            <div class="row animate-fade-in">
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm bg-dark text-white">
-                        <div class="card-header border-0 py-3">
-                            <h5 class="fw-bold m-0"><i class="bi bi-map-fill me-2 text-info"></i>Cobertura Geoespacial</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <div id="biodiversityMap" style="height: 400px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; z-index: 1;"></div>
+            <div class="row animate-fade-in flex-grow-1" style="min-height: 400px;">
+                <div class="col-12 d-flex flex-column">
+                    <div class="card border-0 shadow-sm bg-dark text-white flex-grow-1 d-flex flex-column">
+                        <div class="card-header border-0 py-3"><h5 class="fw-bold m-0"><i class="bi bi-map-fill me-2 text-info"></i>Cobertura Geoespacial</h5></div>
+                        <div class="card-body p-0 flex-grow-1 position-relative">
+                            <div id="biodiversityMap" style="position: absolute; top:0; bottom:0; left:0; right:0; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; z-index: 1;"></div>
                         </div>
                     </div>
                 </div>
             </div>`;
 
-        //dibujo radar grafica
-        new Chart(document.getElementById('radarChart').getContext('2d'), {
-            type: 'radar',
-            data: {
-                labels: ['ACI', 'ADI', 'AEI', 'BIO', 'NDSI'],
-                datasets: [{
-                    label: 'Perfil Acústico',
-                    data: [r.aci_avg/100, r.adi_avg, r.aei_avg, r.bio_avg/10, r.ndsi_avg+1],
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)', borderColor: 'rgba(54, 162, 235, 1)', pointBackgroundColor: 'rgba(54, 162, 235, 1)'
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { r: { ticks: { display: false }, grid: { color: '#ffffff20' }, pointLabels: { color: '#aaa' } } }, plugins: { legend: { display: false } } }
+        new Chart(document.getElementById('radarChart').getContext('2d'), { type: 'radar', data: { labels: ['ACI', 'ADI', 'AEI', 'BIO', 'NDSI'], datasets: [{ label: 'Perfil Acústico', data: [r.aci_avg/100, r.adi_avg, r.aei_avg, r.bio_avg/10, r.ndsi_avg+1], backgroundColor: 'rgba(54, 162, 235, 0.2)', borderColor: 'rgba(54, 162, 235, 1)', pointBackgroundColor: 'rgba(54, 162, 235, 1)' }] }, options: { responsive: true, maintainAspectRatio: false, scales: { r: { ticks: { display: false }, grid: { color: '#ffffff20' }, pointLabels: { color: '#aaa' } } }, plugins: { legend: { display: false } } } });
+        new Chart(document.getElementById('scienceChart').getContext('2d'), { type: 'bar', data: { labels: ['Shannon (Diversidad)', 'Pielou (Equilibrio)', 'Simpson (Dominancia)'], datasets: [{ label: "Índices", data: [r.shannon, r.pielou, r.simpson], backgroundColor: ['#4bc0c0', '#9966ff', '#ff9f40'] }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#ffffff10' }, ticks: { color: '#aaa' } }, x: { grid: { display: false }, ticks: { color: '#fff' } } }, plugins: { legend: { display: false } } } });
+
+        fetch("http://127.0.0.1:8000/analytics/map").then(res => res.json()).then(mapData => {
+            if(mapData.error) return;
+            const map = L.map('biodiversityMap').setView([mapData.lat, mapData.lon], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
+            const marker = L.marker([mapData.lat, mapData.lon]).addTo(map);
+            marker.bindPopup(`<b>Nodo: ${mapData.ciudad}</b><br>Biodiversidad (H'): ${mapData.shannon}`).openPopup();
+            const circleColor = mapData.shannon > 1.5 ? '#28a745' : '#dc3545';
+            L.circle([mapData.lat, mapData.lon], { color: circleColor, fillColor: circleColor, fillOpacity: 0.2, radius: mapData.radio_km * 1000 }).addTo(map);
         });
-
-        // dibujo barras grafica
-        new Chart(document.getElementById('scienceChart').getContext('2d'), {
-            type: 'bar',
-            data: { 
-                labels: ['Shannon (Diversidad)', 'Pielou (Equilibrio)', 'Simpson (Dominancia)'], 
-                datasets: [{ label: "Índices", data: [r.shannon, r.pielou, r.simpson], backgroundColor: ['#4bc0c0', '#9966ff', '#ff9f40'] }] 
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { grid: { color: '#ffffff10' }, ticks: { color: '#aaa' } }, x: { grid: { display: false }, ticks: { color: '#fff' } } }, plugins: { legend: { display: false } } }
-        });
-
-        //dibujo mapa
-        fetch("http://127.0.0.1:8000/analytics/map")
-            .then(res => res.json())
-            .then(mapData => {
-                if(mapData.error) return;
-                const map = L.map('biodiversityMap').setView([mapData.lat, mapData.lon], 13);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
-                const marker = L.marker([mapData.lat, mapData.lon]).addTo(map);
-                marker.bindPopup(`<b>Nodo: ${mapData.ciudad}</b><br>Biodiversidad (H'): ${mapData.shannon}`).openPopup();
-                const circleColor = mapData.shannon > 1.5 ? '#28a745' : '#dc3545';
-                L.circle([mapData.lat, mapData.lon], { color: circleColor, fillColor: circleColor, fillOpacity: 0.2, radius: mapData.radio_km * 1000 }).addTo(map);
-            });
-
     } catch (e) { container.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`; }
+}
+
+function renderNodesView(container) {
+    let nodesHtml = '';
+    MOCK_NODES.forEach(node => {
+        const statusColor = node.status === 'online' ? 'success' : 'danger';
+        const pulseClass = node.status === 'online' ? 'animate-pulse' : '';
+        nodesHtml += `<div class="col-md-4 mb-4"><div class="card bg-dark text-white border-0 shadow-sm node-card h-100"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-3"><h5 class="fw-bold m-0"><i class="bi bi-cpu text-info me-2"></i>${node.name}</h5><span class="badge bg-${statusColor} ${pulseClass}">${node.status.toUpperCase()}</span></div><p class="text-muted small mb-1"><i class="bi bi-geo-alt me-1"></i> ${node.location}</p><p class="text-muted small mb-1"><i class="bi bi-hdd-network me-1"></i> IP: ${node.ip}</p><p class="text-muted small mb-3"><i class="bi bi-record-circle me-1"></i> ID: <span class="font-monospace">${node.id}</span></p><button class="btn btn-outline-info btn-sm w-100" onclick="switchView('dashboard')"><i class="bi bi-activity me-1"></i> Ver Detecciones</button></div></div></div>`;
+    });
+    container.innerHTML = `<div class="row mb-4 animate-fade-in"><div class="col-12"><h3 class="fw-bold text-white"><i class="bi bi-router me-2 text-accent"></i>Red de Nodos (ARUs)</h3><p class="text-muted">Estado en tiempo real de los dispositivos de monitorización de campo.</p></div></div><div class="row animate-fade-in">${nodesHtml}</div>`;
 }
 
 // --- ARRANQUE ---
 document.addEventListener('DOMContentLoaded', () => {
-    // IMPORTANTE: Primero inyectamos el HTML del dashboard
     const container = document.getElementById('main-content');
-    if (container) container.innerHTML = getDashboardHTML();
-    // Luego activamos la vista por defecto
+    if (container) { container.className = "d-flex flex-column flex-grow-1 w-100"; container.innerHTML = getDashboardHTML(); }
     switchView('dashboard');
-    // Y el bucle
     setInterval(updateDashboard, 4000);
 });
-

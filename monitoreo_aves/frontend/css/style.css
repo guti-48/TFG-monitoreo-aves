@@ -1,18 +1,13 @@
 /* --- VARIABLES DE COLOR PROFESIONALES --- */
 :root {
-    /* Paleta Naturaleza Nocturna */
-    --bg-main: #121214;       /* Fondo principal muy oscuro */
-    --bg-secondary: #1c1c1f;  /* Fondo de tarjetas/sidebar */
-    --bg-tertiary: #252529;   /* Fondo elementos hover */
-    
+    --bg-main: #121214;       
+    --bg-secondary: #1c1c1f;  
+    --bg-tertiary: #252529;   
     --color-text-main: #e0e0e0;
     --color-text-muted: #8f9199;
-    
-    /* Acentos */
-    --accent-success: #2E7D32; /* Verde bosque profundo */
-    --accent-earth: #C49A6C;   /* Dorado tierra apagado */
-    --accent-info: #0288D1;    /* Azul técnico */
-    
+    --accent-success: #2E7D32; 
+    --accent-earth: #C49A6C;   
+    --accent-info: #0288D1;    
     --sidebar-width: 260px;
 }
 
@@ -20,169 +15,128 @@
 body {
     background-color: var(--bg-main);
     color: var(--color-text-main);
-    font-family: 'Roboto', sans-serif; /* Fuente legible para datos */
+    font-family: 'Roboto', sans-serif; 
     overflow-x: hidden;
 }
 
-h1, h2, h3, h4, h5, .brand-text {
-    font-family: 'Montserrat', sans-serif; /* Fuente elegante para títulos */
+h1, h2, h3, h4, h5, .brand-text { font-family: 'Montserrat', sans-serif; }
+
+/* --- ESTRUCTURA ELÁSTICA PRINCIPAL (MAGIA RESPONSIVE 100% ALTO) --- */
+#wrapper { display: flex; width: 100%; align-items: stretch; min-height: 100vh; }
+#sidebar {
+    min-width: var(--sidebar-width); max-width: var(--sidebar-width);
+    background-color: var(--bg-secondary); min-height: 100vh;
+    border-right: 1px solid rgba(255,255,255,0.05); position: fixed; z-index: 100;
+}
+#content {
+    width: calc(100% - var(--sidebar-width)); margin-left: var(--sidebar-width);
+    min-height: 100vh; padding: 2rem; background-color: var(--bg-main);
+    display: flex; flex-direction: column; /* Obliga a su contenido a estirarse */
+}
+#main-content {
+    flex: 1; display: flex; flex-direction: column; /* Contenedor dinámico */
 }
 
-/* Estructura */
-#wrapper {
-    display: flex;
-    width: 100%;
-    min-height: 100vh;
+/* --- PESTAÑAS DEL MENÚ LATERAL --- */
+.list-group-item {
+    background-color: transparent; border: none;
+    color: var(--color-text-muted); padding: 15px 20px;
+    border-radius: 8px; margin-bottom: 5px; transition: all 0.3s ease;
 }
+.list-group-item:hover { background-color: var(--bg-tertiary); color: white; }
+.list-group-item.active { background-color: var(--accent-success) !important; color: white !important; font-weight: bold; }
+.active-nav-item { background-color: var(--accent-info) !important; color: white !important; font-weight: bold; border-radius: 8px;}
 
-/* --- SIDEBAR PROFESIONAL --- */
-#sidebar-wrapper {
-    width: var(--sidebar-width);
-    flex-shrink: 0;
-    background-color: var(--bg-secondary);
-    border-right: 1px solid #2a2a2e;
+/* --- TARJETAS KPI (DASHBOARD) --- */
+.kpi-card {
+    background-color: var(--bg-secondary); border: none; border-radius: 8px;
+    transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
 }
-
-.brand-text { color: white; letter-spacing: 1px; }
-.text-accent { color: var(--accent-success); }
-
-#sidebar-wrapper .list-group-item {
-    border: none;
-    padding: 18px 30px;
-    color: var(--color-text-muted);
-    background: transparent;
-    font-weight: 500;
-    transition: all 0.3s ease;
-    border-left: 4px solid transparent;
-}
-
-#sidebar-wrapper .list-group-item:hover {
-    color: white;
-    background-color: var(--bg-tertiary);
-}
-
-#sidebar-wrapper .list-group-item.active {
-    color: white;
-    background: linear-gradient(90deg, rgba(46,125,50,0.2) 0%, transparent 100%);
-    border-left-color: var(--accent-success);
-}
-
-/* --- NAVBAR Y CONTENIDO --- */
-#page-content-wrapper { flex-grow: 1; }
-.main-navbar { background-color: var(--bg-secondary); }
-
-/* --- TARJETAS (CARDS) --- */
-.card {
-    background-color: var(--bg-secondary);
-    border: 1px solid #2a2a2e;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-}
-
-/* KPI Cards */
-.kpi-card { transition: transform 0.2s; }
 .kpi-card:hover { transform: translateY(-3px); }
+.border-start-success { border-left: 4px solid var(--accent-success) !important; }
+.border-start-earth { border-left: 4px solid var(--accent-earth) !important; }
+.border-start-info { border-left: 4px solid var(--accent-info) !important; }
+.border-start-secondary { border-left: 4px solid #6c757d !important; }
+
 .icon-box {
-    width: 50px; height: 50px;
+    width: 48px; height: 48px; border-radius: 12px;
     display: flex; align-items: center; justify-content: center;
-    border-radius: 12px;
 }
+.bg-success-subtle { background-color: rgba(46,125,50,0.15) !important; }
+.bg-earth-subtle { background-color: rgba(196,154,108,0.15) !important; }
+.bg-info-subtle { background-color: rgba(2,136,209,0.15) !important; }
+.bg-secondary-subtle { background-color: rgba(255,255,255,0.1) !important; }
 
-/* Bordes de color para KPIs */
-.border-start-success { border-left: 4px solid var(--accent-success)!important; }
-.border-start-earth { border-left: 4px solid var(--accent-earth)!important; }
-.border-start-info { border-left: 4px solid var(--accent-info)!important; }
-
-/* Colores de texto custom */
-.text-success { color: var(--accent-success)!important; }
-.text-earth { color: var(--accent-earth)!important; }
-
-/* Fondos sutiles */
-.bg-success-subtle { background-color: rgba(46,125,50,0.15)!important; }
-.bg-earth-subtle { background-color: rgba(196,154,108,0.15)!important; }
-.bg-info-subtle { background-color: rgba(2,136,209,0.15)!important; }
-
-
-/* --- MAIN DETECTION CARD (EL NUEVO DISEÑO SPLIT) --- */
+/* --- VISTA SPLIT: FOTO Y ESPECTROGRAMA --- */
 .main-detection-split {
-    display: flex;
-    height: 480px; /* Altura fija para diseño robusto */
-    border-radius: 8px;
-    overflow: hidden;
+    display: flex; flex-direction: row; 
+    min-height: 420px; height: auto !important; 
+    background-color: var(--bg-secondary); border-radius: 12px; overflow: hidden;
 }
-
-.split-photo {
-    flex: 1; /* Toma el espacio izquierdo */
-    background-size: cover;
-    background-position: center center;
-    min-width: 40%;
-    border-right: 1px solid #2a2a2e;
-    position: relative;
-    background-repeat: no-repeat;
+.split-photo { flex: 1 1 45%; position: relative; background-color: #000; min-width: 300px; }
+.bird-photo {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: cover; object-position: center; opacity: 0.95; transition: opacity 0.3s ease;
 }
-
+.split-photo:hover .bird-photo { opacity: 1; }
 .photo-overlay-label {
-    position: absolute; bottom: 20px; left: 20px;
-    background: rgba(0,0,0,0.7);
-    color: white; padding: 5px 15px; border-radius: 20px;
-    font-size: 0.85rem; font-weight: bold;
-    backdrop-filter: blur(4px);
+    position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.7); 
+    color: white; padding: 6px 15px; border-radius: 30px; font-size: 0.85rem; backdrop-filter: blur(5px); z-index: 10;
 }
-
-.split-info {
-    flex: 1.4; 
-    padding: 2rem;
-    display: flex; flex-direction: column; justify-content: center;
-}
-
+.split-info { flex: 1 1 55%; padding: 2.5rem; display: flex; flex-direction: column; justify-content: space-between; min-width: 350px; }
 .spectrogram-container {
-    margin-top: auto; 
-    border-radius: 8px;
-    overflow: hidden;
-    border: 1px solid #444; 
-    background-color: #000; 
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
+    background-color: #000; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); margin-top: 1rem;
+}
+.spectrogram-img {
+    width: 100%; height: 160px; object-fit: cover; object-position: bottom; filter: contrast(1.2) brightness(1.1);
 }
 
-/* --- TABLA --- */
-.table-hover tbody tr:hover {
-    background-color: var(--bg-tertiary);
-}
-.table-img-preview {
-    height: 35px; width: 60px;
-    object-fit: cover;
-    border-radius: 4px;
-    border: 1px solid #444;
-    transition: transform 0.2s;
-}
-.table-img-preview:hover {
-    transform: scale(3); z-index: 10; position: relative;
-    border-color: var(--accent-success); cursor: zoom-in;
-}
-.species-thumb-small {
-    width: 40px; height: 40px;
-    border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--bg-tertiary);
-    margin-right: 10px;
-}
+/* --- TABLA HISTÓRICA ELÁSTICA (100% PANTALLA) --- */
+.history-card-container { min-height: 400px; }
+.table-container { flex: 1; overflow-y: auto; }
+.table-sticky-header th { position: sticky; top: 0; background-color: #212529 !important; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.5); border-bottom: none; }
 
-/* Animación de pulso vivo */
+/* --- UTILIDADES, EFECTOS Y ANIMACIONES --- */
+.text-accent { color: var(--accent-success); }
+.text-earth { color: var(--accent-earth); }
+
+.table-img-preview { width: 60px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #444; transition: transform 0.2s; }
+.table-img-preview:hover { transform: scale(3); z-index: 10; position: relative; border-color: var(--accent-success); cursor: zoom-in; }
+
+.node-card:hover { transform: translateY(-5px); border: 1px solid var(--accent-success)!important; box-shadow: 0 5px 15px rgba(46,125,50,0.2); }
+
 @keyframes pulse-green {
     0% { box-shadow: 0 0 0 0 rgba(46,125,50, 0.7); }
     70% { box-shadow: 0 0 0 10px rgba(46,125,50, 0); }
     100% { box-shadow: 0 0 0 0 rgba(46,125,50, 0); }
 }
-.animate-pulse { animation: pulse-green 2s infinite; }
-
-.node-card:hover {
-    transform: translateY(-5px);
-    border: 1px solid var(--accent-success)!important;
-}
-
-.animate-fade-in {
-    animation: fadeIn 0.5s ease-in;
-}
-
+.animate-pulse { animation: pulse-green 2s infinite; border-radius: 50%; }
+.animate-fade-in { animation: fadeIn 0.4s ease-in; }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- RESPONSIVE / ADAPTABILIDAD --- */
+@media (max-width: 1200px) {
+    #content { padding: 1.5rem; }
+    .split-info { padding: 1.5rem; min-width: 250px; }
+    .display-6 { font-size: 2rem; }
+}
+
+@media (max-width: 992px) {
+    .main-detection-split { flex-direction: column !important; height: auto !important; }
+    .split-photo { flex: none; width: 100%; height: 300px; min-height: 300px; }
+    .split-info { width: 100%; }
+    #sidebar { min-width: 80px; max-width: 80px; }
+    #sidebar .brand-text, #sidebar .list-group-item span { display: none; }
+    #sidebar .list-group-item i { font-size: 1.5rem; margin: 0 !important; }
+    #sidebar .list-group-item { text-align: center; padding: 15px 0; }
+    #content { width: calc(100% - 80px); margin-left: 80px; padding: 1rem; }
+}
+
+@media (max-width: 768px) {
+    .kpi-card h3 { font-size: 1.5rem; }
+    .kpi-card h4 { font-size: 1.2rem; }
+    .split-photo { height: 200px; min-height: 200px; }
 }

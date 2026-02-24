@@ -198,5 +198,5 @@ def obetenerDatosMapa():
         "lat": lat,
         "lon": lon,
         "shannon": shannon_global,
-        "radio_km": 4
+        "radio_km": 1
     }
