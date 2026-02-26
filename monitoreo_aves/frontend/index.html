@@ -2,69 +2,82 @@
 <html lang="es" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BirdMonitor | Panel Control de Datos</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <link rel="stylesheet" href="css/style.css?v=999">
+    <link rel="stylesheet" href="css/style.css?v=1000">
 </head>
+
 <body>
+    <div id="app-shell">
 
-    <div id="wrapper">
-        
-        <div id="sidebar-wrapper" class="d-flex flex-column">
-            <div class="sidebar-heading text-center py-4 fs-4 fw-bold text-uppercase brand-text">
-                <i class="bi bi-feather me-2"></i>BirdMonitor<span class="text-accent">.AI</span>
-            </div>
+        <aside id="sidebar-wrapper">
             
-            <div class="list-group list-group-flush my-3 flex-grow-1">
-                
-                <a href="#" id="btn-dashboard" class="list-group-item active" onclick="switchView('dashboard')">
-                    <i class="bi bi-activity me-3"></i>Tiempo Real
-                </a>
-                
-                <a href="#" id="btn-history" class="list-group-item text-muted" onclick="switchView('history')">
-                    <i class="bi bi-collection-play me-3"></i>Histórico
-                </a>
-
-                <a href="#" id="btn-science" class="list-group-item text-muted" onclick="switchView('science')">
-                    <i class="bi bi-bar-chart-line me-3"></i>Análisis Eco
-                </a>
-                <a href="#" id="btn-nodes" class="list-group-item text-muted" onclick="switchView('nodes')">
-                    <i class="bi bi-hdd-network me-3"></i>Nodos
-                </a>
-                
-                <a href="#" class="list-group-item text-muted mt-auto">
-                    <i class="bi bi-gear me-3"></i>Ajustes
-                </a>
-            </div>
-        </div>
-
-        <div id="page-content-wrapper">
-            
-            <nav class="navbar navbar-expand-lg navbar-dark px-4 py-3 border-bottom border-dark-subtle main-navbar">
-                <div class="container-fluid">
-                    <h2 class="fs-5 m-0 fw-semibold">
-                        <span id="dashboard-title"><i class="bi bi-broadcast text-success me-2 animate-pulse"></i>Monitorización Global</span>
-                    </h2>
-                    <div class="ms-auto d-flex align-items-center status-indicator">
-                        <span class="me-2 text-muted small">Estado del Sistema:</span>
-                        <span class="badge bg-success-subtle text-success border border-success px-3 py-2 rounded-pill"><i class="bi bi-check-circle-fill me-2"></i>En Línea</span>
-                    </div>
+            <div class="sidebar-brand">
+                <i class="bi bi-feather brand-icon"></i>
+                <div class="brand-text">
+                    BirdMonitor<span class="brand-accent">.AI</span>
                 </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" id="btn-dashboard" class="nav-link active" onclick="switchView('dashboard'); return false;">
+                    <i class="bi bi-activity"></i>
+                    <span>Tiempo Real</span>
+                </a>
+                <a href="#" id="btn-history" class="nav-link" onclick="switchView('history'); return false;">
+                    <i class="bi bi-database-fill"></i>
+                    <span>Histórico</span>
+                </a>
+                <a href="#" id="btn-science" class="nav-link" onclick="switchView('science'); return false;">
+                    <i class="bi bi-bar-chart-line-fill"></i>
+                    <span>Análisis Eco</span>
+                </a>
+                <a href="#" id="btn-nodes" class="nav-link" onclick="switchView('nodes'); return false;">
+                    <i class="bi bi-hdd-network"></i>
+                    <span>Nodos</span>
+                </a>
             </nav>
 
-            <div class="container-fluid px-4 py-4" id="main-content">
-                </div>
+            <div class="sidebar-footer">
+                <a href="#" class="nav-link">
+                    <i class="bi bi-gear"></i>
+                    <span>Ajustes</span>
+                </a>
+                <div class="sidebar-version">v2.1 · Sevilla, ES</div>
+            </div>
+        </aside>
 
-        </div> </div> <script src="js/dashboard.js?v=999"></script>
+
+        <div id="page-content-wrapper">
+
+            <!-- Topbar -->
+            <header id="topbar">
+                <div class="topbar-left">
+                    <i class="bi bi-broadcast-pin topbar-icon"></i>
+                    <span id="topbar-view-title">Monitorización Global</span>
+                </div>
+                <div class="topbar-right">
+                    <span class="text-muted small me-2">Estado del Sistema:</span>
+                    <span class="status-pill">
+                        <span class="status-dot"></span>
+                        En Línea
+                    </span>
+                </div>
+            </header>
+
+            <!-- Contenido dinámico -->
+            <main id="main-content"></main>
+
+        </div>
+    </div>
+
+    <script src="js/dashboard.js?v=1000"></script>
 </body>
 </html>

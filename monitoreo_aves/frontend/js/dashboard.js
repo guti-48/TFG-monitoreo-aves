@@ -26,34 +26,43 @@ const MOCK_NODES = [
 function switchView(viewName, nodeFilter = null) {
     currentView = viewName;
     activeNodeFilter = nodeFilter;
-    
-    const btnDash = document.getElementById('btn-dashboard');
-    const btnNodes = document.getElementById('btn-nodes');
-    const btnHist = document.getElementById('btn-history');
-    const btnScience = document.getElementById('btn-science'); 
 
-    if(btnDash) btnDash.className = 'list-group-item text-muted';
-    if(btnNodes) btnNodes.className = 'list-group-item text-muted';
-    if(btnHist) btnHist.className = 'list-group-item text-muted';
-    if(btnScience) btnScience.className = 'list-group-item list-group-item-action bg-transparent text-white-50 border-0 py-3';
+    const btnDash    = document.getElementById('btn-dashboard');
+    const btnNodes   = document.getElementById('btn-nodes');
+    const btnHist    = document.getElementById('btn-history');
+    const btnScience = document.getElementById('btn-science');
+
+    [btnDash, btnNodes, btnHist, btnScience].forEach(btn => {
+        if (btn) btn.className = 'nav-link';
+    });
+
+    if (viewName === 'dashboard' && btnDash)  btnDash.className  = 'nav-link active';
+    if (viewName === 'history'   && btnHist)  btnHist.className  = 'nav-link active';
+    if (viewName === 'nodes'     && btnNodes) btnNodes.className = 'nav-link active';
+    if (viewName === 'science'   && btnScience) btnScience.className = 'nav-link active';
 
     const container = document.getElementById('main-content');
-    // Aseguramos que el contenedor sea siempre elástico
-    if(container) container.className = "d-flex flex-column flex-grow-1 w-100";
+    if (!container) return;
 
-    if (viewName === 'dashboard' && btnDash) {
-        btnDash.className = 'list-group-item active';
+    // Clase base siempre presente
+    container.className = 'd-flex flex-column flex-grow-1 w-100';
+
+    // En histórico bloqueamos el overflow del main para que solo scrollee la tabla interior 
+    if (viewName === 'history') {
+        container.classList.add('view-history');
+    }
+
+    //Renderizar la vista
+    if (viewName === 'dashboard') {
         container.innerHTML = getDashboardHTML();
         updateDashboard();
+    } else if (viewName === 'history') {
+        renderHistoryView(container);
+    } else if (viewName === 'nodes') {
+        renderNodesView(container);
+    } else if (viewName === 'science') {
+        renderScienceView(container);
     }
-    if (viewName === 'nodes' && btnNodes) btnNodes.className = 'list-group-item active';
-    if (viewName === 'history' && btnHist) btnHist.className = 'list-group-item active';
-    if (viewName === 'science' && btnScience) btnScience.className = 'list-group-item list-group-item-action bg-transparent text-white border-0 py-3 active-nav-item';
-    
-    if (viewName === 'nodes') renderNodesView(container);
-    else if (viewName === 'history') renderHistoryView(container);
-    else if (viewName === 'dashboard') updateDashboard();
-    else if(viewName === 'science') renderScienceView(container);
 }
 
 // --- VISTA HISTÓRICO (TOTALMENTE ADAPTADA AL 100% DE LA PANTALLA) ---
