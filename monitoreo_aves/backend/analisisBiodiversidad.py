@@ -15,6 +15,8 @@ PROJECT_ROOT = os.path.dirname(BASE_DIR)
 RECORDS_DIR = os.path.join(PROJECT_ROOT, 'hardware', 'raspberry_pi', 'records')
 
 UMBRA_CONFIANZA = 0.0 #estipulado en el documento 
+FILTRO_RUIDO = r"Noise|Ruido|Human|Motor|Ambiente"
+
 
 def conectar_db():
     '''Nos conectaremos a la base de datos y descargaremos las detecciones de esta'''
@@ -148,7 +150,7 @@ def obtener_reporte_biodiversidad():
     # Limpieza de datos (Filtros científicos)
     df = df[df['confidence'] >= UMBRA_CONFIANZA]
     df['species'] = df['species'].apply(lambda x: x.split('_')[1] if '_' in x else x)
-    df = df[~df['species'].str.contains("Noise|Ruido|Human|Motor|Ambiente", case=False)]
+    df = df[~df['species'].str.contains(FILTRO_RUIDO, case=False)]
 
     datosAcusticos = calcular_indices_acusticos()
     zonas = df['zona'].unique()
@@ -171,32 +173,30 @@ def obtener_reporte_biodiversidad():
 
 def obetenerDatosMapa():
     '''Obtengo las coordenadas del nodo y su biodiversidad'''
-    #localizamos la ip
     ip = geocoder.ip('me')
     if ip.latlng:
-        lat, lon = ip.latlng
-        ciudad = ip.city
+        lat, lon   = ip.latlng
+        ciudad     = ip.city or "Desconocida"
     else:
-        lat, lon = 37.3891, -5.9845  # Coordenadas por defecto (Sevilla)
-        ciudad = 'Sevilla (Desconocida)'
+        lat, lon   = 37.3891, -5.9845   # fallback: Sevilla
+        ciudad     = "Sevilla (Desconocida)"
 
     df = conectar_db()
     shannon_global = 0.5
 
     if not df.empty:
         df = df[df['confidence'] >= UMBRA_CONFIANZA]
-        df = df[~df['species'].str.contains("Noise|Ruido|Human|Motor|Ambiente", case=False)]
-        
-        N = len(df)
+        df = df[~df['species'].str.contains(FILTRO_RUIDO, case=False, na=False)]
+        N  = len(df)
         if N > 0:
             conteo = df['species'].value_counts()
-            prop = conteo / N
-            shannon_global = round(-np.sum(prop * np.log(prop)), 3)
+            prop   = conteo / N
+            shannon_global = round(float(-np.sum(prop * np.log(prop))), 3)
 
     return {
-        "ciudad": ciudad,
-        "lat": lat,
-        "lon": lon,
-        "shannon": shannon_global,
-        "radio_km": 1
+        "ciudad":   ciudad,
+        "lat":      lat,
+        "lon":      lon,
+        "shannon":  shannon_global,
+        "radio_km": 1,
     }

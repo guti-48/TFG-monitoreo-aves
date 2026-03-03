@@ -3,6 +3,11 @@ from datetime import datetime
 from birdnetlib import Recording
 from birdnetlib.analyzer import Analyzer
 
+# Parámetros de análisis BirdNET
+MIN_CONF   = 0.5   # confianza mínima para aceptar una detección
+OVERLAP    = 1.5   # solapamiento de ventana en segundos
+SENSITIVITY = 1.25  # sensibilidad para aves en la lejanía
+
 #### CONFIGURACION ####
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(CURRENT_DIR, "model", "birdnet_model.tflite")
@@ -48,31 +53,33 @@ class BirdAnalyzer:
         analiza el audio usando la librería oficiale e implementamos filtros avanzados
         detectando multiples especies y ruidos de fondo
         """
+        if self.analyzer is None:
+            print("[ERROR] Modelo no disponible — se omite el análisis.")
+            return []
+
         try:
             recording = Recording(
                 self.analyzer,
                 audio_path,
                 lat=self.lat,
                 lon=self.lon,
-                date=datetime.now(), # Filtra aves migratorias según la fecha
-                min_conf=0.5,        # Filtramos detecciones malas (<70%)
-                overlap = 1.5,       # Solapamiento de 1.5 seg, analizamos 0-3, 1.5-4.5, 3-6
-                sensitivity = 1.25   # Sensibildad para escuchar aves en la leajania
+                date=datetime.now(),    # filtra aves migratorias según la fecha
+                min_conf=MIN_CONF,
+                overlap=OVERLAP,
+                sensitivity=SENSITIVITY,
             )
-            
             recording.analyze()
-            
-            detections = []
-            for d in recording.detections:
-                detections.append({
-                    "species": d['common_name'], 
+
+            return [
+                {
+                    "species":    d['common_name'],
                     "confidence": d['confidence'],
                     "time_start": d['start_time'],
-                    "time_end": d['end_time']
-                })
-                
-            return detections
+                    "time_end":   d['end_time'],
+                }
+                for d in recording.detections
+            ]
 
         except Exception as e:
-            print(f"Error en análisis: {e}")
+            print(f"[ERROR] Fallo en análisis de audio: {e}")
             return []

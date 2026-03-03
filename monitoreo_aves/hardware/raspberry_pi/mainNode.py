@@ -21,10 +21,18 @@ BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
 SAMPLE_RATE = 48000 # Frecuencia que suele usar birdNet
 DURATION = 10  # Duracion de la grabacion en segundos
 
+###UMBRALES CONFIANZA
+UMBRAL_AVES = 0.65          # Exigimos 65% para creernos que es un pájaro (evita falsos positivos)
+UMBRAL_HUMANOS = 0.35       # A la mínima que parezca voz humana (35%), lo cazamos como ruido
+UMBRAL_MOTORES = 0.40       # A la mínima que parezca motor/ruido ambiente, lo cazamos
+UMBRAL_RUIDO_ALTO = 0.02    # Nivel de amplitud RMS para ruido blanco
+
+####RUTAS 
 BASER_DIR = os.path.dirname(os.path.abspath(__file__))
 
 OUTPUT_FOLDER_AUDIO = os.path.join(BASER_DIR, "records") 
 OUTPUT_FOLDER_IMG = os.path.join(BASER_DIR, "spectrograms")
+CSV_BACKUP = os.path.join(BASER_DIR, "backup_data.csv")
 
 # Aqui lo que haremos sera un check para ver que existen las carpetas
 os.makedirs(OUTPUT_FOLDER_AUDIO, exist_ok=True)
@@ -113,74 +121,71 @@ def generacionEspectograma(audio_path, filename):
     print(f"Espectrograma guardado en: {img_path}")
 
 ####FUNCION DONDE ENVIAREMOS LOS DATOS AL SERVIDOR ####
+def _subir_archivos(filename_base: str) -> None:
+    """Sube el WAV y el PNG asociados a `filename_base` al servidor."""
+    url_archivos   = f"{SERVER_URL}/upload/"
+    ruta_audio     = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename_base}.wav")
+    ruta_img       = os.path.join(OUTPUT_FOLDER_IMG,   f"{filename_base}.png")
+    archivos       = {}
+    archivos_abiertos = []
+
+    try:
+        if os.path.exists(ruta_audio):
+            f_audio = open(ruta_audio, 'rb')
+            archivos['audio'] = (f"{filename_base}.wav", f_audio, 'audio/wav')
+            archivos_abiertos.append(f_audio)
+
+        if os.path.exists(ruta_img):
+            f_img = open(ruta_img, 'rb')
+            archivos['specto'] = (f"{filename_base}.png", f_img, 'image/png')
+            archivos_abiertos.append(f_img)
+
+        if archivos:
+            r = requests.post(url_archivos, files=archivos, timeout=10)
+            if r.status_code == 200:
+                print(" -> Archivos subidos correctamente.")
+            else:
+                print(f" -> Error subiendo archivos: {r.status_code}")
+    finally:
+        for f in archivos_abiertos:
+            f.close()
+
+            
 def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude):
     #datos en json
-    url = f"{SERVER_URL}/detections/"
-
     datos = {
-        "species": species,
-        "confidence": confidence,
-        "timestamp": timestamp_str,
-        "filename": f"{filename}.wav",
+        "species":     species,
+        "confidence":  confidence,
+        "timestamp":   timestamp_str,
+        "filename":    f"{filename}.wav",
         "device_name": NODE_NAME,
-        "amplitude":float(amplitude)
+        "amplitude":   float(amplitude),
     }
 
     try:
-        response = requests.post(url, json=datos, timeout=5)
-        if response.status_code == 200:
-            url_archivos = f"{SERVER_URL}/upload/"
-            ruta_audio = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename}.wav")
-            ruta_img = os.path.join(OUTPUT_FOLDER_IMG, f"{filename}.png")
-            
-            # Preparamos los archivos para enviarlos por HTTP (Multipart form data)
-            archivos = {}
-            archivos_abiertos = [] # Para cerrarlos después
-            
-            try:
-                if os.path.exists(ruta_audio):
-                    f_audio = open(ruta_audio, 'rb')
-                    archivos['audio_file'] = (f"{filename}.wav", f_audio, 'audio/wav')
-                    archivos_abiertos.append(f_audio)
-                    
-                if os.path.exists(ruta_img):
-                    f_img = open(ruta_img, 'rb')
-                    archivos['img_file'] = (f"{filename}.png", f_img, 'image/png')
-                    archivos_abiertos.append(f_img)
-                
-                if archivos:
-                    # Hacemos el POST de los archivos
-                    response_archivos = requests.post(url_archivos, files=archivos, timeout=10)
-                    if response_archivos.status_code == 200:
-                        print(" -> Archivos de audio e imagen subidos correctamente.")
-                    else:
-                        print(f" -> Error subiendo archivos: {response_archivos.status_code}")
-            finally:
-                for f in archivos_abiertos:
-                    f.close()
-            
+        r = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=5)
+        if r.status_code == 200:
+            _subir_archivos(filename)
             sincronizarRespaldo()
-
         else:
-            print(f"Servidor rechazó ({response.status_code}). Guardando local...")
+            print(f"Servidor rechazó la detección ({r.status_code}). Guardando local...")
             guardarBackupLocal(species, confidence, timestamp_str, amplitude, filename)
-            
-    except Exception as e:
-        print(f"Error de conexión con servidor: {e}. Guardando local...")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error de conexión: {e}. Guardando local...")
         guardarBackupLocal(species, confidence, timestamp_str, amplitude, filename)
+
 
 #Con esta funcioon crearemos una backup local, de la tarjetaSD los recogeremos posteriormente
 def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
     '''Guardaremos los datos en un csv local si el servidor lo apgamos'''
-    csvDeBackup = "backup_data.csv"
-    existe = os.path.isfile(csvDeBackup)
-
-    with open(csvDeBackup, mode='a', newline='') as f:
-        escritura = csv.writer(f)
+    existe = os.path.isfile(CSV_BACKUP)
+    with open(CSV_BACKUP, mode='a', newline='', encoding='utf-8') as f:
+        w = csv.writer(f)
         if not existe:
-            escritura.writerow(['Timestamp', 'Species', 'Confidence', 'Amplitude', 'Filename'])
-        escritura.writerow([timestamp, species, confidence, amplitude, filename])
-    print(f"Datos guardados en el respalado local {csvDeBackup}")
+            w.writerow(['Timestamp', 'Species', 'Confidence', 'Amplitude', 'Filename'])
+        w.writerow([timestamp, species, confidence, amplitude, filename])
+    print(f"Datos guardados en respaldo local: {CSV_BACKUP}")
 
 def limpiarArchivosAntiguos():
     """
@@ -345,12 +350,6 @@ if __name__ == "__main__":
             res = brain.predict(audio_path)
 
             detecciones_unicas = {}
-            
-            # umbrales para la deteccion para mejorar detecciones de sonidos
-            UMBRAL_AVES = 0.65          # Exigimos 65% para creernos que es un pájaro (evita falsos positivos)
-            UMBRAL_HUMANOS = 0.35       # A la mínima que parezca voz humana (35%), lo cazamos como ruido
-            UMBRAL_MOTORES = 0.40       # A la mínima que parezca motor/ruido ambiente, lo cazamos
-            UMBRAL_RUIDO_ALTO = 0.02    # Nivel de amplitud RMS para ruido blanco
 
             if res:
                 for r in res:

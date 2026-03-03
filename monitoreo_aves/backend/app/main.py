@@ -9,8 +9,15 @@ from backend.analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_bio
 
 current_file = Path(__file__).resolve()
 backend_dir = current_file.parent.parent
+project_root = current_file.parent.parent.parent
+
 sys.path.append(str(backend_dir)) 
 
+SPECTOGRAM_DIR = project_root / "hardware" / "raspberry_pi" / "spectrograms"
+SERVER_AUDIO_DIR = os.path.join(project_root, "hardware", "raspberry_pi", "records")
+
+os.makedirs(SERVER_AUDIO_DIR, exist_ok=True)
+os.makedirs(SPECTOGRAM_DIR, exist_ok=True)
 
 ## Creamos las tablas automaticamente en la base de datos
 models.Base.metadata.create_all(bind=database.engine)
@@ -26,14 +33,6 @@ app.add_middleware(
 )
 
 current_file = Path(__file__).resolve()
-# Subimos 3 niveles: app -> backend -> monitoreo_aves
-project_root = current_file.parent.parent.parent
-#Construimos la ruta bajando a hardware
-SPECTOGRAM_DIR = project_root / "hardware" / "raspberry_pi" / "spectrograms"
-SERVER_AUDIO_DIR = os.path.join(project_root, "hardware", "raspberry_pi", "records")
-
-os.makedirs(SERVER_AUDIO_DIR, exist_ok=True)
-os.makedirs(SPECTOGRAM_DIR, exist_ok=True) #creamos carpeta si no existe
 
 #carpeta montada en la ruta /spectograms
 app.mount("/spectrograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectrograms")
