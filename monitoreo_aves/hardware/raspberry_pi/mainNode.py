@@ -12,103 +12,91 @@ from analyzer import BirdAnalyzer
 NODE_NAME = "RaspberryPi_01"
 SERVER_URL = "http://127.0.0.1:8000"
 
-###CONFIGFURACION PARA EL USO DE BIRDWEATHER####
+###CONFIGURACION PARA EL USO DE BIRDWEATHER####
 ###NODO DE ALGECIRAS
-BIRDWEATHER_ID = "BgQxkL7v2DA8A3V9BwgQMwAp" # Aqui va el ID que nos proporciona BirdWeather para este nodo registrado
+BIRDWEATHER_ID = "BgQxkL7v2DA8A3V9BwgQMwAp"
 BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
 
-#### CONFIGURACION AUDIO####
-SAMPLE_RATE = 48000 # Frecuencia que suele usar birdNet
-DURATION = 10  # Duracion de la grabacion en segundos
+#### CONFIGURACION AUDIO ####
+SAMPLE_RATE = 48000  # Frecuencia que suele usar birdNet
+DURATION    = 60     # Grabación activa por ciclo (segundos) — recomendación del profesor:
+                     # ventanas más largas mejoran la precisión de ACI, ADI y NDSI
+INTERVALO   = 300    # Ciclo completo en segundos (5 min).
+                     # El nodo grabará 60s y esperará los 240s restantes antes del siguiente ciclo.
 
-###UMBRALES CONFIANZA
-UMBRAL_AVES = 0.65          # Exigimos 65% para creernos que es un pájaro (evita falsos positivos)
-UMBRAL_HUMANOS = 0.35       # A la mínima que parezca voz humana (35%), lo cazamos como ruido
-UMBRAL_MOTORES = 0.40       # A la mínima que parezca motor/ruido ambiente, lo cazamos
-UMBRAL_RUIDO_ALTO = 0.02    # Nivel de amplitud RMS para ruido blanco
+### UMBRALES CONFIANZA
+UMBRAL_AVES       = 0.65   # Exigimos 65% para creernos que es un pájaro (evita falsos positivos)
+UMBRAL_HUMANOS    = 0.35   # A la mínima que parezca voz humana (35%), lo cazamos como ruido
+UMBRAL_MOTORES    = 0.40   # A la mínima que parezca motor/ruido ambiente, lo cazamos
+UMBRAL_RUIDO_ALTO = 0.02   # Nivel de amplitud RMS para ruido blanco
 
-####RUTAS 
+#### RUTAS
 BASER_DIR = os.path.dirname(os.path.abspath(__file__))
 
-OUTPUT_FOLDER_AUDIO = os.path.join(BASER_DIR, "records") 
-OUTPUT_FOLDER_IMG = os.path.join(BASER_DIR, "spectrograms")
-CSV_BACKUP = os.path.join(BASER_DIR, "backup_data.csv")
+OUTPUT_FOLDER_AUDIO = os.path.join(BASER_DIR, "records")
+OUTPUT_FOLDER_IMG   = os.path.join(BASER_DIR, "spectrograms")
+CSV_BACKUP          = os.path.join(BASER_DIR, "backup_data.csv")
 
-# Aqui lo que haremos sera un check para ver que existen las carpetas
 os.makedirs(OUTPUT_FOLDER_AUDIO, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER_IMG, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER_IMG,   exist_ok=True)
 
-# Se carga un aunica vez el modelo
+# Se carga una única vez el modelo
 brain = BirdAnalyzer()
 
-def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
-    """
-    Enviaremos todos los datos sobre PAJAROS a la app BirdWeather
-    """
 
+def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
+    """Envía datos de PÁJAROS a la app BirdWeather."""
     if BIRDWEATHER_ID == "":
         return
-    
-    ##Con esto resulvo el problema de los guiones bajos
-    if "_" in species:
-        cleanSpecies = species.split('_')[1]
-    else:
-        cleanSpecies = species
+
+    cleanSpecies = species.split('_')[1] if "_" in species else species
 
     datos_publicos = {
-        "token": BIRDWEATHER_ID,
-        "timestamp": timestamp,
-        "species": cleanSpecies,
+        "token":      BIRDWEATHER_ID,
+        "timestamp":  timestamp,
+        "species":    cleanSpecies,
         "confidence": confidence,
-        "lat": lat,
-        "lon": lon,
-        "source": "BirdMonitor13 Guti"
-    } 
+        "lat":        lat,
+        "lon":        lon,
+        "source":     "BirdMonitor13 Guti"
+    }
 
     try:
         response = requests.post(BIRDWEATHER_URL, json=datos_publicos, timeout=5)
-
         if response.status_code == 200:
-            print(f"Datos enviados a BirdWeather correctamente.")
+            print("Datos enviados a BirdWeather correctamente.")
         else:
             print(f"BirdWeather rechazó los datos: {response.status_code} - {response.text}")
-
     except Exception as e:
         print(f"Error al conectar con BirdWeather: {e}")
 
 
 def grabacionAudio(duration, fs):
     """
-    Esta funcion grabara el audio del microfono por defecto durante X segundos a una frecuencia fs
-    Se devolvera los datos del audio como un array de numpy aplanado. (juntamos dos canales en uno por vector)
+    Graba audio mono durante `duration` segundos a frecuencia `fs`.
+    Con 60s BirdNET analiza ~40 ventanas solapadas → índices acústicos más precisos.
     """
     print(f"Grabando audio durante {duration} segundos...")
     grab = sd.rec(int(duration * fs), samplerate=fs, channels=1)
     sd.wait()
-    print("Grabacion finalizada")
+    print("Grabación finalizada.")
     return grab.flatten()
 
+
 def guardoWAV(audio_data, fs, filename):
-    """
-    Con esta funcion lo que voy ha hacer será guardar el array de audio como archivo .WAV
-    """
+    """Guarda el array de audio como archivo WAV y devuelve la ruta."""
     path = os.path.join(OUTPUT_FOLDER_AUDIO, filename)
     sf.write(path, audio_data, fs)
     print(f"Archivo de audio guardado en: {path}")
     return path
 
+
 def generacionEspectograma(audio_path, filename):
-    """
-    Generaremos un MEl-Spectogram usando librosa y luego lo guardaremos como imagen
-    """
-    # Cargamos el audio con librosa
-    y, sr = librosa.load(audio_path, sr = None)
+    """Genera y guarda un espectrograma Mel como imagen PNG."""
+    y, sr = librosa.load(audio_path, sr=None)
+    S     = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=10000)
+    S_db  = librosa.power_to_db(S, ref=np.max)
 
-    # Creamos el espectograma de Mel
-    S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=10000)
-    S_db = librosa.power_to_db(S, ref=np.max)
-
-    # Plot del espectrograma
     plt.figure(figsize=(10, 4))
     librosa.display.specshow(S_db, sr=sr, x_axis='time', y_axis='mel', fmax=10000)
     plt.colorbar(format='%+2.0f db')
@@ -120,19 +108,19 @@ def generacionEspectograma(audio_path, filename):
     plt.close()
     print(f"Espectrograma guardado en: {img_path}")
 
-####FUNCION DONDE ENVIAREMOS LOS DATOS AL SERVIDOR ####
+
 def _subir_archivos(filename_base: str) -> None:
     """Sube el WAV y el PNG asociados a `filename_base` al servidor."""
-    url_archivos   = f"{SERVER_URL}/upload/"
-    ruta_audio     = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename_base}.wav")
-    ruta_img       = os.path.join(OUTPUT_FOLDER_IMG,   f"{filename_base}.png")
-    archivos       = {}
+    url_archivos      = f"{SERVER_URL}/upload/"
+    ruta_audio        = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename_base}.wav")
+    ruta_img          = os.path.join(OUTPUT_FOLDER_IMG,   f"{filename_base}.png")
+    archivos          = {}
     archivos_abiertos = []
 
     try:
         if os.path.exists(ruta_audio):
             f_audio = open(ruta_audio, 'rb')
-            archivos['audio'] = (f"{filename_base}.wav", f_audio, 'audio/wav')
+            archivos['audio']  = (f"{filename_base}.wav", f_audio, 'audio/wav')
             archivos_abiertos.append(f_audio)
 
         if os.path.exists(ruta_img):
@@ -150,9 +138,9 @@ def _subir_archivos(filename_base: str) -> None:
         for f in archivos_abiertos:
             f.close()
 
-            
+
 def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude):
-    #datos en json
+    """Envía la detección al servidor FastAPI y sube los archivos asociados."""
     datos = {
         "species":     species,
         "confidence":  confidence,
@@ -176,9 +164,8 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude)
         guardarBackupLocal(species, confidence, timestamp_str, amplitude, filename)
 
 
-#Con esta funcioon crearemos una backup local, de la tarjetaSD los recogeremos posteriormente
 def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
-    '''Guardaremos los datos en un csv local si el servidor lo apgamos'''
+    """Guarda los datos en un CSV local si el servidor no está disponible."""
     existe = os.path.isfile(CSV_BACKUP)
     with open(CSV_BACKUP, mode='a', newline='', encoding='utf-8') as f:
         w = csv.writer(f)
@@ -187,126 +174,92 @@ def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
         w.writerow([timestamp, species, confidence, amplitude, filename])
     print(f"Datos guardados en respaldo local: {CSV_BACKUP}")
 
+
 def limpiarArchivosAntiguos():
     """
-    Mantiene la salud del sistema borrando archivos WAV y PNG antiguos
-    para no llenar la tarjeta SD.
-    Se conservan los archivos de las últimas 24 horas (ajustable).
+    Mantiene la salud del sistema borrando archivos WAV y PNG antiguos.
+    Con ciclos de 5 min se generan ~288 archivos/día — se conservan 48h.
     """
-    carpetas = [OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG]
-    ahora = time.time()
-    # 86400 segundos = 1 dia. Borramos lo que tenga más de 1 día.
-    # Si quieres guardar más días, multiplica 86400 * dias
-    TIEMPO_VIDA = 86400 * 2 
+    carpetas    = [OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG]
+    ahora       = time.time()
+    TIEMPO_VIDA = 86400 * 2   # 2 días en segundos
 
     print("Iniciando limpieza de disco...")
     archivos_borrados = 0
-    
+
     for carpeta in carpetas:
         for archivo in os.listdir(carpeta):
             ruta_completa = os.path.join(carpeta, archivo)
-            # Si es un archivo (no carpeta)
             if os.path.isfile(ruta_completa):
-                stat = os.stat(ruta_completa)
-                # Si la fecha de creación es más antigua que el TIEMPO_VIDA
-                if stat.st_mtime < (ahora - TIEMPO_VIDA):
+                if os.stat(ruta_completa).st_mtime < (ahora - TIEMPO_VIDA):
                     try:
                         os.remove(ruta_completa)
                         archivos_borrados += 1
                     except Exception as e:
                         print(f"Error borrando {archivo}: {e}")
-    
+
     if archivos_borrados > 0:
-        print(f"Limpieza completada: {archivos_borrados} archivos eliminados para liberar espacio.")
+        print(f"Limpieza completada: {archivos_borrados} archivos eliminados.")
 
-#Sincronizacion del respaldo de backup
+
 def sincronizarRespaldo():
-    '''Revisa si hay datos pendientes en el csv local, y si tentemos conexion sube al servidor y limpia el archivo'''
-    csvDeBackup = "backup_data.csv"
-
-    # sin nada escrito en este csv no se hara nada
-    if not os.path.isfile(csvDeBackup):
+    """
+    Revisa si hay datos pendientes en el CSV local y, si hay conexión,
+    los sube al servidor y limpia el archivo.
+    """
+    if not os.path.isfile(CSV_BACKUP):
         return
 
-    print("Intento de sincronizacion de datos offline con el servidor...")
+    print("Intentando sincronizar datos offline con el servidor...")
 
     filasPendientes = []
-    filasEnviadas = 0
+    filasEnviadas   = 0
 
     try:
-        with open(csvDeBackup, mode='r')as f:
-            lectura = csv.reader(f)
-            filas = list(lectura)
+        with open(CSV_BACKUP, mode='r', encoding='utf-8') as f:
+            filas = list(csv.reader(f))
 
-            if not filas or len(filas) <= 1:
-                return
-            
-            cabeceras = filas[0]
-            datos = filas[1:]
+        if not filas or len(filas) <= 1:
+            return
 
-            for fila in datos:
-                try:
-                    ts, sp, conf, amp, fname = fila
-                    
-                    datos_json = {
-                        "species": sp,
-                        "confidence": float(conf),
-                        "timestamp": ts,
-                        "filename": fname,
-                        "device_name": NODE_NAME,
-                        "amplitude": float(amp)
-                    }
+        cabeceras = filas[0]
+        datos     = filas[1:]
 
-                    response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=5)
+        for fila in datos:
+            try:
+                ts, sp, conf, amp, fname = fila
 
-                    if response.status_code == 200:
-                        # enviamos archivos retrasados
-                        filename_base = fname.replace(".wav", "")
-                        url_archivos = f"{SERVER_URL}/upload/"
-                        ruta_audio = os.path.join(OUTPUT_FOLDER_AUDIO, f"{filename_base}.wav")
-                        ruta_img = os.path.join(OUTPUT_FOLDER_IMG, f"{filename_base}.png")
-                        
-                        archivos = {}
-                        archivos_abiertos = []
-                        
-                        try:
-                            if os.path.exists(ruta_audio):
-                                f_audio = open(ruta_audio, 'rb')
-                                archivos['audio_file'] = (f"{filename_base}.wav", f_audio, 'audio/wav')
-                                archivos_abiertos.append(f_audio)
-                                
-                            if os.path.exists(ruta_img):
-                                f_img = open(ruta_img, 'rb')
-                                archivos['img_file'] = (f"{filename_base}.png", f_img, 'image/png')
-                                archivos_abiertos.append(f_img)
-                            
-                            if archivos:
-                                requests.post(url_archivos, files=archivos, timeout=15)
-                        finally:
-                            for arc in archivos_abiertos:
-                                arc.close()
+                datos_json = {
+                    "species":     sp,
+                    "confidence":  float(conf),
+                    "timestamp":   ts,
+                    "filename":    fname,
+                    "device_name": NODE_NAME,
+                    "amplitude":   float(amp)
+                }
 
-                        filasEnviadas += 1
-                        print(f" -> Sincronizado offline: {sp} ({ts}) con sus archivos.")
-                    else:
-                        #si el servidor falló de nuevo, lo dejamos en la lista de pendientes
-                        filasPendientes.append(fila)
-                        
-                except Exception as e:
-                    print(f"Error procesando una fila de backup: {e}")
+                response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=5)
+
+                if response.status_code == 200:
+                    _subir_archivos(fname.replace(".wav", ""))
+                    filasEnviadas += 1
+                    print(f" -> Sincronizado offline: {sp} ({ts})")
+                else:
                     filasPendientes.append(fila)
-        
-        #reescribimos el CSV solo con los que NO se pudieron enviar
+
+            except Exception as e:
+                print(f"Error procesando fila de backup: {e}")
+                filasPendientes.append(fila)
+
         if filasEnviadas > 0:
-            with open(csvDeBackup, mode='w', newline='') as f:
+            with open(CSV_BACKUP, mode='w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow(cabeceras)
                 writer.writerows(filasPendientes)
-            print(f"Sincronizacion terminada: {filasEnviadas} recuperados, {len(filasPendientes)} aún pendientes.")
+            print(f"Sincronización: {filasEnviadas} recuperados, {len(filasPendientes)} pendientes.")
 
     except Exception as e:
-        print(f"Error general de sincronizacion: {e}")
-
+        print(f"Error general de sincronización: {e}")
 
 
 ### Flujo de trabajo principal ###
@@ -317,35 +270,41 @@ if __name__ == "__main__":
         print("Esperando a que el sistema sincronice la hora por WiFi...")
         time.sleep(5)
     print("Hora correcta sincronizada. Arrancando nodo.")
-    
+    print(f"Ciclo configurado: {DURATION}s de grabación cada {INTERVALO}s ({INTERVALO//60} min).")
+
     try:
         # Registro inicial del dispositivo
         try:
-            requests.post(f"{SERVER_URL}/devices/", json={"name": NODE_NAME, "location": "Ubicacion_Desconocida"})
+            requests.post(
+                f"{SERVER_URL}/devices/",
+                json={"name": NODE_NAME, "location": "Ubicacion_Desconocida"},
+                timeout=5,
+            )
         except:
             print("No se pudo registrar el dispositivo en el servidor.")
 
         while True:
-            now = datetime.now()
-            timestampDB = now.isoformat() 
-            timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-            filename = f"record_{timestamp}"
+            #Marcamos el inicio del ciclo
+            inicio_ciclo = time.time()
+
+            now         = datetime.now()
+            timestampDB = now.isoformat()
+            timestamp   = now.strftime("%Y-%m-%d_%H-%M-%S")
+            filename    = f"record_{timestamp}"
             filenameWAV = f"{filename}.wav"
 
-            #Grabacion de audio
-            audio_data = grabacionAudio(DURATION, SAMPLE_RATE)
-
-            #Aqui calcularemos el ruido mediante RMS
-            # Calculamos la energía del audio que acabamos de grabar
-            rms_amplitude = np.sqrt(np.mean(audio_data**2))
+            # Grabación (60 segundos)
+            audio_data    = grabacionAudio(DURATION, SAMPLE_RATE)
+            rms_amplitude = float(np.sqrt(np.mean(audio_data ** 2)))
             print(f"Nivel de Audio (RMS): {rms_amplitude:.4f}")
 
-            #Guardado de archivo
+            #Guardar WAV y espectrograma
             audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
             generacionEspectograma(audio_path, filename)
             print("Proceso completado, revisa las carpetas de salida.")
-            
-            # Analisis de BirdNET
+
+            #Análisis BirdNET
+            # Con 60s BirdNET analiza ~40 ventanas solapadas → más detecciones y mejores índices
             print("Analizando especies de aves y ruidos...")
             res = brain.predict(audio_path)
 
@@ -353,75 +312,83 @@ if __name__ == "__main__":
 
             if res:
                 for r in res:
-                    especie = r['species']
+                    especie   = r['species']
                     confianza = r['confidence']
 
-                    # Clasificamos qué tipo de sonido es
                     es_humano = "Human" in especie
-                    es_motor = "Motor" in especie or "Noise" in especie
-                    es_ruido = es_humano or es_motor
+                    es_motor  = "Motor" in especie or "Noise" in especie
+                    es_ruido  = es_humano or es_motor
 
-                    # Aplicamos el filtro dependiendo de qué sea
                     if es_humano and confianza >= UMBRAL_HUMANOS:
                         if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
                             detecciones_unicas[especie] = r
-                    
+
                     elif es_motor and confianza >= UMBRAL_MOTORES:
                         if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
                             detecciones_unicas[especie] = r
-                            
+
                     elif not es_ruido and confianza >= UMBRAL_AVES:
                         if especie not in detecciones_unicas or confianza > detecciones_unicas[especie]['confidence']:
                             detecciones_unicas[especie] = r
 
                 if detecciones_unicas:
                     print(f"Captadas {len(detecciones_unicas)} fuentes sonoras.")
-                else:
-                    if rms_amplitude > UMBRAL_RUIDO_ALTO:
-                        print("Mucho ruido, no existe clasificación clara. Marcando como Ruido Ambiente.")
-                        detecciones_unicas['Noise_Ambiente'] = {
-                            'species': 'Noise_Ruido Ambiente',
-                            'confidence': 1.0
-                        }
+                elif rms_amplitude > UMBRAL_RUIDO_ALTO:
+                    print("Mucho ruido, sin clasificación clara. Marcando como Ruido Ambiente.")
+                    detecciones_unicas['Noise_Ambiente'] = {
+                        'species':    'Noise_Ruido Ambiente',
+                        'confidence': 1.0
+                    }
             else:
                 if rms_amplitude > UMBRAL_RUIDO_ALTO:
                     print("Ruido alto detectado. Marcando como Ruido Ambiente.")
                     detecciones_unicas['Noise_Ambiente'] = {
-                        'species': 'Noise_Ruido Ambiente',
+                        'species':    'Noise_Ruido Ambiente',
                         'confidence': 1.0
                     }
 
-            #Aqui enviamos los resultados
+            # Enviar resultados
             if detecciones_unicas:
                 print("Enviando datos...")
                 for especie, datos in detecciones_unicas.items():
                     print(f" -> {especie} ({datos['confidence']*100:.1f}%) [Vol: {rms_amplitude:.3f}]")
-                    
-                    # Estos seran los datos que seran enviados a mi servidor
+
                     enviarDatosServidor(
                         species=datos['species'],
                         confidence=datos['confidence'],
-                        filename=filenameWAV, 
+                        filename=filename,          # sin extensión — se añade dentro
                         timestamp_str=timestampDB,
-                        amplitude=rms_amplitude 
+                        amplitude=rms_amplitude,
                     )
 
-                    # Solo enviaremos a BirdWeather datos de pajaros
                     nombre_especie = datos['species']
                     if "Human" not in nombre_especie and "Motor" not in nombre_especie and "Noise" not in nombre_especie:
-                        enviarDatosBirdWeather( 
+                        enviarDatosBirdWeather(
                             species=nombre_especie,
                             confidence=datos['confidence'],
                             timestamp=timestampDB,
-                            lat=brain.lat, 
-                            lon=brain.lon
+                            lat=brain.lat,
+                            lon=brain.lon,
                         )
             else:
                 print("Silencio o ruido bajo irrelevante. No se guarda nada.")
-            
+
             limpiarArchivosAntiguos()
 
+            # Descontamos grabación + análisis + envío para que el ciclo sea exacto.
+            tiempo_usado  = time.time() - inicio_ciclo
+            tiempo_espera = INTERVALO - tiempo_usado
+
+            if tiempo_espera > 0:
+                print(f"Ciclo completado en {tiempo_usado:.1f}s. "
+                      f"Esperando {tiempo_espera:.1f}s hasta el siguiente ciclo...\n")
+                time.sleep(tiempo_espera)
+            else:
+                # Si el procesado tardó más que INTERVALO (muy improbable), arrancamos ya
+                print(f"Aviso: el ciclo tardó {tiempo_usado:.1f}s (>{INTERVALO}s). "
+                      f"Arrancando siguiente ciclo sin espera.\n")
+
     except KeyboardInterrupt:
-        print("\nPrograma interrumpido")
+        print("\nPrograma interrumpido.")
     except Exception as e:
-        print(f"\nOcurrio un error: {e}")
+        print(f"\nOcurrió un error: {e}")
