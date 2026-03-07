@@ -178,11 +178,11 @@ def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
 def limpiarArchivosAntiguos():
     """
     Mantiene la salud del sistema borrando archivos WAV y PNG antiguos.
-    Con ciclos de 5 min se generan ~288 archivos/día — se conservan 48h.
+    Con ciclos de 5 min se generan ~288 archivos/día — se conservan 72h.
     """
     carpetas    = [OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG]
     ahora       = time.time()
-    TIEMPO_VIDA = 86400 * 2   # 2 días en segundos
+    TIEMPO_VIDA = 86400 * 3   # 3 días en segundos
 
     print("Iniciando limpieza de disco...")
     archivos_borrados = 0

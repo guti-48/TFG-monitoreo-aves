@@ -84,8 +84,8 @@ def calcular_indices_acusticos():
         return None
     
     #Cogemos los 5 arhchivos mas recientes para que la web cargue
-    archivos = sorted(archivos, key=os.path.getmtime, reverse=True)[:5]
-    resultados = {'aci': [], 'adi': [], 'aei': [], 'bio': [], 'ndsi': []}
+    archivos = sorted(archivos, key=os.path.getmtime, reverse=True)[:100]
+    resultados = {'aci': [], 'adi': [], 'aei': [], 'bio': [], 'ndsi': [], 'ht': [], 'hf': [], 'h': []}
 
     for wav in archivos:
         try:
@@ -118,6 +118,30 @@ def calcular_indices_acusticos():
             ndsi, _, _, _ = features.soundscape_index(Sxx, fn)
             resultados['ndsi'].append(ndsi)
 
+            # Entropía temporal
+            E_t = np.sum(Sxx, axis = 0) #Energía agrupada en ventanas
+            if np.sum(E_t) > 0:
+                p_i = E_t / np.sum(E_t)
+                ht = -np.sum(p_i * np.log(p_i + 1e-12)) / np.log(len(p_i))
+            else:
+                ht = 0.0
+
+            #Entropia espectral
+            E_f = np.sum(Sxx, axis = 1) #energía agrupada en banda de frecuencias
+            if np.sum(E_f) > 0:
+                p_j = E_f / np.sum(E_f)
+                hf = -np.sum(p_j * np.log(p_j + 1e-12)) / np.log(len(p_j))
+            else:
+                hf = 0.0
+
+            #Entropia Acustica
+            h = ht * hf
+
+            resultados['ht'].append(ht)
+            resultados['hf'].append(hf)
+            resultados['h'].append(h)         
+
+
         except Exception as e:
             print(f'Omitiendo audio por error en el analisis: {e}')
 
@@ -129,6 +153,9 @@ def calcular_indices_acusticos():
     aei_avg = float(np.mean(resultados['aei'])) if resultados['aei'] else 0.0
     bio_avg = float(np.mean(resultados['bio'])) if resultados['bio'] else 0.0
     ndsi_avg = float(np.mean(resultados['ndsi'])) if resultados['ndsi'] else 0.0
+    ht_avg = float(np.mean(resultados['ht'])) if resultados['ht'] else 0.0
+    hf_avg = float(np.mean(resultados['hf'])) if resultados['hf'] else 0.0
+    h_avg = float(np.mean(resultados['h'])) if resultados['h'] else 0.0
 
     #retirno de la media acustica de la zona
     return {
@@ -136,7 +163,10 @@ def calcular_indices_acusticos():
         'adi_avg': round(adi_avg, 2) if not np.isnan(adi_avg) else 0.0,
         'aei_avg': round(aei_avg, 2) if not np.isnan(aei_avg) else 0.0,
         'bio_avg': round(bio_avg, 2) if not np.isnan(bio_avg) else 0.0,
-        'ndsi_avg': round(ndsi_avg, 2) if not np.isnan(ndsi_avg) else 0.0
+        'ndsi_avg': round(ndsi_avg, 2) if not np.isnan(ndsi_avg) else 0.0,
+        'ht_avg': round(ht_avg, 3) if not np.isnan(ht_avg) else 0.0,
+        'hf_avg': round(hf_avg, 3) if not np.isnan(hf_avg) else 0.0,
+        'h_avg': round(h_avg, 3) if not np.isnan(h_avg) else 0.0
     }  
 
 
@@ -166,7 +196,7 @@ def obtener_reporte_biodiversidad():
             if datosAcusticos:
                 indices.update(datosAcusticos)
             else:
-                indices.update({'aci_avg': 0, 'adi_avg': 0, 'aei_avg': 0, 'bio_avg': 0, 'ndsi_avg': 0})
+                indices.update({'aci_avg': 0, 'adi_avg': 0, 'aei_avg': 0, 'bio_avg': 0, 'ndsi_avg': 0,'ht_avg': 0, 'hf_avg': 0, 'h_avg': 0})
             informe_final.append(indices)
             
     return informe_final
