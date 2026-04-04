@@ -19,8 +19,7 @@ BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
 
 #### CONFIGURACION AUDIO ####
 SAMPLE_RATE = 48000  # Frecuencia que suele usar birdNet
-DURATION    = 60     # Grabación activa por ciclo (segundos) — recomendación del profesor:
-                     # ventanas más largas mejoran la precisión de ACI, ADI y NDSI
+DURATION    = 60     # Grabación activa por ciclo (segundos) 
 INTERVALO   = 300    # Ciclo completo en segundos (5 min).
                      # El nodo grabará 60s y esperará los 240s restantes antes del siguiente ciclo.
 
@@ -384,7 +383,7 @@ if __name__ == "__main__":
                       f"Esperando {tiempo_espera:.1f}s hasta el siguiente ciclo...\n")
                 time.sleep(tiempo_espera)
             else:
-                # Si el procesado tardó más que INTERVALO (muy improbable), arrancamos ya
+                # Si el procesado tardó más que INTERVALO, arrancamos ya
                 print(f"Aviso: el ciclo tardó {tiempo_usado:.1f}s (>{INTERVALO}s). "
                       f"Arrancando siguiente ciclo sin espera.\n")
 

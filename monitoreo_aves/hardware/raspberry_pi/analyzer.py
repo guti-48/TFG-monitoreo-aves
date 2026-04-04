@@ -23,24 +23,20 @@ class BirdAnalyzer:
         except Exception as e:
             print(f"[ERROR] No se ha podido cargar el modelo BirdNet: {e}")
 
-        #Aqui detectaremos la ubicacion mediante geolocalizacion IP
         self.lat, self.lon = self.get_auto_location()
         print(f"Ubicación detectada: Latitud {self.lat}, Longitud {self.lon}")        
 
     def get_auto_location(self):
         """Aqui consulatremos una APi de localizacion basada en la IP publica"""
         try:
-            # Timeout de 5s para no bloquear el arranque si no hay red
             response = requests.get('http://ip-api.com/json/', timeout=5)
             data = response.json()
             if data['status'] == 'success':
-                # Devolvemos las coordenadas reales detectadas
                 return data['lat'], data['lon']
         except Exception as e:
             print(f"[WARN] Fallo en geolocalización ({e}).")
         
-        # FALLBACK: Si no hay internet o falla la API, usamos coordenadas centrales
-        # (Madrid) para que el software no se rompa.
+        # Si no hay internet o falla api enviaremos madrid por defecto
         print("[WARN] Usando ubicación por defecto (Centro de España).")
         return 40.4168, -3.7038
 

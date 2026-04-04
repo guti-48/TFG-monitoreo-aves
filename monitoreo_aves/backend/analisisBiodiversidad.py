@@ -208,8 +208,8 @@ def obetenerDatosMapa():
         lat, lon   = ip.latlng
         ciudad     = ip.city or "Desconocida"
     else:
-        lat, lon   = 37.3891, -5.9845   # fallback: Sevilla
-        ciudad     = "Sevilla (Desconocida)"
+        lat, lon   = 40.4168, -3.7038   # fallback: Madrid
+        ciudad     = "Madrid (Desconocida)"
 
     df = conectar_db()
     shannon_global = 0.5

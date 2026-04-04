@@ -283,7 +283,6 @@ function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.s
 
 // ════════════════════════════════════════════════════════════════
 // TOOLTIP CUSTOM — se monta una sola vez en el body
-// Soluciona el problema de title="" que no funciona sobre SVG
 // ════════════════════════════════════════════════════════════════
 
 (function mountTooltip() {
@@ -322,7 +321,6 @@ function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.s
 
 // ════════════════════════════════════════════════════════════════
 // GAUGE SVG
-// Usa data-gauge-tip en lugar de title="" para el tooltip custom
 // ════════════════════════════════════════════════════════════════
 
 function buildGaugeSVG(value, min, max, color, label, tooltip) {
