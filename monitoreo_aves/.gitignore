@@ -1,6 +1,7 @@
 # .gitignore
 *.wav
 *.png
+*.jpg
 *.db
 *.sqlite3
 venv/
