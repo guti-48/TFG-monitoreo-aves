@@ -230,3 +230,41 @@ def obetenerDatosMapa():
         "shannon":  shannon_global,
         "radio_km": 1,
     }
+
+def obetenerActividadDiaria(fecha_str):
+    '''Agruparemos las actividades de la avifauna por horas del dia para ver su actividad y sus horas mas propensas a salir'''
+    df = conectar_db()
+
+    if df.empty:
+        return [{"hora": h, "total_detecciones": 0, "confianza_media": 0.0, "especies_activas": 0, "lista_especies": []} for h in range(24)]
+    
+    #Aplicamos filtro
+    df = df[df['confidence'] >= UMBRA_CONFIANZA]
+    df['species'] = df['species'].apply(lambda x: x.split('_')[1] if '_' in x else x)
+    df = df[~df['species'].str.contains(FILTRO_RUIDO, case=False, na=False)]
+
+    #convertimos a datetime y filtramos por fecha
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df_dia = df[df['timestamp'].dt.date.astype(str) == fecha_str]
+
+    #agrupamos por hora
+    df_dia.loc[:, 'hora'] = df_dia['timestamp'].dt.hour
+
+    informe_diario = []
+
+    #iteramos sobre las 24 horas
+    for hora in range(24):
+        datos_hora = df_dia[df_dia['hora'] == hora]
+        conteo = len(datos_hora)
+        especies_unicas = datos_hora['species'].unique().tolist()
+        conf_media = datos_hora['confidence'].mean() if conteo > 0 else 0.0
+        
+        informe_diario.append({
+            "hora": hora,
+            "total_detecciones": conteo,
+            "confianza_media": round(float(conf_media), 3),
+            "especies_activas": len(especies_unicas),
+            "lista_especies": especies_unicas
+        })    
+
+    return informe_diario

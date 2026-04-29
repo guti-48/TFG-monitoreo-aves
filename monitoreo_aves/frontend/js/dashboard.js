@@ -27,12 +27,19 @@ function switchView(viewName, nodeFilter = null) {
     currentView    = viewName;
     activeNodeFilter = nodeFilter;
 
-    ['btn-dashboard','btn-nodes','btn-history','btn-science'].forEach(id => {
+    ['btn-dashboard','btn-nodes','btn-history','btn-science', 'btn-daily'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.className = 'nav-link';
     });
 
-    const map = { dashboard:'btn-dashboard', history:'btn-history', nodes:'btn-nodes', science:'btn-science' };
+    const map = { 
+        dashboard: 'btn-dashboard', 
+        history: 'btn-history', 
+        nodes: 'btn-nodes', 
+        science: 'btn-science',
+        daily: 'btn-daily' 
+    };
+    
     const active = document.getElementById(map[viewName]);
     if (active) active.className = 'nav-link active';
 
@@ -46,6 +53,7 @@ function switchView(viewName, nodeFilter = null) {
     else if (viewName === 'history')    renderHistoryView(container);
     else if (viewName === 'nodes')      renderNodesView(container);
     else if (viewName === 'science')    renderScienceView(container);
+    else if (viewName === 'daily')      renderDailyView(container); 
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -717,6 +725,145 @@ function renderNodesView(container) {
             </div>
         </div>
         <div class="row animate-fade-in">${nodesHtml}</div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// VISTA INFORME DIARIO (DAILY VIEW)
+// ════════════════════════════════════════════════════════════════
+
+let dailyChartInst = null;
+let currentDailyData = [];
+
+async function renderDailyView(container) {
+    // Obtenemos la fecha actual en formato YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
+    
+    container.innerHTML = `
+        <div class="row mb-4 animate-fade-in">
+            <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <h3 class="fw-bold text-white"><i class="bi bi-calendar2-range-fill text-accent me-2"></i>Informe Diario</h3>
+                    <p class="text-muted mb-0">Densidad de actividad acústica biológica por hora</p>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <input type="date" id="daily-date-picker" class="form-control bg-dark text-white border-secondary" value="${today}">
+                    <button class="btn btn-success d-flex align-items-center" onclick="downloadDailyCSV()">
+                        <i class="bi bi-filetype-csv me-2"></i>Exportar Informe
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="row mb-4 animate-fade-in">
+            <div class="col-12">
+                <div class="card shadow-sm border-0 bg-dark">
+                    <div class="card-body">
+                        <h6 class="text-uppercase fw-bold text-muted mb-3"><i class="bi bi-bar-chart-fill me-2"></i>Curva de Actividad Avifauna</h6>
+                        <div style="height: 320px;"><canvas id="dailyChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row animate-fade-in">
+            <div class="col-12">
+                <div class="card shadow-sm border-0 bg-dark overflow-hidden">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mb-0 align-middle">
+                            <thead class="bg-dark-subtle text-uppercase small">
+                                <tr>
+                                    <th class="ps-4 py-3">Tramo Horario</th>
+                                    <th class="py-3">Intensidad (Cantos)</th>
+                                    <th class="py-3">Especies Activas</th>
+                                    <th class="pe-4 py-3">Taxones Identificados</th>
+                                </tr>
+                            </thead>
+                            <tbody id="daily-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Escuchamos los cambios en el calendario para actualizar al instante
+    document.getElementById('daily-date-picker').addEventListener('change', (e) => loadDailyData(e.target.value));
+    
+    // Cargamos los datos del día por defecto
+    loadDailyData(today);
+}
+
+async function loadDailyData(dateStr) {
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/analytics/daily-activity?date=${dateStr}`);
+        const data = await res.json();
+        currentDailyData = data;
+
+        // 1. DIBUJAR GRÁFICO (Chart.js)
+        const ctx = document.getElementById('dailyChart');
+        if (dailyChartInst) dailyChartInst.destroy();
+        
+        const labels = data.map(d => `${String(d.hora).padStart(2, '0')}:00`);
+        const counts = data.map(d => d.total_detecciones);
+
+        dailyChartInst = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Registros válidos',
+                    data: counts,
+                    backgroundColor: 'rgba(52, 211, 153, 0.8)', // Verde nature
+                    borderColor: '#059669',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#ffffff0d' }, ticks: { color: '#9ca3af' } },
+                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // 2. RELLENAR TABLA
+        const tbody = document.getElementById('daily-table-body');
+        tbody.innerHTML = data.map(d => `
+            <tr>
+                <td class="ps-4 text-white-50 font-monospace">${String(d.hora).padStart(2, '0')}:00 - ${String(d.hora).padStart(2, '0')}:59</td>
+                <td><span class="badge bg-${d.total_detecciones > 0 ? 'success' : 'secondary'} fs-6">${d.total_detecciones}</span></td>
+                <td><span class="text-white fw-bold">${d.especies_activas}</span></td>
+                <td class="pe-4 text-muted small">${d.lista_especies.join(', ') || '-'}</td>
+            </tr>
+        `).join('');
+
+    } catch (e) {
+        console.error("Error cargando informe diario:", e);
+    }
+}
+
+function downloadDailyCSV() {
+    if (!currentDailyData || currentDailyData.length === 0) return;
+    
+    const date = document.getElementById('daily-date-picker').value;
+    
+    // Construimos las cabeceras del CSV
+    let csv = "Hora,Total_Detecciones,Confianza_Media,Num_Especies_Activas,Lista_Especies\n";
+    
+    currentDailyData.forEach(d => {
+        // Unimos la lista con barras para no romper el delimitador de coma del CSV
+        const lista = d.lista_especies.join(" | "); 
+        const horaStr = `${String(d.hora).padStart(2, '0')}:00`;
+        csv += `${horaStr},${d.total_detecciones},${d.confianza_media},${d.especies_activas},"${lista}"\n`;
+    });
+    
+    // Forzamos la descarga en el navegador
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `PAM_Informe_Diario_${date}.csv`;
+    link.click();
 }
 
 // ════════════════════════════════════════════════════════════════

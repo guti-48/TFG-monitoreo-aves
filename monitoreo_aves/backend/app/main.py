@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import models, database, schemas
-from backend.analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_biodiversidad
+from backend.analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_biodiversidad, obetenerActividadDiaria
 
 current_file = Path(__file__).resolve()
 backend_dir = current_file.parent.parent
@@ -137,6 +137,19 @@ def get_map_data():
     except Exception as e:
         print(f"Error en mapa: {e}")
         return {"error": str(e)}
+    
+
+'''SEXTO ENDPOINT --> OBTENEMOS ACTIVIDAD DIARIA POR HORAS'''
+@app.get("/analytics/daily-activity")
+def get_daily_activity(date: str):
+    """
+    Recibe una fecha en formato YYYY-MM-DD y devuelve el recuento de aves por cada hora del día para la generación de gráficas y CSV.
+    """
+    try:
+        return obetenerActividadDiaria(date)
+    except Exception as e:
+        print(f"Error generando informe diario: {e}")
+        return []
 
 @app.get("/")
 def read_root():
