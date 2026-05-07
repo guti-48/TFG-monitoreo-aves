@@ -9,25 +9,24 @@ from datetime import datetime
 from analyzer import BirdAnalyzer
 
 #### CONFIGURACION DEL NODO ####
-NODE_NAME = "RaspberryPi_01"
-SERVER_URL = "http://127.0.0.1:8000"
+NODE_NAME = "birdmonitor"
+SERVER_URL = "http://100.98.248.58:8000"
 
 ###CONFIGURACION PARA EL USO DE BIRDWEATHER####
-###NODO DE ALGECIRAS
+###NODO 
 BIRDWEATHER_ID = "BgQxkL7v2DA8A3V9BwgQMwAp"
 BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
 
 #### CONFIGURACION AUDIO ####
 SAMPLE_RATE = 48000  # Frecuencia que suele usar birdNet
-DURATION    = 60     # Grabación activa por ciclo (segundos) 
-INTERVALO   = 300    # Ciclo completo en segundos (5 min).
-                     # El nodo grabará 60s y esperará los 240s restantes antes del siguiente ciclo.
+DURATION    = 60      
+INTERVALO   = 300    
 
 ### UMBRALES CONFIANZA
-UMBRAL_AVES       = 0.65   # Exigimos 65% para creernos que es un pájaro (evita falsos positivos)
-UMBRAL_HUMANOS    = 0.35   # A la mínima que parezca voz humana (35%), lo cazamos como ruido
-UMBRAL_MOTORES    = 0.40   # A la mínima que parezca motor/ruido ambiente, lo cazamos
-UMBRAL_RUIDO_ALTO = 0.02   # Nivel de amplitud RMS para ruido blanco
+UMBRAL_AVES       = 0.65   
+UMBRAL_HUMANOS    = 0.35   
+UMBRAL_MOTORES    = 0.40   
+UMBRAL_RUIDO_ALTO = 0.02   
 
 #### RUTAS
 BASER_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +39,8 @@ os.makedirs(OUTPUT_FOLDER_AUDIO, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER_IMG,   exist_ok=True)
 
 # Se carga una única vez el modelo
-brain = BirdAnalyzer()
+def get_brain():
+    return BirdAnalyzer()
 
 
 def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
@@ -61,7 +61,7 @@ def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
     }
 
     try:
-        response = requests.post(BIRDWEATHER_URL, json=datos_publicos, timeout=5)
+        response = requests.post(BIRDWEATHER_URL, json=datos_publicos, timeout=15)
         if response.status_code == 200:
             print("Datos enviados a BirdWeather correctamente.")
         else:
@@ -128,7 +128,7 @@ def _subir_archivos(filename_base: str) -> None:
             archivos_abiertos.append(f_img)
 
         if archivos:
-            r = requests.post(url_archivos, files=archivos, timeout=10)
+            r = requests.post(url_archivos, files=archivos, timeout=60)
             if r.status_code == 200:
                 print(" -> Archivos subidos correctamente.")
             else:
@@ -150,7 +150,7 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude)
     }
 
     try:
-        r = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=5)
+        r = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=60)
         if r.status_code == 200:
             _subir_archivos(filename)
             sincronizarRespaldo()
@@ -237,7 +237,7 @@ def sincronizarRespaldo():
                     "amplitude":   float(amp)
                 }
 
-                response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=5)
+                response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=60)
 
                 if response.status_code == 200:
                     _subir_archivos(fname.replace(".wav", ""))
@@ -269,6 +269,7 @@ if __name__ == "__main__":
         print("Esperando a que el sistema sincronice la hora por WiFi...")
         time.sleep(5)
     print("Hora correcta sincronizada. Arrancando nodo.")
+    brain = BirdAnalyzer()
     print(f"Ciclo configurado: {DURATION}s de grabación cada {INTERVALO}s ({INTERVALO//60} min).")
 
     try:
@@ -277,7 +278,7 @@ if __name__ == "__main__":
             requests.post(
                 f"{SERVER_URL}/devices/",
                 json={"name": NODE_NAME, "location": "Ubicacion_Desconocida"},
-                timeout=5,
+                timeout=10,
             )
         except:
             print("No se pudo registrar el dispositivo en el servidor.")

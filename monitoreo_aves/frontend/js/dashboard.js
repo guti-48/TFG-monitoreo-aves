@@ -1,5 +1,5 @@
-const API_URL = "http://127.0.0.1:8000/detections/";
-const IMG_BASE_URL = "http://127.0.0.1:8000/spectrograms/";
+const API_URL = "http://100.98.248.58:8000/detections/";
+const IMG_BASE_URL = "http://100.98.248.58:8000/spectrograms/";
 
 const ASSETS_PATH = 'assets/'; 
 const NOISE_MAP = {
@@ -394,7 +394,7 @@ async function renderScienceView(container) {
             <span class="ms-3 text-white">Procesando datos del nodo...</span>
         </div>`;
     try {
-        const response = await fetch("http://127.0.0.1:8000/analytics/biodiversity");
+        const response = await fetch("http://100.98.248.58:8000/analytics/biodiversity");
         const report   = await response.json();
         if (!report || report.length === 0) {
             container.innerHTML = `<div class="alert alert-warning text-center mt-4">Esperando detecciones reales del nodo...</div>`;
@@ -683,7 +683,7 @@ async function renderScienceView(container) {
         }
 
         // ── Mapa Leaflet ──────────────────────────────────────────────────
-        fetch("http://127.0.0.1:8000/analytics/map")
+        fetch("http://100.98.248.58:8000/analytics/map")
             .then(res => res.json())
             .then(mapData => {
                 if (mapData.error) return;
@@ -710,23 +710,40 @@ async function renderScienceView(container) {
 // NODOS
 // ════════════════════════════════════════════════════════════════
 
-function renderNodesView(container) {
-    let nodesHtml = '';
-    MOCK_NODES.forEach(node => {
-        const statusColor = node.status === 'online' ? 'success' : 'danger';
-        const pulseClass  = node.status === 'online' ? 'animate-pulse' : '';
-        nodesHtml += `<div class="col-md-4 mb-4"><div class="card bg-dark text-white border-0 shadow-sm node-card h-100"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-3"><h5 class="fw-bold m-0"><i class="bi bi-cpu text-info me-2"></i>${node.name}</h5><span class="badge bg-${statusColor} ${pulseClass}">${node.status.toUpperCase()}</span></div><p class="text-muted small mb-1"><i class="bi bi-geo-alt me-1"></i> ${node.location}</p><p class="text-muted small mb-1"><i class="bi bi-hdd-network me-1"></i> IP: ${node.ip}</p><p class="text-muted small mb-3"><i class="bi bi-record-circle me-1"></i> ID: <span class="font-monospace">${node.id}</span></p><button class="btn btn-outline-info btn-sm w-100" onclick="switchView('dashboard')"><i class="bi bi-activity me-1"></i> Ver Detecciones</button></div></div></div>`;
-    });
-    container.innerHTML = `
-        <div class="row mb-4 animate-fade-in">
-            <div class="col-12">
-                <h3 class="fw-bold text-white"><i class="bi bi-router me-2 text-accent"></i>Red de Nodos (ARUs)</h3>
-                <p class="text-muted">Estado en tiempo real de los dispositivos de monitorización de campo.</p>
+async function renderNodesView(container) {
+    container.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-success"></div></div>`;
+    try {
+        const res = await fetch(API_URL.replace('detections/', 'devices/'));
+        const nodos = await res.json();
+        
+        let nodesHtml = '';
+        nodos.forEach(node => {
+            nodesHtml += `
+            <div class="col-md-4 mb-4">
+                <div class="card bg-dark text-white border-0 shadow-sm node-card h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold m-0"><i class="bi bi-cpu text-info me-2"></i>${node.name}</h5>
+                            <span class="badge bg-success animate-pulse">ONLINE</span>
+                        </div>
+                        <p class="text-muted small mb-1"><i class="bi bi-geo-alt me-1"></i> ${node.location}</p>
+                        <p class="text-muted small mb-3"><i class="bi bi-record-circle me-1"></i> ID BDD: <span class="font-monospace">${node.id}</span></p>
+                    </div>
+                </div>
+            </div>`;
+        });
+        
+        container.innerHTML = `
+            <div class="row mb-4 animate-fade-in">
+                <div class="col-12">
+                    <h3 class="fw-bold text-white"><i class="bi bi-router me-2 text-accent"></i>Red de Nodos (ARUs)</h3>
+                </div>
             </div>
-        </div>
-        <div class="row animate-fade-in">${nodesHtml}</div>`;
+            <div class="row animate-fade-in">${nodesHtml}</div>`;
+    } catch (e) {
+        container.innerHTML = `<div class="alert alert-danger">Error cargando nodos: ${e.message}</div>`;
+    }
 }
-
 // ════════════════════════════════════════════════════════════════
 // VISTA INFORME DIARIO (DAILY VIEW)
 // ════════════════════════════════════════════════════════════════
@@ -793,7 +810,7 @@ async function renderDailyView(container) {
 
 async function loadDailyData(dateStr) {
     try {
-        const res = await fetch(`http://127.0.0.1:8000/analytics/daily-activity?date=${dateStr}`);
+        const res = await fetch(`http://100.98.248.58:8000/analytics/daily-activity?date=${dateStr}`);
         const data = await res.json();
         currentDailyData = data;
 

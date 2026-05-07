@@ -23,7 +23,7 @@ def conectar_db():
     conexion = sqlite3.connect(DB_PATH)
     # Leemos las detecciones y unimos con el nombre del dispositivo
     query = """
-    SELECT d.species, d.confidence, dev.location as zona
+    SELECT d.timestamp, d.species, d.confidence, dev.location as zona
     FROM detections d
     JOIN devices dev ON d.device_id = dev.id
     """

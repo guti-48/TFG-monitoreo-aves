@@ -150,6 +150,11 @@ def get_daily_activity(date: str):
     except Exception as e:
         print(f"Error generando informe diario: {e}")
         return []
+    
+@app.get("/devices/")
+def get_devices(db: Session = Depends(database.get_db)):
+    """Devuelve la lista de dispositivos reales registrados en la base de datos"""
+    return db.query(models.Device).all()
 
 @app.get("/")
 def read_root():
