@@ -94,6 +94,16 @@ Los siguientes pasos serviran para inciar todo tanto desde Windows como desde Ma
 4. Es importante tener eliminada previamente nuestra base de datos que se encuentra dentro de /backend/app para que podamos ver
 desde nuestro navegador.
 
+# Acceso Remoto al Nodo Edge (vía SSH)
+
+En un entorno de producción, la Raspberry Pi operará de forma autónoma (Headless) en la naturaleza o en ubicaciones de difícil acceso. Para gestionar el código, revisar los logs en tiempo real o reiniciar servicios sin necesidad de conectar periféricos físicos, se utiliza el protocolo SSH.
+
+### Pasos para acceder al nodo:
+
+1. **Abre una terminal** en tu equipo principal (Windows, Mac o Linux).
+2. **Asegúrate de que tu equipo principal está en la misma red** que la Raspberry Pi (ya sea en la misma red WiFi local o a través de una red virtual privada/VPN como Tailscale).
+3. **Ejecuta el comando de conexión SSH** utilizando el nombre de usuario de la Raspberry y su dirección IP asignada:
+
 ## Estructura del Repositorio
 
 ```text
