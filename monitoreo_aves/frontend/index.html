@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=1000">
+    <link rel="stylesheet" href="css/style.css?v=1001">
 </head>
 
 <body>
@@ -60,19 +60,21 @@
 
             <!-- Topbar -->
             <header id="topbar">
-                <div class="topbar-left">
-                    <i class="bi bi-broadcast-pin topbar-icon"></i>
-                    <span id="topbar-view-title">Monitorización Global</span>
+                <div class="topbar-left d-flex align-items-center">
+                    <button id="mobile-menu-toggle" class="btn text-white p-0 me-3 d-md-none" style="border: none; background: transparent;">
+                        <i class="bi bi-list fs-1"></i>
+                    </button>
+                    <i class="bi bi-broadcast-pin topbar-icon d-none d-md-block me-2"></i>
+                    <span id="topbar-view-title" class="fw-bold">Monitorización Global</span>
                 </div>
                 <div class="topbar-right">
-                    <span class="text-muted small me-2">Estado del Sistema:</span>
+                    <span class="text-muted small me-2 d-none d-sm-inline">Estado del Sistema:</span>
                     <span class="status-pill">
                         <span class="status-dot"></span>
                         En Línea
                     </span>
                 </div>
             </header>
-
             <!-- Contenido dinámico -->
             <main id="main-content"></main>
 

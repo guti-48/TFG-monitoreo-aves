@@ -613,3 +613,67 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 
 @keyframes badge-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 .animate-pulse { animation: badge-pulse 1.8s ease-in-out infinite; }
+
+/* =========================================
+   ADAPTACIÓN PARA MÓVILES (RESPONSIVE)
+   ========================================= */
+@media (max-width: 768px) {
+    /* 1. Reducimos el padding general para aprovechar la pantalla */
+    :root {
+        --pad: 15px;
+    }
+
+    /* 2. Menú Lateral Flotante (Offcanvas) */
+    #sidebar-wrapper {
+        position: fixed !important;
+        top: 0 !important;
+        left: -100% !important; /* Oculto fuera de la pantalla por defecto */
+        height: 100vh !important;
+        z-index: 1050 !important;
+        transition: left 0.3s ease !important;
+        box-shadow: 4px 0 25px rgba(0,0,0,0.8) !important;
+        width: 250px !important;
+    }
+    
+    #sidebar-wrapper.show-mobile {
+        left: 0 !important;
+    }
+
+    /* Fondo oscuro borroso al abrir el menú */
+    .sidebar-overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(2px);
+        z-index: 1040;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+    }
+    .sidebar-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* 3. Arreglo de los medidores de Análisis Eco (Gauges) */
+    .gauges-row-top,
+    .gauges-row-bot,
+    .gauges-entropy-row {
+        flex-wrap: wrap !important;
+        gap: 15px !important;
+    }
+    
+    /* 4. Arreglo de la Tarjeta Principal de Tiempo Real */
+    .main-detection-split {
+        flex-direction: column !important;
+    }
+    .split-photo {
+        width: 100% !important;
+        height: 220px !important;
+        border-radius: var(--radius) var(--radius) 0 0 !important;
+    }
+    .split-info {
+        width: 100% !important;
+        padding: 15px !important;
+    }
+}

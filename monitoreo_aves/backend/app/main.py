@@ -34,6 +34,10 @@ app.add_middleware(
 
 current_file = Path(__file__).resolve()
 
+#integro el fronted en el backend para tenerlo todo en el mismo servidor
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "../../frontend")
+
 #carpeta montada en la ruta /spectograms
 app.mount("/spectrograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectrograms")
 
@@ -156,7 +160,10 @@ def get_devices(db: Session = Depends(database.get_db)):
     """Devuelve la lista de dispositivos reales registrados en la base de datos"""
     return db.query(models.Device).all()
 
+'''
 @app.get("/")
 def read_root():
     return {"message": "Bienvenido al Sistema de Monitoreo de Aves"}
+'''
 
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

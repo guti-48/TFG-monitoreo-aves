@@ -1,6 +1,5 @@
-const API_URL = "http://100.98.248.58:8000/detections/";
-const IMG_BASE_URL = "http://100.98.248.58:8000/spectrograms/";
-
+const API_URL = "/detections/";
+const IMG_BASE_URL = "/spectrograms/";
 const ASSETS_PATH = 'assets/'; 
 const NOISE_MAP = {
     'Human vocal': 'human.png',
@@ -892,4 +891,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (container) { container.className = "d-flex flex-column flex-grow-1 w-100"; container.innerHTML = getDashboardHTML(); }
     switchView('dashboard');
     setInterval(updateDashboard, 4000);
+
+    // pal responsive del movil
+    const menuToggle = document.getElementById('mobile-menu-toggle');
+    const sidebar = document.getElementById('sidebar-wrapper');
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'sidebar-overlay d-md-none';
+    document.body.appendChild(overlay);
+
+    function toggleMenu() {
+        sidebar.classList.toggle('show-mobile');
+        overlay.classList.toggle('show');
+    }
+
+    if (menuToggle) menuToggle.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu); 
+
+    document.querySelectorAll('.sidebar-nav .nav-link').forEach(link => {
+        link.addEventListener('click', () => {
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('show-mobile');
+                overlay.classList.remove('show');
+            }
+        });
+    });
 });
