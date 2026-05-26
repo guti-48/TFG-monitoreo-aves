@@ -4,7 +4,7 @@ from .database import Base
 from datetime import datetime, timezone
 
 '''
-Esta clase pues realizamos al tabla de la db con sus columnas para almacenar la informacion
+Esta clase representa los nodos/dispositivos registrados en la base de datos.
 '''
 class Device(Base):
     __tablename__ = "devices"
@@ -14,11 +14,10 @@ class Device(Base):
     location = Column(String)
 
     detections = relationship("Detection", back_populates="device")
-
+    audio_metrics = relationship("AudioMetric", back_populates="device")
 
 '''
-Esta clase representa la tabla db para almacenar la informacion sobre las especies detectadas con sus
-respectivos metadatos
+Esta clase representa la tabla para almacenar detecciones biológicas o acústicas relevantes.
 '''
 class Detection(Base):
     __tablename__ = "detections"
@@ -28,7 +27,34 @@ class Detection(Base):
     species = Column(String, index=True)
     confidence = Column(Float)
     filename = Column(String)
-    amplitude = Column(Float, default = 0.0)
+    amplitude = Column(Float, default=0.0)
 
     device_id = Column(Integer, ForeignKey("devices.id"))
     device = relationship("Device", back_populates="detections")
+
+'''
+Esta clase representa una muestra acústica agregada por ciclo de grabación.
+No equivale a una detección de ave: guarda métricas del paisaje sonoro aunque no haya detecciones.
+'''
+class AudioMetric(Base):
+    __tablename__ = "audio_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    filename = Column(String, index=True)
+
+    sample_rate = Column(Integer)
+    duration = Column(Float)
+    rms = Column(Float, default=0.0)
+
+    aci = Column(Float, default=0.0)
+    adi = Column(Float, default=0.0)
+    aei = Column(Float, default=0.0)
+    bio = Column(Float, default=0.0)
+    ndsi = Column(Float, default=0.0)
+    ht = Column(Float, default=0.0)
+    hf = Column(Float, default=0.0)
+    h = Column(Float, default=0.0)
+
+    device_id = Column(Integer, ForeignKey("devices.id"))
+    device = relationship("Device", back_populates="audio_metrics")

@@ -78,12 +78,69 @@ def evaluar_shannon(valor):
     if valor < 3.0: return "MODERADO"
     return "EXCELENTE"
 
-def calcular_indices_acusticos():
+def _media_segura(df, columna, decimales):
+    if columna not in df.columns or df[columna].dropna().empty:
+        return 0.0
+    valor = float(df[columna].mean())
+    return round(valor, decimales) if not np.isnan(valor) else 0.0
+
+
+def calcular_indices_acusticos_desde_db():
+    """
+    Calcula medias acústicas desde la tabla audio_metrics.
+    Esta es la fuente principal: contiene una fila por ciclo de grabación,
+    aunque no haya detección de ave.
+    """
+    try:
+        conexion = sqlite3.connect(DB_PATH)
+        query = """
+        SELECT
+            am.timestamp,
+            am.rms,
+            am.aci,
+            am.adi,
+            am.aei,
+            am.bio,
+            am.ndsi,
+            am.ht,
+            am.hf,
+            am.h
+        FROM audio_metrics am
+        JOIN devices dev ON am.device_id = dev.id
+        ORDER BY am.timestamp DESC
+        LIMIT 100
+        """
+        df = pd.read_sql_query(query, conexion)
+        conexion.close()
+    except Exception as e:
+        print(f"No se pudieron leer métricas acústicas desde la base de datos: {e}")
+        return None
+
+    if df.empty:
+        return None
+
+    return {
+        'rms_avg':  _media_segura(df, 'rms', 4),
+        'aci_avg':  _media_segura(df, 'aci', 2),
+        'adi_avg':  _media_segura(df, 'adi', 2),
+        'aei_avg':  _media_segura(df, 'aei', 2),
+        'bio_avg':  _media_segura(df, 'bio', 2),
+        'ndsi_avg': _media_segura(df, 'ndsi', 2),
+        'ht_avg':   _media_segura(df, 'ht', 3),
+        'hf_avg':   _media_segura(df, 'hf', 3),
+        'h_avg':    _media_segura(df, 'h', 3),
+    }
+
+
+def calcular_indices_acusticos_desde_wav():
+    """
+    Fallback temporal: calcula índices a partir de WAV disponibles en servidor.
+    Se mantiene para no romper el dashboard si todavía no hay filas en audio_metrics.
+    """
     archivos = glob.glob(os.path.join(RECORDS_DIR, "*.wav"))
     if not archivos:
         return None
-    
-    #Cogemos los 5 arhchivos mas recientes para que la web cargue
+
     archivos = sorted(archivos, key=os.path.getmtime, reverse=True)[:100]
     resultados = {'aci': [], 'adi': [], 'aei': [], 'bio': [], 'ndsi': [], 'ht': [], 'hf': [], 'h': []}
 
@@ -92,55 +149,46 @@ def calcular_indices_acusticos():
             s, fs = sound.load(wav)
             Sxx, tn, fn, ext = sound.spectrogram(s, fs)
 
-            # ACI: indice de complejidad
             _, _, aci = features.acoustic_complexity_index(Sxx)
             resultados['aci'].append(np.sum(aci))
 
-            # ADI: Diversidad acustica
             adi = features.acoustic_diversity_index(Sxx, fn)
             resultados['adi'].append(adi)
 
-            # AEI: uniformidad acustica
             try:
                 aei = features.acoustic_evenness_index(Sxx, fn)
             except AttributeError:
                 aei = 1.0 - (adi / 3.0) if not np.isnan(adi) else 0.5
             resultados['aei'].append(aei)
 
-            # BIO: indice bioacustico 
             try:
                 bio = features.bioacoustics_index(Sxx, fn)
             except AttributeError:
                 bio = features.bioacoustic_index(Sxx, fn)
             resultados['bio'].append(bio)
 
-            # NDSI: naturaleza vs antropogénico
             ndsi, _, _, _ = features.soundscape_index(Sxx, fn)
             resultados['ndsi'].append(ndsi)
 
-            # Entropía temporal
-            E_t = np.sum(Sxx, axis = 0) #Energía agrupada en ventanas
+            E_t = np.sum(Sxx, axis=0)
             if np.sum(E_t) > 0:
                 p_i = E_t / np.sum(E_t)
                 ht = -np.sum(p_i * np.log(p_i + 1e-12)) / np.log(len(p_i))
             else:
                 ht = 0.0
 
-            #Entropia espectral
-            E_f = np.sum(Sxx, axis = 1) #energía agrupada en banda de frecuencias
+            E_f = np.sum(Sxx, axis=1)
             if np.sum(E_f) > 0:
                 p_j = E_f / np.sum(E_f)
                 hf = -np.sum(p_j * np.log(p_j + 1e-12)) / np.log(len(p_j))
             else:
                 hf = 0.0
 
-            #Entropia Acustica
             h = ht * hf
 
             resultados['ht'].append(ht)
             resultados['hf'].append(hf)
-            resultados['h'].append(h)         
-
+            resultados['h'].append(h)
 
         except Exception as e:
             print(f'Omitiendo audio por error en el analisis: {e}')
@@ -157,7 +205,6 @@ def calcular_indices_acusticos():
     hf_avg = float(np.mean(resultados['hf'])) if resultados['hf'] else 0.0
     h_avg = float(np.mean(resultados['h'])) if resultados['h'] else 0.0
 
-    #retirno de la media acustica de la zona
     return {
         'aci_avg': round(aci_avg, 2) if not np.isnan(aci_avg) else 0.0,
         'adi_avg': round(adi_avg, 2) if not np.isnan(adi_avg) else 0.0,
@@ -167,8 +214,19 @@ def calcular_indices_acusticos():
         'ht_avg': round(ht_avg, 3) if not np.isnan(ht_avg) else 0.0,
         'hf_avg': round(hf_avg, 3) if not np.isnan(hf_avg) else 0.0,
         'h_avg': round(h_avg, 3) if not np.isnan(h_avg) else 0.0
-    }  
+    }
 
+
+def calcular_indices_acusticos():
+    """
+    Fuente principal: tabla audio_metrics.
+    Fallback: WAVs locales del servidor, para compatibilidad con datos previos.
+    """
+    datos_db = calcular_indices_acusticos_desde_db()
+    if datos_db:
+        return datos_db
+
+    return calcular_indices_acusticos_desde_wav()
 
 def obtener_reporte_biodiversidad():
     """Esta es la función que llamará la API"""

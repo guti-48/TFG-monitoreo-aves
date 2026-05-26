@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=1001">
+    <link rel="stylesheet" href="css/style.css?v=1002">
 </head>
 
 <body>
@@ -28,6 +28,10 @@
                 <a href="#" id="btn-dashboard" class="nav-link active" onclick="switchView('dashboard'); return false;">
                     <i class="bi bi-activity"></i>
                     <span>Tiempo Real</span>
+                </a>
+                <a href="#" id="btn-live" class="nav-link" onclick="switchView('live'); return false;">
+                    <i class="bi bi-broadcast-pin"></i>
+                    <span>Escucha en directo</span>
                 </a>
                 <a href="#" id="btn-history" class="nav-link" onclick="switchView('history'); return false;">
                     <i class="bi bi-database-fill"></i>
@@ -81,6 +85,7 @@
         </div>
     </div>
 
-    <script src="js/dashboard.js?v=1000"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="js/dashboard.js?v=1002"></script>
 </body>
 </html>

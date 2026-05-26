@@ -7,40 +7,60 @@ const NOISE_MAP = {
 };
 const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 
+// Stream HLS servido por MediaMTX.
+// El dashboard se sirve en el puerto 8000 y MediaMTX en el 8888.
+// Se usa el mismo hostname para que funcione tanto con 127.0.0.1 como con la IP Tailscale.
+const STREAM_NAME = "birdmonitor-audio";
+const MEDIAMTX_HLS_PORT = 8888;
+const LIVE_STREAM_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/index.m3u8`;
+const LIVE_STREAM_PAGE_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/`;
+
+let hlsInstance = null;
+
 let currentView = 'dashboard'; 
 let activeNodeFilter = null;
 let myChart = null;
 let intervalId = null;
-
-const MOCK_NODES = [
-    { id: 'RaspberryPi_01',      name: 'Nodo Algeciras', location: 'Cádiz, ES',    status: 'online',  lat: 37.38, lon: -5.97, ip: '192.168.1.35' },
-    { id: 'RaspberryPi_Sanguesa',name: 'Nodo Sangüesa',  location: 'Navarra, ES',  status: 'offline', lat: 42.57, lon: -1.28, ip: '10.0.0.5' },
-    { id: 'RaspberryPi_Madrid',  name: 'Nodo Bilbao',    location: 'Bilbao, EH',   status: 'offline', lat: 40.41, lon: -3.70, ip: '192.168.0.10' }
-];
 
 // ════════════════════════════════════════════════════════════════
 // NAVEGACIÓN
 // ════════════════════════════════════════════════════════════════
 
 function switchView(viewName, nodeFilter = null) {
+    if (currentView === 'live' && viewName !== 'live') {
+        stopLiveStreamPlayer();
+    }
+
     currentView    = viewName;
     activeNodeFilter = nodeFilter;
 
-    ['btn-dashboard','btn-nodes','btn-history','btn-science', 'btn-daily'].forEach(id => {
+    ['btn-dashboard','btn-live','btn-nodes','btn-history','btn-science', 'btn-daily'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.className = 'nav-link';
     });
 
     const map = { 
-        dashboard: 'btn-dashboard', 
+        dashboard: 'btn-dashboard',
+        live: 'btn-live',
         history: 'btn-history', 
         nodes: 'btn-nodes', 
         science: 'btn-science',
         daily: 'btn-daily' 
     };
-    
+
+    const titleMap = {
+        dashboard: 'Monitorización Global',
+        live: 'Escucha en directo',
+        history: 'Histórico de detecciones',
+        nodes: 'Red de Nodos',
+        science: 'Análisis Ecológico',
+        daily: 'Informe Diario'
+    };
+
     const active = document.getElementById(map[viewName]);
     if (active) active.className = 'nav-link active';
+
+    safeSetText('topbar-view-title', titleMap[viewName] || 'Monitorización Global');
 
     const container = document.getElementById('main-content');
     if (!container) return;
@@ -49,11 +69,245 @@ function switchView(viewName, nodeFilter = null) {
     if (viewName === 'history') container.classList.add('view-history');
 
     if      (viewName === 'dashboard') { container.innerHTML = getDashboardHTML(); updateDashboard(); }
+    else if (viewName === 'live')       renderLiveStreamView(container);
     else if (viewName === 'history')    renderHistoryView(container);
     else if (viewName === 'nodes')      renderNodesView(container);
     else if (viewName === 'science')    renderScienceView(container);
     else if (viewName === 'daily')      renderDailyView(container); 
 }
+
+// ════════════════════════════════════════════════════════════════
+// ESCUCHA EN DIRECTO
+// ════════════════════════════════════════════════════════════════
+
+function renderLiveStreamView(container) {
+    container.innerHTML = `
+        <div class="row mb-4 animate-fade-in">
+            <div class="col-12 d-flex justify-content-between align-items-start flex-wrap gap-3">
+                <div>
+                    <h3 class="fw-bold text-white mb-1">
+                        <i class="bi bi-broadcast-pin text-accent me-2"></i>Escucha en directo
+                    </h3>
+                    <p class="text-muted mb-0">
+                        Audio en vivo capturado desde el micrófono USB del nodo Raspberry Pi y servido mediante MediaMTX/HLS.
+                    </p>
+                </div>
+                <span id="live-stream-status" class="badge bg-secondary px-3 py-2">
+                    <i class="bi bi-circle-fill me-1"></i>Comprobando stream...
+                </span>
+            </div>
+        </div>
+
+        <div class="row g-4 animate-fade-in">
+            <div class="col-xl-8">
+                <div class="card border-0 bg-dark live-stream-card">
+                    <div class="card-body">
+                        <div class="live-stream-hero mb-4">
+                            <div class="live-stream-icon">
+                                <i class="bi bi-soundwave"></i>
+                            </div>
+                            <div>
+                                <p class="text-muted small text-uppercase fw-bold mb-1">Canal activo</p>
+                                <h4 class="fw-bold text-white mb-1">${STREAM_NAME}</h4>
+                                <p class="text-muted mb-0 small">
+                                    Fuente HLS: <span class="font-monospace">${LIVE_STREAM_URL}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="audio-panel">
+                            <audio id="live-audio-player" class="w-100" controls preload="none"></audio>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mt-4">
+                            <button class="btn btn-success" onclick="initLiveStreamPlayer(true)">
+                                <i class="bi bi-play-fill me-2"></i>Conectar y reproducir
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
+                                <i class="bi bi-stop-fill me-2"></i>Detener en navegador
+                            </button>
+                            <button class="btn btn-outline-info" onclick="checkLiveStreamStatus()">
+                                <i class="bi bi-arrow-clockwise me-2"></i>Comprobar estado
+                            </button>
+                            <a class="btn btn-outline-secondary" target="_blank" rel="noopener" href="${LIVE_STREAM_PAGE_URL}">
+                                <i class="bi bi-box-arrow-up-right me-2"></i>Abrir MediaMTX
+                            </a>
+                        </div>
+
+                        <p id="live-stream-message" class="text-muted small mb-0 mt-3">
+                            Pulsa reproducir. Si el navegador bloquea el inicio automático, usa el control del reproductor.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-4">
+                <div class="card border-0 bg-dark h-100">
+                    <div class="card-body">
+                        <h5 class="fw-bold text-white mb-3">
+                            <i class="bi bi-shield-lock text-warning me-2"></i>Privacidad y uso
+                        </h5>
+                        <div class="privacy-note">
+                            <p class="mb-2">
+                                La escucha en directo transmite audio bruto del entorno antes del filtrado automático.
+                            </p>
+                            <p class="mb-2">
+                                Debe utilizarse solo para validación técnica, mantenimiento o supervisión puntual del nodo.
+                            </p>
+                            <p class="mb-0">
+                                Este flujo no sustituye al análisis BirdNET ni se publica en BirdWeather.
+                            </p>
+                        </div>
+
+                        <hr class="border-secondary my-4">
+
+                        <h6 class="text-muted text-uppercase fw-bold small mb-3">Estado esperado</h6>
+                        <ul class="live-checklist">
+                            <li><i class="bi bi-check-circle-fill"></i> MediaMTX activo en Windows</li>
+                            <li><i class="bi bi-check-circle-fill"></i> birdstream.service activo</li>
+                            <li><i class="bi bi-check-circle-fill"></i> HLS disponible en puerto 8888</li>
+                            <li><i class="bi bi-check-circle-fill"></i> Micrófono compartido con mainNode.py</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    setTimeout(() => {
+        initLiveStreamPlayer(false);
+        checkLiveStreamStatus();
+    }, 100);
+}
+
+function setLiveStreamStatus(type, text) {
+    const status = document.getElementById('live-stream-status');
+    if (!status) return;
+
+    const classes = {
+        online: 'badge bg-success px-3 py-2',
+        warning: 'badge bg-warning px-3 py-2',
+        offline: 'badge bg-danger px-3 py-2',
+        checking: 'badge bg-secondary px-3 py-2'
+    };
+
+    const icons = {
+        online: 'bi-check-circle-fill',
+        warning: 'bi-exclamation-triangle-fill',
+        offline: 'bi-x-circle-fill',
+        checking: 'bi-circle-fill'
+    };
+
+    status.className = classes[type] || classes.checking;
+    status.innerHTML = `<i class="bi ${icons[type] || icons.checking} me-1"></i>${text}`;
+}
+
+function setLiveStreamMessage(text, isError = false) {
+    const message = document.getElementById('live-stream-message');
+    if (!message) return;
+    message.className = isError ? 'text-danger small mb-0 mt-3' : 'text-muted small mb-0 mt-3';
+    message.textContent = text;
+}
+
+function initLiveStreamPlayer(autoplay = false) {
+    const audio = document.getElementById('live-audio-player');
+    if (!audio) return;
+
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+
+    setLiveStreamStatus('checking', 'Conectando...');
+    setLiveStreamMessage('Conectando con el flujo HLS de MediaMTX...');
+
+    if (window.Hls && Hls.isSupported()) {
+        hlsInstance = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 30
+        });
+
+        hlsInstance.loadSource(LIVE_STREAM_URL);
+        hlsInstance.attachMedia(audio);
+
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+            setLiveStreamStatus('online', 'Stream disponible');
+            setLiveStreamMessage('Stream cargado. Usa el reproductor para escuchar en directo.');
+            if (autoplay) {
+                audio.play().catch(() => {
+                    setLiveStreamMessage('El navegador ha bloqueado la reproducción automática. Pulsa play manualmente.');
+                });
+            }
+        });
+
+        hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+            if (!data || !data.fatal) return;
+
+            setLiveStreamStatus('offline', 'Stream no disponible');
+            setLiveStreamMessage('No se pudo cargar el stream HLS. Comprueba MediaMTX y birdstream.service.', true);
+
+            if (hlsInstance) {
+                hlsInstance.destroy();
+                hlsInstance = null;
+            }
+        });
+
+        return;
+    }
+
+    if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+        audio.src = LIVE_STREAM_URL;
+        audio.addEventListener('loadedmetadata', () => {
+            setLiveStreamStatus('online', 'Stream disponible');
+            setLiveStreamMessage('Stream cargado mediante soporte HLS nativo.');
+            if (autoplay) {
+                audio.play().catch(() => {
+                    setLiveStreamMessage('El navegador ha bloqueado la reproducción automática. Pulsa play manualmente.');
+                });
+            }
+        }, { once: true });
+        return;
+    }
+
+    setLiveStreamStatus('warning', 'HLS no soportado');
+    setLiveStreamMessage('Este navegador no soporta HLS directamente. Abre MediaMTX en una pestaña nueva.', true);
+}
+
+function stopLiveStreamPlayer() {
+    const audio = document.getElementById('live-audio-player');
+
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+
+    if (audio) {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+    }
+
+    setLiveStreamStatus('checking', 'Reproductor detenido');
+    setLiveStreamMessage('Reproducción detenida en este navegador. El servicio de streaming de la Raspberry no se detiene desde aquí.');
+}
+
+async function checkLiveStreamStatus() {
+    setLiveStreamStatus('checking', 'Comprobando...');
+    try {
+        const response = await fetch(`${LIVE_STREAM_URL}?t=${Date.now()}`, { cache: 'no-store' });
+        if (response.ok) {
+            setLiveStreamStatus('online', 'Stream disponible');
+            setLiveStreamMessage('MediaMTX está sirviendo el manifiesto HLS correctamente.');
+        } else {
+            setLiveStreamStatus('offline', `HTTP ${response.status}`);
+            setLiveStreamMessage('MediaMTX responde, pero el stream HLS no está disponible.', true);
+        }
+    } catch (e) {
+        setLiveStreamStatus('offline', 'Sin conexión HLS');
+        setLiveStreamMessage('No se pudo consultar el stream. Comprueba que MediaMTX esté abierto y que el puerto 8888 sea accesible.', true);
+    }
+}
+
 
 // ════════════════════════════════════════════════════════════════
 // HISTÓRICO

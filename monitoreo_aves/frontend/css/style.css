@@ -368,9 +368,7 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 .bg-warning-subtle   { background: rgba(224,160,48,0.10) !important; color: var(--amber)  !important; }
 .bg-danger-subtle    { background: rgba(217,79,79,0.10)  !important; color: var(--red)    !important; }
 
-/* ================================================================
-   LIVE FEED SPLIT (Dashboard)
-   ================================================================ */
+/* LIVE FEED SPLIT*/
 .main-detection-split {
   display: flex;
   height: 100%;
@@ -439,9 +437,7 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
   object-fit: cover; display: block; min-height: 0;
 }
 
-/* ================================================================
-   TABLAS — BASE
-   ================================================================ */
+/* TABLAS — BASE */
 .table-dark {
   --bs-table-bg: transparent !important;
   --bs-table-hover-bg: rgba(255,255,255,0.025) !important;
@@ -485,12 +481,7 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 }
 .table-img-preview:hover { opacity: 1; }
 
-/* ================================================================
-   HISTÓRICO — SCROLL ADAPTATIVO ★
-   La cadena flex: main-content(overflow:hidden) →
-   history-card-container(flex:1, overflow:hidden) →
-   table-container(flex:1, overflow-y:auto)
-   ================================================================ */
+/* HISTÓRICO — SCROLL ADAPTATIVO */
 .history-card-container {
   flex: 1 !important;
   min-height: 0 !important;
@@ -519,7 +510,6 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 .table-container::-webkit-scrollbar-track { background: transparent; }
 .table-container::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 99px; }
 
-/* Header pegajoso */
 .table-sticky-header th {
   position: sticky !important;
   top: 0 !important;
@@ -527,9 +517,7 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
   background: var(--bg-card) !important;
 }
 
-/* ================================================================
-   PROGRESS BARS
-   ================================================================ */
+/*PROGRESS BARS*/
 .progress {
   background: rgba(255,255,255,0.07) !important;
   border-radius: 99px !important;
@@ -538,18 +526,14 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 .progress-bar.bg-success { background: var(--green) !important; }
 .progress-bar.bg-warning { background: var(--amber) !important; }
 
-/* ================================================================
-   BADGES
-   ================================================================ */
+/*BADGES*/
 .badge.bg-success { background: var(--green) !important;  color: #0c0e0d !important; font-weight: 600; }
 .badge.bg-danger  { background: var(--red)   !important;  font-weight: 600; }
 .badge.bg-warning { background: var(--amber) !important;  color: #0c0e0d !important; font-weight: 600; }
 .badge.bg-info    { background: var(--teal)  !important;  color: #0c0e0d !important; }
 .badge.bg-dark-subtle { background: rgba(255,255,255,0.06) !important; border: 1px solid var(--border-subtle); }
 
-/* ================================================================
-   BOTONES
-   ================================================================ */
+/*BOTONES*/
 .btn-success {
   background: var(--green) !important;
   border-color: var(--green) !important;
@@ -579,9 +563,7 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 }
 .btn-outline-info:hover { background: rgba(37,175,192,0.08) !important; }
 
-/* ================================================================
-   NODOS
-   ================================================================ */
+/*NODOS */
 .node-card {
   transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s !important;
 }
@@ -592,14 +574,10 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 }
 .node-card .card-body { padding: 18px !important; }
 
-/* ================================================================
-   ANÁLISIS ECO
-   ================================================================ */
+/* ANÁLISIS ECO */
 #biodiversityMap { min-height: 300px !important; }
 
-/* ================================================================
-   ANIMACIONES
-   ================================================================ */
+/*ANIMACIONES*/
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(9px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -614,11 +592,8 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
 @keyframes badge-pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 .animate-pulse { animation: badge-pulse 1.8s ease-in-out infinite; }
 
-/* =========================================
-   ADAPTACIÓN PARA MÓVILES (RESPONSIVE)
-   ========================================= */
+/* ADAPTACIÓN PARA MÓVILES (RESPONSIVE)*/
 @media (max-width: 768px) {
-    /* 1. Reducimos el padding general para aprovechar la pantalla */
     :root {
         --pad: 15px;
     }
@@ -639,7 +614,6 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
         left: 0 !important;
     }
 
-    /* Fondo oscuro borroso al abrir el menú */
     .sidebar-overlay {
         position: fixed;
         top: 0; left: 0; width: 100vw; height: 100vh;
@@ -655,7 +629,6 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
         pointer-events: auto;
     }
 
-    /* 3. Arreglo de los medidores de Análisis Eco (Gauges) */
     .gauges-row-top,
     .gauges-row-bot,
     .gauges-entropy-row {
@@ -663,7 +636,6 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
         gap: 15px !important;
     }
     
-    /* 4. Arreglo de la Tarjeta Principal de Tiempo Real */
     .main-detection-split {
         flex-direction: column !important;
     }
@@ -675,5 +647,96 @@ p.text-muted { color: var(--text-secondary) !important; font-size: 0.875rem; }
     .split-info {
         width: 100% !important;
         padding: 15px !important;
+    }
+}
+
+/*ESCUCHA EN DIRECTO */
+.live-stream-card .card-body {
+  padding: 22px !important;
+}
+
+.live-stream-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.live-stream-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(56,178,97,0.10);
+  color: var(--green-bright);
+  border: 1px solid rgba(56,178,97,0.20);
+  box-shadow: 0 0 22px rgba(56,178,97,0.10);
+}
+
+.live-stream-icon i {
+  font-size: 1.85rem;
+}
+
+.audio-panel {
+  border: 1px solid var(--border-subtle);
+  background:
+    radial-gradient(circle at top left, rgba(56,178,97,0.12), transparent 34%),
+    linear-gradient(135deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01));
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.audio-panel audio {
+  filter: drop-shadow(0 3px 10px rgba(0,0,0,0.35));
+}
+
+.privacy-note {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.live-checklist {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.live-checklist li {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-checklist i {
+  color: var(--green);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 768px) {
+    .live-stream-hero {
+        align-items: flex-start;
+    }
+
+    .live-stream-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+    }
+
+    .live-stream-icon i {
+        font-size: 1.45rem;
+    }
+
+    .audio-panel {
+        padding: 16px;
     }
 }

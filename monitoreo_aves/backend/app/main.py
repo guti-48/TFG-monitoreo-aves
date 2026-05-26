@@ -237,6 +237,57 @@ def read_detections(skip: int = 0, limit: int = 500, db: Session = Depends(datab
     detections = db.query(models.Detection).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
     return detections
 
+
+## ENDPOINTS --> relacionados ocn la metrica de escucha
+@app.post("/audio-metrics/", response_model=schemas.AudioMetricResponse)
+def create_audio_metric(metric: schemas.AudioMetricCreate, db: Session = Depends(database.get_db)):
+    """
+    Guarda una muestra acústica agregada de un ciclo de grabación.
+    No representa una detección de ave; representa el estado acústico del entorno.
+    """
+    db_device = db.query(models.Device).filter(models.Device.name == metric.device_name).first()
+
+    if not db_device:
+        db_device = models.Device(name=metric.device_name, location="Desconocida")
+        db.add(db_device)
+        db.commit()
+        db.refresh(db_device)
+
+    new_metric = models.AudioMetric(
+        timestamp=metric.timestamp,
+        filename=metric.filename,
+        sample_rate=metric.sample_rate,
+        duration=metric.duration,
+        rms=metric.rms,
+        aci=metric.aci,
+        adi=metric.adi,
+        aei=metric.aei,
+        bio=metric.bio,
+        ndsi=metric.ndsi,
+        ht=metric.ht,
+        hf=metric.hf,
+        h=metric.h,
+        device_id=db_device.id
+    )
+
+    db.add(new_metric)
+    db.commit()
+    db.refresh(new_metric)
+    return new_metric
+
+
+@app.get("/audio-metrics/", response_model=list[schemas.AudioMetricResponse])
+def read_audio_metrics(skip: int = 0, limit: int = 500, db: Session = Depends(database.get_db)):
+    """Devuelve las métricas acústicas agregadas más recientes."""
+    metrics = (
+        db.query(models.AudioMetric)
+        .order_by(models.AudioMetric.timestamp.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return metrics
+
 '''
 CUARTO ENDPOINT --> OBTENER REPORTE DE BIODIVERSIDAD
 Esta API nos devolvera el reporte de biodeiversidad generado con los datos almacenados en la base de datos,

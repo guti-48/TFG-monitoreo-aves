@@ -367,6 +367,110 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude)
         guardarBackupLocal(species, confidence, timestamp_str, amplitude, normalizarFilenameBase(filename))
 
 
+def calcularMetricasAcusticas(audio_path):
+    """
+    Calcula índices acústicos del paisaje sonoro para una grabación WAV.
+    Se ejecuta en el nodo Edge y no requiere subir el audio bruto para el análisis científico.
+    """
+    try:
+        from maad import sound, features
+
+        s, fs = sound.load(audio_path)
+        Sxx, tn, fn, ext = sound.spectrogram(s, fs)
+
+        _, _, aci = features.acoustic_complexity_index(Sxx)
+        aci_val = float(np.sum(aci))
+
+        adi_val = float(features.acoustic_diversity_index(Sxx, fn))
+
+        try:
+            aei_val = float(features.acoustic_evenness_index(Sxx, fn))
+        except AttributeError:
+            aei_val = float(1.0 - (adi_val / 3.0)) if not np.isnan(adi_val) else 0.5
+
+        try:
+            bio_val = float(features.bioacoustics_index(Sxx, fn))
+        except AttributeError:
+            bio_val = float(features.bioacoustic_index(Sxx, fn))
+
+        ndsi_val, _, _, _ = features.soundscape_index(Sxx, fn)
+        ndsi_val = float(ndsi_val)
+
+        E_t = np.sum(Sxx, axis=0)
+        if np.sum(E_t) > 0:
+            p_i = E_t / np.sum(E_t)
+            ht_val = float(-np.sum(p_i * np.log(p_i + 1e-12)) / np.log(len(p_i)))
+        else:
+            ht_val = 0.0
+
+        E_f = np.sum(Sxx, axis=1)
+        if np.sum(E_f) > 0:
+            p_j = E_f / np.sum(E_f)
+            hf_val = float(-np.sum(p_j * np.log(p_j + 1e-12)) / np.log(len(p_j)))
+        else:
+            hf_val = 0.0
+
+        h_val = float(ht_val * hf_val)
+
+        metricas = {
+            "aci": 0.0 if np.isnan(aci_val) else aci_val,
+            "adi": 0.0 if np.isnan(adi_val) else adi_val,
+            "aei": 0.0 if np.isnan(aei_val) else aei_val,
+            "bio": 0.0 if np.isnan(bio_val) else bio_val,
+            "ndsi": 0.0 if np.isnan(ndsi_val) else ndsi_val,
+            "ht": 0.0 if np.isnan(ht_val) else ht_val,
+            "hf": 0.0 if np.isnan(hf_val) else hf_val,
+            "h": 0.0 if np.isnan(h_val) else h_val,
+        }
+
+        print(
+            "Métricas acústicas calculadas: "
+            f"ACI={metricas['aci']:.2f}, ADI={metricas['adi']:.2f}, "
+            f"AEI={metricas['aei']:.2f}, BIO={metricas['bio']:.2f}, "
+            f"NDSI={metricas['ndsi']:.2f}, H={metricas['h']:.3f}"
+        )
+        return metricas
+
+    except ImportError:
+        print("No se pudo calcular métricas acústicas: falta instalar scikit-maad en birdnet-env.")
+        return None
+    except Exception as e:
+        print(f"Error calculando métricas acústicas: {e}")
+        return None
+
+
+def enviarMetricasAcusticas(metricas, filename_wav, timestamp_str, rms_amplitude):
+    """Envía al backend una fila de métricas acústicas por cada ciclo de grabación."""
+    if not metricas:
+        return
+
+    datos = {
+        "timestamp": timestamp_str,
+        "filename": normalizarFilenameWav(filename_wav),
+        "device_name": NODE_NAME,
+        "sample_rate": SAMPLE_RATE,
+        "duration": float(DURATION),
+        "rms": float(rms_amplitude),
+        "aci": float(metricas.get("aci", 0.0)),
+        "adi": float(metricas.get("adi", 0.0)),
+        "aei": float(metricas.get("aei", 0.0)),
+        "bio": float(metricas.get("bio", 0.0)),
+        "ndsi": float(metricas.get("ndsi", 0.0)),
+        "ht": float(metricas.get("ht", 0.0)),
+        "hf": float(metricas.get("hf", 0.0)),
+        "h": float(metricas.get("h", 0.0)),
+    }
+
+    try:
+        r = requests.post(f"{SERVER_URL}/audio-metrics/", json=datos, timeout=60)
+        if r.status_code == 200:
+            print("Métricas acústicas enviadas al servidor.")
+        else:
+            print(f"Servidor rechazó las métricas acústicas ({r.status_code}): {r.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error enviando métricas acústicas: {e}")
+
+
 def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
     """Guarda los datos en un CSV local si el servidor no está disponible."""
     existe = os.path.isfile(CSV_BACKUP)
@@ -534,6 +638,11 @@ if __name__ == "__main__":
                 audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
                 generacionEspectograma(audio_path, filename)
                 print("Proceso completado, revisa las carpetas de salida.")
+
+                # Métricas acústicas del ciclo completo.
+                # Se envían siempre que se puedan calcular, aunque no haya aves detectadas.
+                metricas_acusticas = calcularMetricasAcusticas(audio_path)
+                enviarMetricasAcusticas(metricas_acusticas, filenameWAV, timestampDB, rms_amplitude)
 
                 #Análisis BirdNET
                 print("Analizando especies de aves y ruidos...")
