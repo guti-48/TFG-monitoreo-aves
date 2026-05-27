@@ -219,8 +219,8 @@ def calcular_indices_acusticos_desde_wav():
 
 def calcular_indices_acusticos():
     """
-    Fuente principal: tabla audio_metrics.
-    Fallback: WAVs locales del servidor, para compatibilidad con datos previos.
+    primero revisa: tabla audio_metrics
+    sino: WAVs locales del servidor, para compatibilidad con datos previos
     """
     datos_db = calcular_indices_acusticos_desde_db()
     if datos_db:

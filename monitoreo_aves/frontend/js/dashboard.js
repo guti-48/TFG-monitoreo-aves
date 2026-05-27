@@ -14,6 +14,9 @@ const STREAM_NAME = "birdmonitor-audio";
 const MEDIAMTX_HLS_PORT = 8888;
 const LIVE_STREAM_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/index.m3u8`;
 const LIVE_STREAM_PAGE_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/`;
+const STREAM_CONTROL_URL = "/stream/control";
+const STREAM_NODE_NAME = "birdmonitor";
+
 
 let hlsInstance = null;
 
@@ -21,20 +24,20 @@ let currentView = 'dashboard';
 let activeNodeFilter = null;
 let myChart = null;
 let intervalId = null;
+let liveHls = null;
+let streamStatusTimer = null;
+let lastStreamData = null;
 
-// ════════════════════════════════════════════════════════════════
-// NAVEGACIÓN
-// ════════════════════════════════════════════════════════════════
-
+// NAVEGACIÓ
 function switchView(viewName, nodeFilter = null) {
     if (currentView === 'live' && viewName !== 'live') {
-        stopLiveStreamPlayer();
+        cleanupLiveStream();
     }
 
     currentView    = viewName;
     activeNodeFilter = nodeFilter;
 
-    ['btn-dashboard','btn-live','btn-nodes','btn-history','btn-science', 'btn-daily'].forEach(id => {
+    ['btn-dashboard','btn-live','btn-nodes','btn-history','btn-science','btn-daily'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.className = 'nav-link';
     });
@@ -76,11 +79,10 @@ function switchView(viewName, nodeFilter = null) {
     else if (viewName === 'daily')      renderDailyView(container); 
 }
 
-// ════════════════════════════════════════════════════════════════
 // ESCUCHA EN DIRECTO
-// ════════════════════════════════════════════════════════════════
-
 function renderLiveStreamView(container) {
+    cleanupLiveStream();
+
     container.innerHTML = `
         <div class="row mb-4 animate-fade-in">
             <div class="col-12 d-flex justify-content-between align-items-start flex-wrap gap-3">
@@ -88,12 +90,9 @@ function renderLiveStreamView(container) {
                     <h3 class="fw-bold text-white mb-1">
                         <i class="bi bi-broadcast-pin text-accent me-2"></i>Escucha en directo
                     </h3>
-                    <p class="text-muted mb-0">
-                        Audio en vivo capturado desde el micrófono USB del nodo Raspberry Pi y servido mediante MediaMTX/HLS.
-                    </p>
                 </div>
                 <span id="live-stream-status" class="badge bg-secondary px-3 py-2">
-                    <i class="bi bi-circle-fill me-1"></i>Comprobando stream...
+                    <i class="bi bi-circle-fill me-1"></i>Consultando estado...
                 </span>
             </div>
         </div>
@@ -106,11 +105,11 @@ function renderLiveStreamView(container) {
                             <div class="live-stream-icon">
                                 <i class="bi bi-soundwave"></i>
                             </div>
-                            <div>
-                                <p class="text-muted small text-uppercase fw-bold mb-1">Canal activo</p>
+                            <div class="min-w-0">
+                                <p class="text-muted small text-uppercase fw-bold mb-1">Canal HLS</p>
                                 <h4 class="fw-bold text-white mb-1">${STREAM_NAME}</h4>
                                 <p class="text-muted mb-0 small">
-                                    Fuente HLS: <span class="font-monospace">${LIVE_STREAM_URL}</span>
+                                    Fuente: <span id="live-hls-url" class="font-monospace">${LIVE_STREAM_URL}</span>
                                 </p>
                             </div>
                         </div>
@@ -120,22 +119,37 @@ function renderLiveStreamView(container) {
                         </div>
 
                         <div class="d-flex flex-wrap gap-2 mt-4">
-                            <button class="btn btn-success" onclick="initLiveStreamPlayer(true)">
-                                <i class="bi bi-play-fill me-2"></i>Conectar y reproducir
+                            <button class="btn btn-success" onclick="setLiveStreamEnabled(true)">
+                                <i class="bi bi-broadcast me-2"></i>Activar escucha
                             </button>
+
+                            <button class="btn btn-outline-secondary" onclick="setLiveStreamEnabled(false)">
+                                <i class="bi bi-stop-circle me-2"></i>Detener escucha
+                            </button>
+
+                            <button class="btn btn-outline-info" onclick="initLiveStreamPlayer(true)">
+                                <i class="bi bi-headphones me-2"></i>Conectar reproductor
+                            </button>
+
                             <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
-                                <i class="bi bi-stop-fill me-2"></i>Detener en navegador
+                                <i class="bi bi-volume-mute me-2"></i>Detener en navegador
                             </button>
-                            <button class="btn btn-outline-info" onclick="checkLiveStreamStatus()">
-                                <i class="bi bi-arrow-clockwise me-2"></i>Comprobar estado
+
+                            <button class="btn btn-outline-info" onclick="refreshLiveStreamControlStatus()">
+                                <i class="bi bi-arrow-clockwise me-2"></i>Actualizar estado
                             </button>
-                            <a class="btn btn-outline-secondary" target="_blank" rel="noopener" href="${LIVE_STREAM_PAGE_URL}">
+
+                            <a id="live-stream-page-link"
+                               class="btn btn-outline-secondary"
+                               target="_blank"
+                               rel="noopener"
+                               href="${LIVE_STREAM_PAGE_URL}">
                                 <i class="bi bi-box-arrow-up-right me-2"></i>Abrir MediaMTX
                             </a>
                         </div>
 
                         <p id="live-stream-message" class="text-muted small mb-0 mt-3">
-                            Pulsa reproducir. Si el navegador bloquea el inicio automático, usa el control del reproductor.
+                            Activa la escucha para arrancar birdstream.service en la Raspberry. Después conecta el reproductor.
                         </p>
                     </div>
                 </div>
@@ -144,6 +158,33 @@ function renderLiveStreamView(container) {
             <div class="col-xl-4">
                 <div class="card border-0 bg-dark h-100">
                     <div class="card-body">
+                        <h5 class="fw-bold text-white mb-3">
+                            <i class="bi bi-router text-info me-2"></i>Control del servicio
+                        </h5>
+
+                        <div class="live-info-box mb-4">
+                            <div class="live-info-row">
+                                <span>Estado deseado</span>
+                                <strong id="stream-desired-state">-</strong>
+                            </div>
+                            <div class="live-info-row">
+                                <span>Estado real</span>
+                                <strong id="stream-real-state">-</strong>
+                            </div>
+                            <div class="live-info-row">
+                                <span>Nodo</span>
+                                <strong>${STREAM_NODE_NAME}</strong>
+                            </div>
+                            <div class="live-info-row">
+                                <span>Último reporte</span>
+                                <strong id="stream-last-status">-</strong>
+                            </div>
+                        </div>
+
+                        <div id="live-stream-detail" class="live-status-detail mb-4">
+                            Esperando estado del backend...
+                        </div>
+
                         <h5 class="fw-bold text-white mb-3">
                             <i class="bi bi-shield-lock text-warning me-2"></i>Privacidad y uso
                         </h5>
@@ -155,28 +196,21 @@ function renderLiveStreamView(container) {
                                 Debe utilizarse solo para validación técnica, mantenimiento o supervisión puntual del nodo.
                             </p>
                             <p class="mb-0">
-                                Este flujo no sustituye al análisis BirdNET ni se publica en BirdWeather.
+                                El botón “Detener escucha” apaga el servicio <span class="font-monospace">birdstream.service</span> en la Raspberry.
                             </p>
                         </div>
-
-                        <hr class="border-secondary my-4">
-
-                        <h6 class="text-muted text-uppercase fw-bold small mb-3">Estado esperado</h6>
-                        <ul class="live-checklist">
-                            <li><i class="bi bi-check-circle-fill"></i> MediaMTX activo en Windows</li>
-                            <li><i class="bi bi-check-circle-fill"></i> birdstream.service activo</li>
-                            <li><i class="bi bi-check-circle-fill"></i> HLS disponible en puerto 8888</li>
-                            <li><i class="bi bi-check-circle-fill"></i> Micrófono compartido con mainNode.py</li>
-                        </ul>
                     </div>
                 </div>
             </div>
         </div>`;
 
-    setTimeout(() => {
-        initLiveStreamPlayer(false);
-        checkLiveStreamStatus();
-    }, 100);
+    refreshLiveStreamControlStatus();
+
+    streamStatusTimer = setInterval(() => {
+        if (currentView === 'live') {
+            refreshLiveStreamControlStatus();
+        }
+    }, 5000);
 }
 
 function setLiveStreamStatus(type, text) {
@@ -208,6 +242,116 @@ function setLiveStreamMessage(text, isError = false) {
     message.textContent = text;
 }
 
+async function fetchLiveStreamControlStatus() {
+    const response = await fetch(
+        `${STREAM_CONTROL_URL}?node_name=${encodeURIComponent(STREAM_NODE_NAME)}&t=${Date.now()}`,
+        { cache: 'no-store' }
+    );
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.json();
+}
+
+async function refreshLiveStreamControlStatus() {
+    try {
+        const data = await fetchLiveStreamControlStatus();
+        lastStreamData = data;
+
+        const hlsUrl = data.hls_url || LIVE_STREAM_URL;
+        const pageUrl = data.page_url || LIVE_STREAM_PAGE_URL;
+
+        const hlsLabel = document.getElementById('live-hls-url');
+        const directLink = document.getElementById('live-stream-page-link');
+        const desired = document.getElementById('stream-desired-state');
+        const real = document.getElementById('stream-real-state');
+        const lastStatus = document.getElementById('stream-last-status');
+        const detail = document.getElementById('live-stream-detail');
+
+        if (hlsLabel) hlsLabel.textContent = hlsUrl;
+        if (directLink) directLink.href = pageUrl;
+
+        if (desired) desired.textContent = data.stream_enabled ? 'Activado' : 'Desactivado';
+        if (real) real.textContent = data.actual_running ? 'Ejecutándose' : 'Detenido';
+        if (lastStatus) lastStatus.textContent = data.last_status_at || '-';
+
+        if (detail) {
+            detail.innerHTML = `
+                <div><strong>Detalle:</strong> ${data.detail || 'Sin detalle'}</div>
+                <div><strong>HLS:</strong> <span class="font-monospace">${hlsUrl}</span></div>
+                <div><strong>Actualizado:</strong> ${data.updated_at || '-'}</div>
+            `;
+        }
+
+        if (data.actual_running) {
+            setLiveStreamStatus('online', 'Stream activo');
+            setLiveStreamMessage('El servicio de streaming está activo. Puedes conectar el reproductor.');
+        } else if (data.stream_enabled && !data.actual_running) {
+            setLiveStreamStatus('warning', 'Arrancando...');
+            setLiveStreamMessage('El backend ha solicitado activar la escucha. Esperando reporte de la Raspberry.');
+        } else {
+            setLiveStreamStatus('checking', 'Stream detenido');
+            setLiveStreamMessage('La escucha está desactivada. Pulsa “Activar escucha” para arrancar birdstream.service.');
+        }
+
+    } catch (e) {
+        setLiveStreamStatus('offline', 'Error backend');
+        setLiveStreamMessage(`No se pudo consultar /stream/control: ${e.message}`, true);
+
+        const detail = document.getElementById('live-stream-detail');
+        if (detail) {
+            detail.textContent = `Error consultando el estado del streaming: ${e.message}`;
+        }
+    }
+}
+
+async function setLiveStreamEnabled(enabled) {
+    try {
+        setLiveStreamStatus('checking', enabled ? 'Activando...' : 'Deteniendo...');
+        setLiveStreamMessage(enabled
+            ? 'Solicitando a la Raspberry que arranque birdstream.service...'
+            : 'Solicitando a la Raspberry que detenga birdstream.service...'
+        );
+
+        const response = await fetch(STREAM_CONTROL_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                node_name: STREAM_NODE_NAME,
+                stream_enabled: enabled
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        lastStreamData = await response.json();
+        await refreshLiveStreamControlStatus();
+
+        if (enabled) {
+            setTimeout(async () => {
+                await refreshLiveStreamControlStatus();
+                if (lastStreamData && lastStreamData.actual_running) {
+                    initLiveStreamPlayer(true);
+                }
+            }, 6000);
+        } else {
+            stopLiveStreamPlayer();
+        }
+
+    } catch (e) {
+        setLiveStreamStatus('offline', 'Error');
+        setLiveStreamMessage(`No se pudo cambiar el estado del streaming: ${e.message}`, true);
+    }
+}
+
+function getCurrentHlsUrl() {
+    return lastStreamData?.hls_url || LIVE_STREAM_URL;
+}
+
 function initLiveStreamPlayer(autoplay = false) {
     const audio = document.getElementById('live-audio-player');
     if (!audio) return;
@@ -216,6 +360,8 @@ function initLiveStreamPlayer(autoplay = false) {
         hlsInstance.destroy();
         hlsInstance = null;
     }
+
+    const hlsUrl = getCurrentHlsUrl();
 
     setLiveStreamStatus('checking', 'Conectando...');
     setLiveStreamMessage('Conectando con el flujo HLS de MediaMTX...');
@@ -227,7 +373,7 @@ function initLiveStreamPlayer(autoplay = false) {
             backBufferLength: 30
         });
 
-        hlsInstance.loadSource(LIVE_STREAM_URL);
+        hlsInstance.loadSource(hlsUrl);
         hlsInstance.attachMedia(audio);
 
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -235,7 +381,7 @@ function initLiveStreamPlayer(autoplay = false) {
             setLiveStreamMessage('Stream cargado. Usa el reproductor para escuchar en directo.');
             if (autoplay) {
                 audio.play().catch(() => {
-                    setLiveStreamMessage('El navegador ha bloqueado la reproducción automática. Pulsa play manualmente.');
+                    setLiveStreamMessage('El navegador bloqueó la reproducción automática. Pulsa play manualmente.');
                 });
             }
         });
@@ -256,13 +402,13 @@ function initLiveStreamPlayer(autoplay = false) {
     }
 
     if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-        audio.src = LIVE_STREAM_URL;
+        audio.src = hlsUrl;
         audio.addEventListener('loadedmetadata', () => {
             setLiveStreamStatus('online', 'Stream disponible');
             setLiveStreamMessage('Stream cargado mediante soporte HLS nativo.');
             if (autoplay) {
                 audio.play().catch(() => {
-                    setLiveStreamMessage('El navegador ha bloqueado la reproducción automática. Pulsa play manualmente.');
+                    setLiveStreamMessage('El navegador bloqueó la reproducción automática. Pulsa play manualmente.');
                 });
             }
         }, { once: true });
@@ -287,32 +433,19 @@ function stopLiveStreamPlayer() {
         audio.load();
     }
 
-    setLiveStreamStatus('checking', 'Reproductor detenido');
-    setLiveStreamMessage('Reproducción detenida en este navegador. El servicio de streaming de la Raspberry no se detiene desde aquí.');
+    setLiveStreamMessage('Reproducción detenida en este navegador.');
 }
 
-async function checkLiveStreamStatus() {
-    setLiveStreamStatus('checking', 'Comprobando...');
-    try {
-        const response = await fetch(`${LIVE_STREAM_URL}?t=${Date.now()}`, { cache: 'no-store' });
-        if (response.ok) {
-            setLiveStreamStatus('online', 'Stream disponible');
-            setLiveStreamMessage('MediaMTX está sirviendo el manifiesto HLS correctamente.');
-        } else {
-            setLiveStreamStatus('offline', `HTTP ${response.status}`);
-            setLiveStreamMessage('MediaMTX responde, pero el stream HLS no está disponible.', true);
-        }
-    } catch (e) {
-        setLiveStreamStatus('offline', 'Sin conexión HLS');
-        setLiveStreamMessage('No se pudo consultar el stream. Comprueba que MediaMTX esté abierto y que el puerto 8888 sea accesible.', true);
+function cleanupLiveStream() {
+    stopLiveStreamPlayer();
+
+    if (streamStatusTimer) {
+        clearInterval(streamStatusTimer);
+        streamStatusTimer = null;
     }
 }
 
-
-// ════════════════════════════════════════════════════════════════
 // HISTÓRICO
-// ════════════════════════════════════════════════════════════════
-
 async function renderHistoryView(container) {
     container.innerHTML = `<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-success" role="status"></div><span class="ms-3 text-muted">Cargando base de datos completa...</span></div>`;
     try {
@@ -419,18 +552,118 @@ async function updateDashboard() {
 
 function getDashboardHTML() {
     return `
-    <h4 class="mb-4 fw-bold" id="dashboard-title">Monitorización Global</h4>
+    <section class="dashboard-hero mb-4 animate-fade-in">
+        <div class="dashboard-hero-main">
+            <p class="hero-eyebrow mb-2">
+                <i class="bi bi-cpu me-2"></i>Nodo Edge · BirdNET · Bioacústica
+            </p>
+            <h3 class="dashboard-hero-title mb-2">Monitorización Global</h3>
+            <p class="dashboard-hero-subtitle mb-0">
+                Vista operativa del sistema: detecciones recientes, actividad acústica, especies dominantes y estado sonoro del entorno.
+            </p>
+        </div>
+        <div class="hero-status-grid">
+            <div class="hero-status-chip">
+                <i class="bi bi-router"></i>
+                <span>Nodo activo</span>
+            </div>
+            <div class="hero-status-chip">
+                <i class="bi bi-database-check"></i>
+                <span>Backend conectado</span>
+            </div>
+            <div class="hero-status-chip">
+                <i class="bi bi-soundwave"></i>
+                <span>Ciclo 5 min</span>
+            </div>
+        </div>
+    </section>
+
     <div class="row g-4 mb-4">
-        <div class="col-md-3"><div class="card kpi-card border-start-success"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p><h3 class="fw-bold mb-0" id="total-counter">0</h3></div><div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div></div></div></div>
-        <div class="col-md-3"><div class="card kpi-card border-start-earth"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p><h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species">-</h4></div><div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div></div></div></div>
-        <div class="col-md-3"><div class="card kpi-card border-start-info"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p><h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4></div><div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div></div></div></div>
-        <div class="col-md-3"><div class="card kpi-card border-start-secondary" id="noise-card"><div class="card-body d-flex align-items-center justify-content-between"><div><p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p><h4 class="fw-bold mb-0 fs-5" id="noise-metric">Calculando...</h4></div><div class="icon-box bg-secondary-subtle" id="noise-icon-box"><i class="bi bi-boombox fs-3" id="noise-icon"></i></div></div></div></div>
+        <div class="col-md-3">
+            <div class="card kpi-card kpi-card-primary border-start-success">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p>
+                        <h3 class="fw-bold mb-0" id="total-counter">0</h3>
+                    </div>
+                    <div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card kpi-card-earth border-start-earth">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p>
+                        <h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species">-</h4>
+                    </div>
+                    <div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card kpi-card-info border-start-info">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p>
+                        <h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4>
+                    </div>
+                    <div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card kpi-card kpi-card-noise border-start-secondary" id="noise-card">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p>
+                        <h4 class="fw-bold mb-0 fs-5" id="noise-metric">Calculando...</h4>
+                    </div>
+                    <div class="icon-box bg-secondary-subtle" id="noise-icon-box"><i class="bi bi-boombox fs-3" id="noise-icon"></i></div>
+                </div>
+            </div>
+        </div>
     </div>
+
     <div class="row g-4 mb-5">
-        <div class="col-lg-7"><div class="card shadow-sm border-0 bg-dark overflow-hidden" style="min-height:420px;"><div class="card-body p-0 d-flex flex-column h-100" id="live-feed-container"><div class="d-flex align-items-center justify-content-center flex-grow-1 text-muted"><p>Esperando datos...</p></div></div></div></div>
-        <div class="col-lg-5"><div class="card h-100 shadow-sm border-0"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold m-0">Distribución de Especies</h5></div><div class="card-body"><canvas id="speciesChart" style="max-height:300px;"></canvas></div></div></div>
+        <div class="col-lg-7">
+            <div class="card shadow-sm border-0 bg-dark overflow-hidden dashboard-live-card" style="min-height:420px;">
+                <div class="card-body p-0 d-flex flex-column h-100" id="live-feed-container">
+                    <div class="empty-detection-state">
+                        <div class="empty-detection-icon"><i class="bi bi-radar"></i></div>
+                        <p class="mb-1 fw-semibold">Esperando detecciones...</p>
+                        <span>El nodo mostrará aquí la última fuente acústica identificada.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100 shadow-sm border-0 chart-card">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="fw-bold m-0"><i class="bi bi-pie-chart-fill me-2 text-accent"></i>Distribución de Especies</h5>
+                </div>
+                <div class="card-body"><canvas id="speciesChart" style="max-height:300px;"></canvas></div>
+            </div>
+        </div>
     </div>
-    <div class="row"><div class="col-12"><div class="card shadow-sm border-0 bg-dark"><div class="card-header bg-transparent border-0 py-3"><h5 class="fw-bold text-white m-0">Registro Reciente</h5></div><div class="table-responsive"><table class="table table-dark table-hover align-middle mb-0"><thead class="bg-dark-subtle text-uppercase small"><tr><th class="ps-4">Hora</th><th>Especie</th><th>Confianza</th><th>Espectrograma</th><th class="text-end pe-4">ID</th></tr></thead><tbody id="history-table-body"></tbody></table></div></div></div></div>`;
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 bg-dark recent-table-card">
+                <div class="card-header bg-transparent border-0 py-3">
+                    <h5 class="fw-bold text-white m-0"><i class="bi bi-list-check me-2 text-accent"></i>Registro Reciente</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle mb-0">
+                        <thead class="bg-dark-subtle text-uppercase small">
+                            <tr><th class="ps-4">Hora</th><th>Especie</th><th>Confianza</th><th>Espectrograma</th><th class="text-end pe-4">ID</th></tr>
+                        </thead>
+                        <tbody id="history-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>`;
 }
 
 async function downloadCSV() {
@@ -484,7 +717,7 @@ async function renderLiveFeedSplit(d) {
     const speciesPhotoUrl = await getSpeciesImageUrl(d.species);
 
     container.innerHTML = `
-        <div class="main-detection-split w-100">
+        <div class="main-detection-split enhanced-detection w-100">
             <div class="split-photo">
                 <img src="${speciesPhotoUrl}" class="bird-photo" onerror="this.src='${PLACEHOLDER_IMG}'">
                 <div class="photo-overlay-label"><i class="bi bi-camera-fill me-2"></i>Imagen de Referencia</div>
@@ -826,7 +1059,7 @@ async function renderScienceView(container) {
             <div class="col-lg-5">
                 <div class="card border-0 bg-dark h-100">
                     <div class="card-body">
-                        <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos (audio WAV)</p>
+                        <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos del Paisaje Sonoro</p>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Complexity Index: variabilidad espectral de la grabación. Valores altos indican gran actividad biótica.">ACI</span>
                             <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg??0)/2000*100,100)}%;background:linear-gradient(90deg,#60a5fa,#818cf8);"></div></div>
@@ -848,7 +1081,7 @@ async function renderScienceView(container) {
                             <span class="index-bar-val">${(r.bio_avg??0).toFixed(2)}</span>
                         </div>
                         <p class="text-muted mt-2 mb-0" style="font-size:0.68rem;">
-                            <i class="bi bi-info-circle me-1"></i>Media de todos los archivos WAV disponibles.
+                            <i class="bi bi-info-circle me-1"></i>Media agregada de las muestras acústicas registradas.
                             Pasa el cursor sobre cada etiqueta para más info.
                         </p>
                     </div>

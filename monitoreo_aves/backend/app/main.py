@@ -1,4 +1,7 @@
-import os, sys, re
+import os, sys, re, json
+from datetime import datetime, timezone
+from threading import Lock
+from pydantic import BaseModel
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -132,6 +135,117 @@ async def guardar_upload_seguro(
 
     return nombre_seguro
 
+## para automatización de la escucha, guardamos el estdo en un json par su mejor control
+STREAM_CONTROL_FILE = current_file.parent / "stream_control.json"
+stream_lock = Lock()
+
+DEFAULT_STREAM_BASE_URL = os.getenv(
+    "BIRDMONITOR_STREAM_BASE_URL",
+    "http://100.98.248.58:8888"
+).rstrip("/")
+
+DEFAULT_STREAM_PATH = os.getenv(
+    "BIRDMONITOR_STREAM_PATH",
+    "birdmonitor-audio"
+).strip("/")
+
+
+class StreamControlUpdate(BaseModel):
+    node_name: str = "birdmonitor"
+    stream_enabled: bool
+
+
+class StreamStatusUpdate(BaseModel):
+    node_name: str = "birdmonitor"
+    running: bool
+    detail: str = ""
+
+
+def _stream_default_state(node_name: str) -> dict:
+    return {
+        "node_name": node_name,
+        "stream_enabled": False,
+        "actual_running": False,
+        "detail": "",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "last_status_at": None,
+        "hls_url": f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/index.m3u8",
+        "page_url": f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/"
+    }
+
+
+def _load_stream_state() -> dict:
+    if not STREAM_CONTROL_FILE.exists():
+        return {}
+
+    try:
+        with open(STREAM_CONTROL_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_stream_state(state: dict) -> None:
+    with open(STREAM_CONTROL_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+@app.get("/stream/control")
+def get_stream_control(node_name: str = "birdmonitor"):
+    """
+    Devuelve el estado deseado y real conocido del streaming para un nodo.
+    """
+    with stream_lock:
+        state = _load_stream_state()
+
+        if node_name not in state:
+            state[node_name] = _stream_default_state(node_name)
+            _save_stream_state(state)
+
+        return state[node_name]
+
+
+@app.post("/stream/control")
+def set_stream_control(payload: StreamControlUpdate):
+    """
+    Cambia el estado deseado del streaming.
+    El dashboard llama a este endpoint.
+    La Raspberry lo consulta mediante streamSupervisor.py.
+    """
+    with stream_lock:
+        state = _load_stream_state()
+
+        current = state.get(payload.node_name, _stream_default_state(payload.node_name))
+        current["stream_enabled"] = payload.stream_enabled
+        current["updated_at"] = datetime.now(timezone.utc).isoformat()
+        current["hls_url"] = f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/index.m3u8"
+        current["page_url"] = f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/"
+
+        state[payload.node_name] = current
+        _save_stream_state(state)
+
+        return current
+
+
+@app.post("/stream/status")
+def set_stream_status(payload: StreamStatusUpdate):
+    """
+    La Raspberry informa del estado real de birdstream.service.
+    """
+    with stream_lock:
+        state = _load_stream_state()
+
+        current = state.get(payload.node_name, _stream_default_state(payload.node_name))
+        current["actual_running"] = payload.running
+        current["detail"] = payload.detail
+        current["last_status_at"] = datetime.now(timezone.utc).isoformat()
+
+        state[payload.node_name] = current
+        _save_stream_state(state)
+
+        return current
+
+
 @app.post("/upload/")
 async def subida_archivos(
     audio: UploadFile | None = File(None),
@@ -243,7 +357,7 @@ def read_detections(skip: int = 0, limit: int = 500, db: Session = Depends(datab
 def create_audio_metric(metric: schemas.AudioMetricCreate, db: Session = Depends(database.get_db)):
     """
     Guarda una muestra acústica agregada de un ciclo de grabación.
-    No representa una detección de ave; representa el estado acústico del entorno.
+    No representa una detección de ave, representa el estado acústico del entorno.
     """
     db_device = db.query(models.Device).filter(models.Device.name == metric.device_name).first()
 
