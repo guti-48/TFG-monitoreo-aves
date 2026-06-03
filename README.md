@@ -1,123 +1,305 @@
 # Sistema IoT de Monitoreo Acústico de Aves (TFG)
 
-Este proyecto consiste en el diseño, desarrollo e implementación de un sistema distribuido para la detección, clasificación y monitoreo de avifauna mediante análisis acústico pasivo (PAM) e Inteligencia Artificial.
+Este repositorio contiene un sistema distribuido para la detección, clasificación y monitorización de avifauna mediante análisis acústico pasivo e inteligencia artificial. El proyecto combina un nodo Edge basado en Raspberry Pi, un backend FastAPI y un dashboard web para visualizar detecciones, métricas acústicas y análisis ecológicos.
 
-El sistema utiliza nodos de computación en el borde (Edge Computing) basados en Raspberry Pi para procesar audio en tiempo real, implementando una arquitectura híbrida que permite el almacenamiento local de datos científicos (incluyendo análisis de contaminación acústica) y la contribución simultánea a redes de ciencia ciudadana (BirdWeather).
+La arquitectura está pensada para funcionar en escenarios de campo: el nodo graba audio, calcula métricas locales, ejecuta BirdNET, genera espectrogramas, conserva datos si no hay conexión y sincroniza las detecciones cuando recupera acceso al servidor central.
 
-## Estado del Proyecto
+## Estado Del Proyecto
 
-El sistema se encuentra en fase de validación técnica con funcionalidad completa "End-to-End".
+El sistema se encuentra en fase de validación técnica con flujo completo de extremo a extremo:
 
-### Funcionalidades Implementadas
+- Captura de audio en Raspberry Pi.
+- Inferencia local con BirdNET.
+- Registro automático de dispositivos.
+- Envío de detecciones y métricas acústicas al backend.
+- Subida de archivos `.wav` y espectrogramas `.png`.
+- Persistencia en SQLite.
+- Dashboard web servido desde FastAPI.
+- Control remoto de streaming HLS mediante el panel web.
 
-* **Captura y Procesamiento de Señal:**
-    * Grabación de audio en bucles continuos de 10 segundos a una frecuencia de muestreo de 48kHz.
-    * Generación automática de espectrogramas de Mel para validación visual de las detecciones.
-    * Cálculo de energía RMS (Root Mean Square) para la medición objetiva del nivel de ruido ambiental.
+## Funcionalidades Principales
 
-* **Inteligencia Artificial en el Borde:**
-    * Inferencia local mediante el modelo **BirdNET-Lite** (framework TensorFlow Lite).
-    * Capacidad de clasificación de más de 6,000 especies de aves.
-    * Filtrado de falsos positivos mediante umbrales de confianza configurables.
-    * Clasificación de fuentes de ruido antropogénico (voces humanas, motores).
+### Nodo Edge
 
-* **Arquitectura de Datos Híbrida:**
-    * **Upload Activo de Archivos:** La Raspberry Pi envía el JSON de inferencia junto con los archivos `.wav` y `.png` a la API central para su análisis bioacústico en profundidad.
-    * **Tolerancia a Fallos (Offline Sync):** Si el servidor central cae o hay pérdida de red, el nodo encola las detecciones y audios localmente en la MicroSD. Al recuperar la conexión, el nodo sincroniza automáticamente el backlog histórico.
-    * **Rotación de Logs y Limpieza (Wear Leveling):** Algoritmo automatizado que elimina audios mayores a 48-72h para preservar la vida útil de la MicroSD.
-    * **Protección RTC (Real Time Clock):** Rutina de bloqueo pre-arranque que evita la generación de datos corruptos ('Síndrome de 1970') tras cortes de luz en entornos sin internet.
+- Grabación mono a `48 kHz` en ciclos configurados de `60 s` cada `5 min`.
+- Selección automática o manual del micrófono mediante `sounddevice`.
+- Generación de archivos WAV y espectrogramas Mel.
+- Cálculo de amplitud RMS para estimar nivel de ruido ambiental.
+- Cálculo de índices acústicos con `scikit-maad`: `ACI`, `ADI`, `AEI`, `BIO`, `NDSI`, `Ht`, `Hf` y `H`.
+- Inferencia con BirdNET mediante `birdnetlib`.
+- Filtrado por umbrales diferenciados para aves, humanos, motores y ruido ambiente.
+- Geolocalización manual, por IP pública o por caché local.
+- Envío opcional de detecciones de aves a BirdWeather.
+- Respaldo offline en CSV y resincronización posterior.
+- Limpieza automática de audios e imágenes antiguos para limitar el uso de disco.
+- Protección ante relojes no sincronizados, evitando datos con fechas inválidas tras cortes de energía.
 
-* **Interfaz de Visualización y Control (Dashboard):**
-    * **Telemetría en Tiempo Real:** Interfaz SPA con actualizaciones sin recarga (Polling) y evasión inteligente de caché HTTP.
-    * **Análisis Ecológico:** Cálculo automático de Índices de Biodiversidad (Shannon $H'$, Pielou $J'$, Simpson $1-D$).
-    * **Radar de Bioacústica (Paisaje Sonoro):** Análisis matricial del archivo `.wav` en el servidor utilizando `scikit-maad` para extraer los índices ACI, ADI, AEI, BIO y NDSI, midiendo la salud acústica del entorno y dibujando una huella sonora en gráfico de radar.
-    * **Cartografía Dinámica:** Generación automática de mapas interactivos (Leaflet.js) basados en la geolocalización IP del nodo, mostrando radios de cobertura ponderados por el índice de Shannon local.
+### Backend
 
-## Arquitectura Técnica
+- API REST con FastAPI.
+- Base de datos SQLite gestionada con SQLAlchemy.
+- Validación de datos con Pydantic.
+- Recepción segura de uploads `.wav` y `.png`, con validación de extensión, nombre y tamaño.
+- Almacenamiento de detecciones biológicas o acústicas relevantes.
+- Almacenamiento independiente de métricas acústicas por ciclo, incluso cuando no hay detección de ave.
+- Endpoints de analítica para biodiversidad, mapa e informe diario.
+- Servicio de archivos estáticos para el dashboard y espectrogramas.
+- Control remoto del estado deseado y real del streaming HLS.
 
-El proyecto se estructura en tres módulos principales desacoplados:
+### Dashboard Web
 
-### 1. Nodo Sensor (Hardware)
-Ejecutado sobre plataforma ARM (Raspberry Pi 4 / 3B+). Responsable de la digitalización del entorno acústico.
-* **Lenguaje:** Python 3.
-* **Librerías Principales:** `librosa` (análisis DSP), `sounddevice` (captura), `tflite-runtime` (inferencia neuronal).
-* **Lógica de Negocio:** Algoritmo de decisión basado en geolocalización IP y niveles de confianza.
+- Interfaz SPA en HTML, CSS y JavaScript.
+- Bootstrap 5, Bootstrap Icons, Chart.js, Leaflet y HLS.js.
+- Vista de tiempo real con detecciones recientes.
+- Vista de escucha en directo con activación y parada del servicio `birdstream.service`.
+- Histórico de detecciones.
+- Panel de análisis ecológico con índices de biodiversidad.
+- Visualización de nodos registrados.
+- Informe diario por fecha con curva de actividad por horas.
+- Mapa con datos agregados por ubicación.
 
-### 2. Backend (Servidor Central)
-Responsable de la orquestación, validación y persistencia de los datos recibidos de los nodos distribuidos.
-* **Framework:** FastAPI.
-* **Base de Datos:** SQLite (archivo `birdmonitor.db`).
-* **ORM:** SQLAlchemy.
-* **Validación de Esquemas:** Pydantic.
-
-### 3. Frontend (Interfaz de Usuario)
-Interfaz gráfica para la visualización de telemetría y gestión de históricos.
-* **Tecnologías:** HTML5, CSS3, JavaScript (Vanilla).
-* **Estilado:** Bootstrap 5.
-* **Visualización de Datos:** Chart.js.
-
-## Guia de Despliegue
-Para ejecutar este proyecto e instalar todas las dependencias necesarias, es necesario que sea creado un entorno virtual.
-Este entorno debera ser creado para 3 terminales distintos.
-Los siguientes pasos serviran para inciar todo tanto desde Windows como desde Mac.
-
-1. Crearemos y activaremos un Entorno Virtual, en mi caso dentro de la carpeta /monitoreo_aves:
-    Para Linux/Mac:
-
-```bash
-    python3 -m venv venv
-    source venv/bin/activate
-```
-    
-    Para Windows:
-```bash
-    python -m venv venv
-    source ./venv/Scripts/activate
-```
-
-2. Para instalar las dependencias deberemos ejecutar:
-
-```bash
-    pip install -r requirements.txt
-```
-
-3. Aqui cada linea que pondre sera para acceder a un terminal distinto en donde tendremos que correr distintas cosas:
-
-```bash
-    uvicorn backend.app.main:app --reload --host 127.0.0.1
-    cd /hardware/raspbery_py/
-        python mainNode.py
-    cd /frontend/
-        python -m http.server 5500
-```
-
-4. Es importante tener eliminada previamente nuestra base de datos que se encuentra dentro de /backend/app para que podamos ver
-desde nuestro navegador.
-
-## Estructura del Repositorio
+## Arquitectura
 
 ```text
-monitoreo_aves/
-├── backend/                        # Módulo Servidor
-│   ├── app/
-│   │   ├── main.py                 # Definición de API REST y endpoints (Uploads/JSON)
-│   │   ├── models.py               # Modelos de BBDD (SQLAlchemy)
-│   │   ├── schemas.py              # Esquemas de validación (Pydantic)
-│   │   └── database.py             # Configuración SQL
-│   ├── analisisBiodiversidad.py    # Motor matemático (Bioacústica + Ecología)
-│   └── birdmonitor.db              # Base de datos local (Autogenerado)
-│
-├── frontend/                       # Módulo de Interfaz Web
-│   ├── css/                        # Hojas de estilo y UI oscura
-│   ├── js/                         # Lógica de cliente y Fetchers
-│   ├── assets/                     # Imágenes estáticas y placeholders
-│   └── index.html                  # Punto de entrada
-│
-├── hardware/raspberry_pi/          # Código fuente del Nodo Edge
-│   ├── model/                      # Modelo BirdNET TFLite y etiquetas
-│   ├── records/                    # Buffer de audio (.wav) local y remoto
-│   ├── spectrograms/               # Buffer de imágenes (.png)
-│   ├── analyzer.py                 # Abstracción para el modelo IA
-│   └── mainNode.py                 # Orquestador del nodo y gestor Offline
-│
-└── requirements.txt                # Dependencias (FastAPI, scikit-maad...)```
+TFG-monitoreo-aves/
+├── README.md
+└── monitoreo_aves/
+    ├── README.md
+    ├── requirements.txt
+    ├── backend/
+    │   ├── analisisBiodiversidad.py
+    │   ├── comparativa_biodiversidad.png
+    │   └── app/
+    │       ├── main.py
+    │       ├── models.py
+    │       ├── schemas.py
+    │       ├── database.py
+    │       ├── birdmonitor.db
+    │       └── stream_control.json
+    ├── frontend/
+    │   ├── index.html
+    │   ├── css/
+    │   │   └── style.css
+    │   ├── js/
+    │   │   └── dashboard.js
+    │   └── assets/
+    │       └── placeholder.jpg
+    └── hardware/
+        └── raspberry_pi/
+            ├── mainNode.py
+            ├── analyzer.py
+            ├── supervisor.py
+            ├── backup_data.csv
+            ├── model/
+            │   ├── birdnet_model.tflite
+            │   └── birdnet_labels.txt
+            ├── records/
+            └── spectrograms/
+```
+
+## Componentes
+
+### 1. Nodo Sensor
+
+Ruta: `monitoreo_aves/hardware/raspberry_pi/`
+
+El nodo se ejecuta en Raspberry Pi OS y se encarga de digitalizar el entorno acústico. El flujo principal está en `mainNode.py`:
+
+1. Registra el dispositivo en el servidor.
+2. Detecta el micrófono disponible.
+3. Graba audio durante el intervalo configurado.
+4. Guarda el WAV y genera el espectrograma.
+5. Calcula métricas acústicas del paisaje sonoro.
+6. Ejecuta BirdNET.
+7. Filtra detecciones por umbrales.
+8. Envía detecciones, métricas y archivos al backend.
+9. Guarda respaldo local si el servidor no está disponible.
+
+`analyzer.py` encapsula el uso de BirdNET. `supervisor.py` controla el servicio de streaming consultando periódicamente el backend.
+
+### 2. Servidor Central
+
+Ruta: `monitoreo_aves/backend/`
+
+El backend expone la API REST, genera la base de datos si no existe y sirve el dashboard desde la carpeta `frontend`. La base de datos se guarda en `monitoreo_aves/backend/app/birdmonitor.db`.
+
+Tablas principales:
+
+- `devices`: nodos registrados.
+- `detections`: detecciones de aves, humanos, motores o ruido relevante.
+- `audio_metrics`: métricas acústicas agregadas por ciclo de grabación.
+
+### 3. Frontend
+
+Ruta: `monitoreo_aves/frontend/`
+
+El frontend no necesita servidor propio en el despliegue actual. FastAPI monta `frontend/index.html` y sus archivos estáticos en `/`, por lo que el dashboard queda disponible en el mismo puerto que la API.
+
+## Endpoints Principales
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `POST` | `/devices/` | Registra o actualiza un nodo. |
+| `GET` | `/devices/` | Lista dispositivos registrados. |
+| `POST` | `/detections/` | Guarda una detección. |
+| `GET` | `/detections/` | Devuelve detecciones recientes. |
+| `POST` | `/audio-metrics/` | Guarda métricas acústicas de un ciclo. |
+| `GET` | `/audio-metrics/` | Lista métricas acústicas recientes. |
+| `POST` | `/upload/` | Sube WAV y/o espectrograma PNG. |
+| `GET` | `/analytics/biodiversity` | Devuelve índices ecológicos y acústicos. |
+| `GET` | `/analytics/map` | Devuelve datos para el mapa. |
+| `GET` | `/analytics/daily-activity` | Devuelve actividad diaria por horas. |
+| `GET` | `/stream/control` | Consulta estado deseado y real del streaming. |
+| `POST` | `/stream/control` | Activa o desactiva el streaming desde el dashboard. |
+| `POST` | `/stream/status` | Recibe estado real reportado por la Raspberry Pi. |
+
+## Instalación
+
+Desde la raíz del repositorio:
+
+```bash
+cd monitoreo_aves
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+En Windows PowerShell:
+
+```bash
+cd monitoreo_aves
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+En Windows con Git Bash:
+
+```bash
+cd monitoreo_aves
+python -m venv venv
+source ./venv/Scripts/activate
+pip install -r requirements.txt
+```
+
+## Ejecución Del Servidor
+
+Desde `monitoreo_aves/`:
+
+```bash
+uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Accesos:
+
+```text
+Dashboard local: http://localhost:8000
+API docs:        http://localhost:8000/docs
+```
+
+En el despliegue usado por el proyecto, el servidor Windows queda accesible para la Raspberry Pi mediante Tailscale:
+
+```text
+http://100.98.248.58:8000
+```
+
+La base de datos SQLite se crea automáticamente si no existe. Solo conviene eliminar `backend/app/birdmonitor.db` cuando se quiera reiniciar completamente el histórico de pruebas.
+
+## Ejecución Del Nodo Edge
+
+En Raspberry Pi:
+
+```bash
+cd ~/birdmonitor/monitoreo_aves/hardware/raspberry_pi
+source ~/birdmonitor/birdnet-env/bin/activate
+python mainNode.py
+```
+
+Variables de entorno útiles:
+
+```bash
+export BIRDMONITOR_NODE_NAME="birdmonitor"
+export BIRDMONITOR_SERVER_URL="http://100.98.248.58:8000"
+export BIRDMONITOR_NODE_LOCATION="Sevilla, Andalucía, España"
+export BIRDMONITOR_NODE_LAT="37.3891"
+export BIRDMONITOR_NODE_LON="-5.9845"
+export BIRDMONITOR_MIC_DEVICE="1"
+export BIRDWEATHER_ID="token-opcional"
+```
+
+Si no se define ubicación manual, el nodo intenta geolocalizarse por IP pública y guarda una caché local en `node_location_cache.json`.
+
+## Servicio Systemd Del Nodo
+
+En despliegue real, el nodo puede ejecutarse como servicio:
+
+```bash
+sudo systemctl start birdmonitor.service
+sudo systemctl status birdmonitor.service
+journalctl -u birdmonitor.service -f
+```
+
+Para la escucha en directo, `supervisor.py` consulta el backend y arranca o detiene el servicio configurado en `BIRDMONITOR_STREAM_SERVICE`, por defecto:
+
+```text
+birdstream.service
+```
+
+Comandos habituales:
+
+```bash
+sudo systemctl start birdstream.service
+sudo systemctl stop birdstream.service
+sudo systemctl status birdstream.service
+```
+
+## Configuración Del Streaming
+
+El backend usa estas variables para construir las URLs HLS que muestra el dashboard:
+
+```bash
+export BIRDMONITOR_STREAM_BASE_URL="http://100.98.248.58:8888"
+export BIRDMONITOR_STREAM_PATH="birdmonitor-audio"
+```
+
+El estado del streaming se persiste en:
+
+```text
+monitoreo_aves/backend/app/stream_control.json
+```
+
+## Acceso Remoto Al Nodo
+
+Para administrar la Raspberry Pi en modo headless:
+
+```bash
+ssh usuario@IP_DE_LA_RASPBERRY
+```
+
+Si se usa Tailscale, puede emplearse la IP virtual asignada al nodo. Desde SSH se pueden revisar logs, actualizar código, reiniciar servicios o comprobar el estado del micrófono.
+
+## Notas De Desarrollo
+
+- El frontend está integrado en FastAPI; no es necesario ejecutar `python -m http.server` para el dashboard actual.
+- Los endpoints del frontend contienen algunas referencias directas a la IP de Tailscale usada en el despliegue. Si cambia el servidor, conviene actualizar `frontend/js/dashboard.js` o sustituirlas por rutas relativas.
+- `records/` y `spectrograms/` contienen datos generados por el nodo. En producción deben tratarse como almacenamiento temporal.
+- El modelo BirdNET y sus etiquetas están en `hardware/raspberry_pi/model/`.
+
+## Dependencias Principales
+
+- `fastapi`
+- `uvicorn`
+- `sqlalchemy`
+- `pydantic`
+- `numpy`
+- `scipy`
+- `pandas`
+- `matplotlib`
+- `librosa`
+- `sounddevice`
+- `soundfile`
+- `tensorflow`
+- `birdnetlib`
+- `scikit-maad`
+- `python-multipart`
+- `geocoder`

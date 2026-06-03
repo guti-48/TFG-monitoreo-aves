@@ -8,13 +8,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from . import models, database, schemas
-from backend.analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_biodiversidad, obetenerActividadDiaria
 
 current_file = Path(__file__).resolve()
 backend_dir = current_file.parent.parent
 project_root = current_file.parent.parent.parent
 
-sys.path.append(str(backend_dir)) 
+for path in (project_root, backend_dir):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.append(path_str)
+
+try:
+    from backend.analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_biodiversidad, obetenerActividadDiaria
+except ModuleNotFoundError:
+    from analisisBiodiversidad import obetenerDatosMapa, obtener_reporte_biodiversidad, obetenerActividadDiaria
 
 SPECTOGRAM_DIR = project_root / "hardware" / "raspberry_pi" / "spectrograms"
 SERVER_AUDIO_DIR = project_root / "hardware" / "raspberry_pi" / "records"

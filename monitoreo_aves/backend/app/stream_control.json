@@ -1,10 +1,10 @@
 {
   "birdmonitor": {
     "node_name": "birdmonitor",
-    "stream_enabled": false,
+    "stream_enabled": true,
     "actual_running": false,
     "detail": "Estado sincronizado",
-    "updated_at": "2026-05-27T07:39:25.894665+00:00",
+    "updated_at": "2026-05-27T11:58:57.322831+00:00",
     "last_status_at": "2026-05-27T07:43:38.800699+00:00",
     "hls_url": "http://100.98.248.58:8888/birdmonitor-audio/index.m3u8",
     "page_url": "http://100.98.248.58:8888/birdmonitor-audio/"

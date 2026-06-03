@@ -1,9 +1,9 @@
 const API_URL = "/detections/";
 const IMG_BASE_URL = "/spectrograms/";
-const ASSETS_PATH = 'assets/'; 
+const ASSETS_PATH = 'assets/';
 const NOISE_MAP = {
     'Human vocal': 'human.png',
-    'Motor': 'ruido_amb.png', 
+    'Motor': 'ruido_amb.png',
 };
 const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 
@@ -20,13 +20,14 @@ const STREAM_NODE_NAME = "birdmonitor";
 
 let hlsInstance = null;
 
-let currentView = 'dashboard'; 
+let currentView = 'dashboard';
 let activeNodeFilter = null;
 let myChart = null;
 let intervalId = null;
 let liveHls = null;
 let streamStatusTimer = null;
 let lastStreamData = null;
+let currentScienceReport = [];
 
 // NAVEGACIÓ
 function switchView(viewName, nodeFilter = null) {
@@ -34,21 +35,21 @@ function switchView(viewName, nodeFilter = null) {
         cleanupLiveStream();
     }
 
-    currentView    = viewName;
+    currentView = viewName;
     activeNodeFilter = nodeFilter;
 
-    ['btn-dashboard','btn-live','btn-nodes','btn-history','btn-science','btn-daily'].forEach(id => {
+    ['btn-dashboard', 'btn-live', 'btn-nodes', 'btn-history', 'btn-science', 'btn-daily'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.className = 'nav-link';
     });
 
-    const map = { 
+    const map = {
         dashboard: 'btn-dashboard',
         live: 'btn-live',
-        history: 'btn-history', 
-        nodes: 'btn-nodes', 
+        history: 'btn-history',
+        nodes: 'btn-nodes',
         science: 'btn-science',
-        daily: 'btn-daily' 
+        daily: 'btn-daily'
     };
 
     const titleMap = {
@@ -71,12 +72,12 @@ function switchView(viewName, nodeFilter = null) {
     container.className = 'd-flex flex-column flex-grow-1 w-100';
     if (viewName === 'history') container.classList.add('view-history');
 
-    if      (viewName === 'dashboard') { container.innerHTML = getDashboardHTML(); updateDashboard(); }
-    else if (viewName === 'live')       renderLiveStreamView(container);
-    else if (viewName === 'history')    renderHistoryView(container);
-    else if (viewName === 'nodes')      renderNodesView(container);
-    else if (viewName === 'science')    renderScienceView(container);
-    else if (viewName === 'daily')      renderDailyView(container); 
+    if (viewName === 'dashboard') { container.innerHTML = getDashboardHTML(); updateDashboard(); }
+    else if (viewName === 'live') renderLiveStreamView(container);
+    else if (viewName === 'history') renderHistoryView(container);
+    else if (viewName === 'nodes') renderNodesView(container);
+    else if (viewName === 'science') renderScienceView(container);
+    else if (viewName === 'daily') renderDailyView(container);
 }
 
 // ESCUCHA EN DIRECTO
@@ -449,16 +450,16 @@ function cleanupLiveStream() {
 async function renderHistoryView(container) {
     container.innerHTML = `<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-success" role="status"></div><span class="ms-3 text-muted">Cargando base de datos completa...</span></div>`;
     try {
-        const response   = await fetch(`${API_URL}?limit=500`);
-        const data       = await response.json();
-        const sortedData = data.reverse(); 
+        const response = await fetch(`${API_URL}?limit=500`);
+        const data = await response.json();
+        const sortedData = data.reverse();
         let rowsHtml = '';
         sortedData.forEach(d => {
             const timeDate = new Date(d.timestamp);
-            const dateStr  = timeDate.toLocaleDateString();
-            const timeStr  = timeDate.toLocaleTimeString();
-            const imgUrl   = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
-            const clean    = cleanName(d.species);
+            const dateStr = timeDate.toLocaleDateString();
+            const timeStr = timeDate.toLocaleTimeString();
+            const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
+            const clean = cleanName(d.species);
             let icon = '<i class="bi bi-music-note-beamed text-success"></i>';
             if (d.species.includes("Human") || d.species.includes("Motor") || d.species.includes("Noise"))
                 icon = '<i class="bi bi-boombox text-warning"></i>';
@@ -468,7 +469,7 @@ async function renderHistoryView(container) {
                 <td>${dateStr} <small class="text-muted">${timeStr}</small></td>
                 <td><div class="d-flex align-items-center"><div class="me-2">${icon}</div><span class="fw-bold text-white">${clean}</span></div></td>
                 <td>${d.device_name || 'RaspberryPi'}</td>
-                <td><div class="progress" style="height:6px;width:100px;"><div class="progress-bar bg-${d.confidence > 0.8 ? 'success' : 'warning'}" role="progressbar" style="width:${d.confidence*100}%"></div></div></td>
+                <td><div class="progress" style="height:6px;width:100px;"><div class="progress-bar bg-${d.confidence > 0.8 ? 'success' : 'warning'}" role="progressbar" style="width:${d.confidence * 100}%"></div></div></td>
                 <td><a href="${imgUrl}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-image"></i> Ver</a></td>
             </tr>`;
         });
@@ -504,13 +505,13 @@ async function renderHistoryView(container) {
 // ════════════════════════════════════════════════════════════════
 
 async function updateDashboard() {
-    if (currentView !== 'dashboard') return; 
+    if (currentView !== 'dashboard') return;
     try {
         const response = await fetch(`${API_URL}?t=${new Date().getTime()}`, { cache: 'no-store' });
         let data = await response.json();
         if (!data || data.length === 0) { safeSetText('total-counter', '0'); return; }
 
-        const sortedData = data; 
+        const sortedData = data;
         let totalAmp = 0;
         sortedData.forEach(d => { totalAmp += (d.amplitude || 0); });
         let avgAmp = (sortedData.length > 0) ? (totalAmp / sortedData.length) * 500 : 0;
@@ -518,15 +519,15 @@ async function updateDashboard() {
 
         let noiseLabel = "Silencioso", noiseColor = "success", noiseIcon = "bi-tree-fill";
         if (avgAmp > 10) { noiseLabel = "Moderado"; noiseColor = "warning"; noiseIcon = "bi-people-fill"; }
-        if (avgAmp > 30) { noiseLabel = "Ruidoso";  noiseColor = "danger";  noiseIcon = "bi-speaker-fill"; }
+        if (avgAmp > 30) { noiseLabel = "Ruidoso"; noiseColor = "danger"; noiseIcon = "bi-speaker-fill"; }
 
         const noiseEl = document.getElementById('noise-metric');
         if (noiseEl) {
             noiseEl.innerText = `${noiseLabel} (Vol: ${avgAmp.toFixed(0)})`;
             noiseEl.className = `fw-bold mb-0 fs-5 text-${noiseColor}`;
-            document.getElementById('noise-card').className     = `card kpi-card border-start-${noiseColor}`;
+            document.getElementById('noise-card').className = `card kpi-card border-start-${noiseColor}`;
             document.getElementById('noise-icon-box').className = `icon-box bg-${noiseColor}-subtle text-${noiseColor}`;
-            document.getElementById('noise-icon').className     = `bi ${noiseIcon} fs-3`;
+            document.getElementById('noise-icon').className = `bi ${noiseIcon} fs-3`;
         }
 
         const birdsOnly = sortedData.filter(d =>
@@ -534,18 +535,18 @@ async function updateDashboard() {
             !d.species.toLowerCase().includes("ruido") &&
             !d.species.toLowerCase().includes("ambiente")
         );
-        safeSetText('total-counter', birdsOnly.length); 
+        safeSetText('total-counter', birdsOnly.length);
 
         if (birdsOnly.length > 0) {
-            const latestBird = birdsOnly[0]; 
-            safeSetText('last-activity', new Date(latestBird.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+            const latestBird = birdsOnly[0];
+            safeSetText('last-activity', new Date(latestBird.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
             const counts = {};
             birdsOnly.forEach(d => { counts[d.species] = (counts[d.species] || 0) + 1; });
             const topSpecies = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
             safeSetText('top-species', cleanName(topSpecies));
             if (typeof renderLiveFeedSplit === "function") await renderLiveFeedSplit(latestBird);
-            if (typeof renderTable         === "function") renderTable(birdsOnly.slice(0, 10));
-            if (typeof updateChart         === "function") updateChart(counts);
+            if (typeof renderTable === "function") renderTable(birdsOnly.slice(0, 10));
+            if (typeof updateChart === "function") updateChart(counts);
         }
     } catch (error) { console.error("Error Dashboard:", error); }
 }
@@ -666,41 +667,74 @@ function getDashboardHTML() {
     </div>`;
 }
 
+function csvCell(value) {
+    if (value === null || value === undefined) return '';
+    const text = Array.isArray(value) ? value.join(' | ') : String(value);
+    return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadTableCSV(filename, headers, rows) {
+    const csvRows = [
+        'sep=;',
+        headers.map(csvCell).join(';'),
+        ...rows.map(row => row.map(csvCell).join(';'))
+    ];
+
+    const blob = new Blob([`\ufeff${csvRows.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+}
+
 async function downloadCSV() {
     try {
         const response = await fetch(`${API_URL}?limit=1000`);
         const data = await response.json();
         if (!data || data.length === 0) { alert("Sin datos"); return; }
-        let csvContent = "data:text/csv;charset=utf-8,ID,Fecha,Hora,Especie,Confianza,Nodo,Archivo\n";
-        data.forEach(row => {
+
+        const rows = data.map(row => {
             const dateObj = new Date(row.timestamp);
-            const especie = cleanName(row.species).replace(/,/g, ''); 
-            csvContent += `${row.id},${dateObj.toLocaleDateString()},${dateObj.toLocaleTimeString()},${especie},${row.confidence},${row.device_name},${row.filename}\n`;
+            return [
+                row.id,
+                dateObj.toLocaleDateString(),
+                dateObj.toLocaleTimeString(),
+                row.timestamp,
+                cleanName(row.species),
+                row.confidence,
+                row.amplitude ?? '',
+                row.device_name || row.device_id || '',
+                row.filename
+            ];
         });
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `birdmonitor_${new Date().toISOString().slice(0,10)}.csv`);
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+
+        downloadTableCSV(
+            `birdmonitor_detecciones_${new Date().toISOString().slice(0, 10)}.csv`,
+            ['ID', 'Fecha', 'Hora', 'Timestamp_ISO', 'Especie', 'Confianza', 'Amplitud_RMS', 'Nodo_o_Device_ID', 'Archivo_WAV'],
+            rows
+        );
     } catch (e) { alert("Error exportando"); }
 }
 
 async function getSpeciesImageUrl(speciesRawName) {
     let clean = speciesRawName;
-    if (speciesRawName.includes('_')) clean = speciesRawName.split('_')[1]; 
+    if (speciesRawName.includes('_')) clean = speciesRawName.split('_')[1];
     clean = clean.replace(/_/g, ' ').trim();
     if (NOISE_MAP[clean] || clean.includes("Human") || clean.includes("Motor") || clean.includes("Noise")) {
         if (clean.includes("Human")) return ASSETS_PATH + 'human.png';
-        if (clean.includes("Motor") || clean.includes("Ruido") || clean.includes("Noise")) return ASSETS_PATH + 'ruido_amb.png'; 
+        if (clean.includes("Motor") || clean.includes("Ruido") || clean.includes("Noise")) return ASSETS_PATH + 'ruido_amb.png';
         return PLACEHOLDER_IMG;
     }
     const WIKI_EXACT_PAGES = { 'Merlin': 'Merlin (bird)', 'Kite': 'Kite (bird)' };
     let searchTitle = WIKI_EXACT_PAGES[clean] || clean;
     try {
         const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTitle)}&prop=pageimages&format=json&pithumbsize=600&redirects=1&origin=*`;
-        const res    = await fetch(wikiUrl);
-        const data   = await res.json();
-        const pages  = data.query.pages;
+        const res = await fetch(wikiUrl);
+        const data = await res.json();
+        const pages = data.query.pages;
         const pageId = Object.keys(pages)[0];
         if (pageId !== "-1" && pages[pageId].thumbnail) return pages[pageId].thumbnail.source;
     } catch (e) { console.error("Error Wiki", e); }
@@ -710,10 +744,10 @@ async function getSpeciesImageUrl(speciesRawName) {
 async function renderLiveFeedSplit(d) {
     const container = document.getElementById('live-feed-container');
     if (!container) return;
-    const species         = cleanName(d.species);
-    const percent         = (d.confidence * 100).toFixed(0);
-    const spectrogramUrl  = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
-    const timeStr         = new Date(d.timestamp).toLocaleTimeString();
+    const species = cleanName(d.species);
+    const percent = (d.confidence * 100).toFixed(0);
+    const spectrogramUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
+    const timeStr = new Date(d.timestamp).toLocaleTimeString();
     const speciesPhotoUrl = await getSpeciesImageUrl(d.species);
 
     container.innerHTML = `
@@ -748,11 +782,11 @@ function renderTable(data) {
     tbody.innerHTML = "";
     data.forEach(d => {
         const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
-        const clean  = cleanName(d.species);
+        const clean = cleanName(d.species);
         let icon = '<i class="bi bi-feather text-success me-2"></i>';
         if (NOISE_MAP[clean] || d.species.includes("Human") || d.species.includes("Motor"))
             icon = '<i class="bi bi-boombox text-muted me-2"></i>';
-        tbody.innerHTML += `<tr><td class="ps-4 fw-bold text-muted">${new Date(d.timestamp).toLocaleTimeString()}</td><td><div class="d-flex align-items-center">${icon}<span class="fw-semibold text-white">${clean}</span></div></td><td><span class="badge bg-dark-subtle text-success border">${(d.confidence*100).toFixed(0)}%</span></td><td><a href="${imgUrl}" target="_blank"><img src="${imgUrl}" class="table-img-preview" onerror="this.style.display='none'"></a></td><td class="text-end pe-4 text-muted small">#${d.id}</td></tr>`;
+        tbody.innerHTML += `<tr><td class="ps-4 fw-bold text-muted">${new Date(d.timestamp).toLocaleTimeString()}</td><td><div class="d-flex align-items-center">${icon}<span class="fw-semibold text-white">${clean}</span></div></td><td><span class="badge bg-dark-subtle text-success border">${(d.confidence * 100).toFixed(0)}%</span></td><td><a href="${imgUrl}" target="_blank"><img src="${imgUrl}" class="table-img-preview" onerror="this.style.display='none'"></a></td><td class="text-end pe-4 text-muted small">#${d.id}</td></tr>`;
     });
 }
 
@@ -760,10 +794,10 @@ function updateChart(counts) {
     const canvas = document.getElementById('speciesChart');
     if (!canvas) return;
     if (myChart) { myChart.destroy(); }
-    const ctx    = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
     const labels = Object.keys(counts).map(cleanName);
     const values = Object.values(counts);
-    const natureColors = ['#2E7D32','#C49A6C','#0288D1','#689F38','#8D6E63'];
+    const natureColors = ['#2E7D32', '#C49A6C', '#0288D1', '#689F38', '#8D6E63'];
     myChart = new Chart(ctx, {
         type: 'doughnut',
         data: { labels, datasets: [{ data: values, backgroundColor: natureColors, borderWidth: 0 }] },
@@ -799,10 +833,10 @@ function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.s
     document.addEventListener('mousemove', e => {
         if (tt.style.opacity === '0') return;
         let x = e.clientX + 14, y = e.clientY + 14;
-        if (x + 270 > window.innerWidth)  x = e.clientX - 274;
+        if (x + 270 > window.innerWidth) x = e.clientX - 274;
         if (y + 100 > window.innerHeight) y = e.clientY - 80;
         tt.style.left = x + 'px';
-        tt.style.top  = y + 'px';
+        tt.style.top = y + 'px';
     });
     document.addEventListener('mouseout', e => {
         if (!e.target.closest('[data-gauge-tip]')) return;
@@ -818,13 +852,13 @@ function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.s
 // ════════════════════════════════════════════════════════════════
 
 function buildGaugeSVG(value, min, max, color, label, tooltip) {
-    const R  = 52;
+    const R = 52;
     const CX = 70, CY = 70;
     const startAngle = -210;
     const sweepTotal = 240;
 
-    const clampedVal  = Math.min(Math.max(value, min), max);
-    const pct         = (clampedVal - min) / (max - min);
+    const clampedVal = Math.min(Math.max(value, min), max);
+    const pct = (clampedVal - min) / (max - min);
     const sweepActive = sweepTotal * pct;
 
     function polarToXY(angleDeg, r) {
@@ -832,16 +866,16 @@ function buildGaugeSVG(value, min, max, color, label, tooltip) {
         return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) };
     }
     function arcPath(fromDeg, toDeg, r) {
-        const p1    = polarToXY(fromDeg, r);
-        const p2    = polarToXY(toDeg, r);
+        const p1 = polarToXY(fromDeg, r);
+        const p2 = polarToXY(toDeg, r);
         const large = (toDeg - fromDeg) > 180 ? 1 : 0;
         return `M ${p1.x} ${p1.y} A ${r} ${r} 0 ${large} 1 ${p2.x} ${p2.y}`;
     }
 
-    const endAngle   = startAngle + sweepTotal;
-    const activeEnd  = startAngle + sweepActive;
+    const endAngle = startAngle + sweepTotal;
+    const activeEnd = startAngle + sweepActive;
     const displayVal = (value % 1 === 0) ? value.toFixed(0) : value.toFixed(3);
-    const textColor  = pct >= 0.65 ? '#4ade80' : pct >= 0.35 ? '#fbbf24' : '#f87171';
+    const textColor = pct >= 0.65 ? '#4ade80' : pct >= 0.35 ? '#fbbf24' : '#f87171';
     // Escapamos las comillas del tooltip para el atributo HTML
     const tipEscaped = tooltip.replace(/"/g, '&quot;');
 
@@ -881,7 +915,8 @@ async function renderScienceView(container) {
         </div>`;
     try {
         const response = await fetch("http://100.98.248.58:8000/analytics/biodiversity");
-        const report   = await response.json();
+        const report = await response.json();
+        currentScienceReport = report || [];
         if (!report || report.length === 0) {
             container.innerHTML = `<div class="alert alert-warning text-center mt-4">Esperando detecciones reales del nodo...</div>`;
             return;
@@ -889,9 +924,9 @@ async function renderScienceView(container) {
 
         const r = report[0];
 
-        const calidad      = r.calidad || 'POBRE';
+        const calidad = r.calidad || 'POBRE';
         const calidadUpper = calidad.toUpperCase();
-        const calBadge     = calidadUpper === 'EXCELENTE' ? 'success' : calidadUpper === 'MODERADO' ? 'warning' : 'danger';
+        const calBadge = calidadUpper === 'EXCELENTE' ? 'success' : calidadUpper === 'MODERADO' ? 'warning' : 'danger';
 
         // ── Gauges biodiversidad — LAYOUT 3+2 ────────────────────────────
         // Usamos flex-wrap + flex-basis 33%/50% para forzar la rejilla
@@ -899,11 +934,11 @@ async function renderScienceView(container) {
             "Índice de Shannon-Wiener (H'): mide diversidad considerando riqueza y equitabilidad. >3 = Excelente, 1.5–3 = Moderado, <1.5 = Pobre.");
         const g2 = buildGaugeSVG(r.simpson, 0, 1, '#a78bfa', "Simpson 1-D",
             "Índice de Simpson (1-D): probabilidad de que dos individuos elegidos al azar pertenezcan a especies distintas. Próximo a 1 = alta diversidad.");
-        const g3 = buildGaugeSVG(r.pielou,  0, 1, '#34d399', "Pielou J'",
+        const g3 = buildGaugeSVG(r.pielou, 0, 1, '#34d399', "Pielou J'",
             "Índice de equitabilidad de Pielou (J'): uniformidad en la distribución de individuos entre especies. 1 = perfectamente equitativo.");
-        const g4 = buildGaugeSVG(Math.min(r.riqueza, 30),      0, 30,  '#f59e0b', "Riqueza S",
+        const g4 = buildGaugeSVG(Math.min(r.riqueza, 30), 0, 30, '#f59e0b', "Riqueza S",
             "Riqueza específica (S): número de especies únicas detectadas. Indicador primario de biodiversidad.");
-        const g5 = buildGaugeSVG(Math.min(r.abundancia, 999),  0, 999, '#fb923c', "Abundancia",
+        const g5 = buildGaugeSVG(Math.min(r.abundancia, 999), 0, 999, '#fb923c', "Abundancia",
             "Abundancia total (N): número total de detecciones acumuladas. Refleja la actividad acústica del ecosistema.");
 
         // Fila superior: 3 gauges | Fila inferior: 2 gauges centrados
@@ -918,7 +953,7 @@ async function renderScienceView(container) {
             "Entropía temporal (Ht): mide cuánto varía la energía acústica en el tiempo. Valores altos = diversidad temporal de sonidos.");
         const ge2 = buildGaugeSVG(r.hf_avg ?? 0, 0, 1, '#818cf8', "Hf",
             "Entropía espectral (Hf): distribución de energía entre bandas de frecuencia. Valores altos = uso espectral diverso.");
-        const ge3 = buildGaugeSVG(r.h_avg  ?? 0, 0, 1, '#e879f9', "H",
+        const ge3 = buildGaugeSVG(r.h_avg ?? 0, 0, 1, '#e879f9', "H",
             "Entropía acústica compuesta (H = Ht × Hf): índice global de complejidad del paisaje sonoro. >0.6 = ecosistema sano.");
 
         const gaugesEntropyHTML = `
@@ -987,9 +1022,14 @@ async function renderScienceView(container) {
                     &nbsp;·&nbsp;<i class="bi bi-list-stars me-1"></i>${r.riqueza} especies únicas
                 </p>
             </div>
-            <span class="badge bg-${calBadge} px-3 py-2 fs-6 align-self-center">
-                <i class="bi bi-stars me-1"></i>${calidadUpper}
-            </span>
+            <div class="d-flex align-items-center gap-2 align-self-center">
+                <button class="btn btn-success btn-sm" onclick="downloadScienceCSV()">
+                    <i class="bi bi-filetype-csv me-2"></i>Exportar índices
+                </button>
+                <span class="badge bg-${calBadge} px-3 py-2 fs-6">
+                    <i class="bi bi-stars me-1"></i>${calidadUpper}
+                </span>
+            </div>
         </div>
 
         <!-- FILA 1: Gauges biodiversidad (3+2) | NDSI + entropías (3 en fila) -->
@@ -1034,8 +1074,8 @@ async function renderScienceView(container) {
                                     </div>
                                     <div class="text-muted" style="font-size:0.72rem;line-height:1.3;">
                                         ${(r.ndsi_avg ?? 0) > 0.5 ? '🌿 Ambiente predominantemente natural' :
-                                          (r.ndsi_avg ?? 0) > 0   ? '⚖️ Balance naturaleza / antropogénico' :
-                                                                     '🏙️ Ruido antropogénico dominante'}
+                (r.ndsi_avg ?? 0) > 0 ? '⚖️ Balance naturaleza / antropogénico' :
+                    '🏙️ Ruido antropogénico dominante'}
                                         <br><span class="text-white-50">Rango: −1 (urbano) → +1 (natural)</span>
                                     </div>
                                 </div>
@@ -1062,23 +1102,23 @@ async function renderScienceView(container) {
                         <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos del Paisaje Sonoro</p>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Complexity Index: variabilidad espectral de la grabación. Valores altos indican gran actividad biótica.">ACI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg??0)/2000*100,100)}%;background:linear-gradient(90deg,#60a5fa,#818cf8);"></div></div>
-                            <span class="index-bar-val">${(r.aci_avg??0).toFixed(1)}</span>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg ?? 0) / 2000 * 100, 100)}%;background:linear-gradient(90deg,#60a5fa,#818cf8);"></div></div>
+                            <span class="index-bar-val">${(r.aci_avg ?? 0).toFixed(1)}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Diversity Index: diversidad de bandas de frecuencia ocupadas. Mayor ADI → mayor biodiversidad.">ADI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg??0)/3*100,100)}%;background:linear-gradient(90deg,#34d399,#059669);"></div></div>
-                            <span class="index-bar-val">${(r.adi_avg??0).toFixed(3)}</span>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg ?? 0) / 3 * 100, 100)}%;background:linear-gradient(90deg,#34d399,#059669);"></div></div>
+                            <span class="index-bar-val">${(r.adi_avg ?? 0).toFixed(3)}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Evenness Index: uniformidad del uso espectral. Valores bajos indican mayor riqueza sonora.">AEI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg??0)*100,100)}%;background:linear-gradient(90deg,#fbbf24,#f59e0b);"></div></div>
-                            <span class="index-bar-val">${(r.aei_avg??0).toFixed(3)}</span>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg ?? 0) * 100, 100)}%;background:linear-gradient(90deg,#fbbf24,#f59e0b);"></div></div>
+                            <span class="index-bar-val">${(r.aei_avg ?? 0).toFixed(3)}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Bioacoustic Index: energía acústica en la banda de biofonia (2–8 kHz). Indica intensidad de la actividad biológica.">BIO</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg??0)/100*100,100)}%;background:linear-gradient(90deg,#f87171,#dc2626);"></div></div>
-                            <span class="index-bar-val">${(r.bio_avg??0).toFixed(2)}</span>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg ?? 0) / 100 * 100, 100)}%;background:linear-gradient(90deg,#f87171,#dc2626);"></div></div>
+                            <span class="index-bar-val">${(r.bio_avg ?? 0).toFixed(2)}</span>
                         </div>
                         <p class="text-muted mt-2 mb-0" style="font-size:0.68rem;">
                             <i class="bi bi-info-circle me-1"></i>Media agregada de las muestras acústicas registradas.
@@ -1133,11 +1173,11 @@ async function renderScienceView(container) {
                             r.h_avg ?? 0
                         ],
                         backgroundColor: [
-                            'rgba(96,165,250,0.75)','rgba(167,139,250,0.75)',
-                            'rgba(52,211,153,0.75)','rgba(251,191,36,0.75)',
+                            'rgba(96,165,250,0.75)', 'rgba(167,139,250,0.75)',
+                            'rgba(52,211,153,0.75)', 'rgba(251,191,36,0.75)',
                             'rgba(232,121,249,0.75)'
                         ],
-                        borderColor: ['#60a5fa','#a78bfa','#34d399','#fbbf24','#e879f9'],
+                        borderColor: ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#e879f9'],
                         borderWidth: 1.5, borderRadius: 6,
                     }]
                 },
@@ -1161,8 +1201,8 @@ async function renderScienceView(container) {
                         }
                     },
                     scales: {
-                        y: { min:0, max:5, grid:{ color:'#ffffff0d' }, ticks:{ color:'#9ca3af', font:{ size:11 } } },
-                        x: { grid:{ display:false }, ticks:{ color:'#e5e7eb', font:{ size:12 } } }
+                        y: { min: 0, max: 5, grid: { color: '#ffffff0d' }, ticks: { color: '#9ca3af', font: { size: 11 } } },
+                        x: { grid: { display: false }, ticks: { color: '#e5e7eb', font: { size: 12 } } }
                     }
                 }
             });
@@ -1185,11 +1225,60 @@ async function renderScienceView(container) {
                     fillOpacity: 0.15, radius: mapData.radio_km * 1000
                 }).addTo(map);
             })
-            .catch(() => {});
+            .catch(() => { });
 
     } catch (e) {
         container.innerHTML = `<div class="alert alert-danger mt-4">Error al cargar el análisis: ${e.message}</div>`;
     }
+}
+
+function downloadScienceCSV() {
+    if (!currentScienceReport || currentScienceReport.length === 0) {
+        alert("No hay índices ecológicos para exportar");
+        return;
+    }
+
+    const rows = currentScienceReport.map(r => [
+        r.zona || 'Zona desconocida',
+        r.calidad || '',
+        r.abundancia ?? 0,
+        r.riqueza ?? 0,
+        r.shannon ?? 0,
+        r.simpson ?? 0,
+        r.pielou ?? 0,
+        r.rms_avg ?? '',
+        r.aci_avg ?? 0,
+        r.adi_avg ?? 0,
+        r.aei_avg ?? 0,
+        r.bio_avg ?? 0,
+        r.ndsi_avg ?? 0,
+        r.ht_avg ?? 0,
+        r.hf_avg ?? 0,
+        r.h_avg ?? 0
+    ]);
+
+    downloadTableCSV(
+        `birdmonitor_indices_${new Date().toISOString().slice(0, 10)}.csv`,
+        [
+            'Zona',
+            'Calidad_Shannon',
+            'Abundancia_N',
+            'Riqueza_S',
+            'Shannon_H',
+            'Simpson_1-D',
+            'Pielou_J',
+            'RMS_Medio',
+            'ACI_Medio',
+            'ADI_Medio',
+            'AEI_Medio',
+            'BIO_Medio',
+            'NDSI_Medio',
+            'Entropia_Temporal_Ht',
+            'Entropia_Frecuencial_Hf',
+            'Entropia_Acustica_H'
+        ],
+        rows
+    );
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1201,7 +1290,7 @@ async function renderNodesView(container) {
     try {
         const res = await fetch(API_URL.replace('detections/', 'devices/'));
         const nodos = await res.json();
-        
+
         let nodesHtml = '';
         nodos.forEach(node => {
             nodesHtml += `
@@ -1218,7 +1307,7 @@ async function renderNodesView(container) {
                 </div>
             </div>`;
         });
-        
+
         container.innerHTML = `
             <div class="row mb-4 animate-fade-in">
                 <div class="col-12">
@@ -1240,7 +1329,7 @@ let currentDailyData = [];
 async function renderDailyView(container) {
     // Obtenemos la fecha actual en formato YYYY-MM-DD
     const today = new Date().toISOString().split('T')[0];
-    
+
     container.innerHTML = `
         <div class="row mb-4 animate-fade-in">
             <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -1251,7 +1340,7 @@ async function renderDailyView(container) {
                 <div class="d-flex gap-2 align-items-center">
                     <input type="date" id="daily-date-picker" class="form-control bg-dark text-white border-secondary" value="${today}">
                     <button class="btn btn-success d-flex align-items-center" onclick="downloadDailyCSV()">
-                        <i class="bi bi-filetype-csv me-2"></i>Exportar Informe
+                        <i class="bi bi-filetype-csv me-2"></i>Exportar tabla
                     </button>
                 </div>
             </div>
@@ -1273,8 +1362,9 @@ async function renderDailyView(container) {
                         <table class="table table-dark table-hover mb-0 align-middle">
                             <thead class="bg-dark-subtle text-uppercase small">
                                 <tr>
-                                    <th class="ps-4 py-3">Tramo Horario</th>
-                                    <th class="py-3">Intensidad (Cantos)</th>
+                                    <th class="ps-4 py-3">Eje X · Tramo Horario</th>
+                                    <th class="py-3">Eje Y · Cantos</th>
+                                    <th class="py-3">Confianza Media</th>
                                     <th class="py-3">Especies Activas</th>
                                     <th class="pe-4 py-3">Taxones Identificados</th>
                                 </tr>
@@ -1289,7 +1379,7 @@ async function renderDailyView(container) {
 
     // Escuchamos los cambios en el calendario para actualizar al instante
     document.getElementById('daily-date-picker').addEventListener('change', (e) => loadDailyData(e.target.value));
-    
+
     // Cargamos los datos del día por defecto
     loadDailyData(today);
 }
@@ -1303,7 +1393,7 @@ async function loadDailyData(dateStr) {
         // 1. DIBUJAR GRÁFICO (Chart.js)
         const ctx = document.getElementById('dailyChart');
         if (dailyChartInst) dailyChartInst.destroy();
-        
+
         const labels = data.map(d => `${String(d.hora).padStart(2, '0')}:00`);
         const counts = data.map(d => d.total_detecciones);
 
@@ -1336,6 +1426,7 @@ async function loadDailyData(dateStr) {
             <tr>
                 <td class="ps-4 text-white-50 font-monospace">${String(d.hora).padStart(2, '0')}:00 - ${String(d.hora).padStart(2, '0')}:59</td>
                 <td><span class="badge bg-${d.total_detecciones > 0 ? 'success' : 'secondary'} fs-6">${d.total_detecciones}</span></td>
+                <td><span class="text-white-50">${Number(d.confianza_media || 0).toFixed(3)}</span></td>
                 <td><span class="text-white fw-bold">${d.especies_activas}</span></td>
                 <td class="pe-4 text-muted small">${d.lista_especies.join(', ') || '-'}</td>
             </tr>
@@ -1348,25 +1439,35 @@ async function loadDailyData(dateStr) {
 
 function downloadDailyCSV() {
     if (!currentDailyData || currentDailyData.length === 0) return;
-    
+
     const date = document.getElementById('daily-date-picker').value;
-    
-    // Construimos las cabeceras del CSV
-    let csv = "Hora,Total_Detecciones,Confianza_Media,Num_Especies_Activas,Lista_Especies\n";
-    
-    currentDailyData.forEach(d => {
-        // Unimos la lista con barras para no romper el delimitador de coma del CSV
-        const lista = d.lista_especies.join(" | "); 
-        const horaStr = `${String(d.hora).padStart(2, '0')}:00`;
-        csv += `${horaStr},${d.total_detecciones},${d.confianza_media},${d.especies_activas},"${lista}"\n`;
+
+    const rows = currentDailyData.map(d => {
+        const hora = String(d.hora).padStart(2, '0');
+        return [
+            date,
+            `${hora}:00`,
+            `${hora}:00 - ${hora}:59`,
+            d.total_detecciones,
+            d.confianza_media ?? 0,
+            d.especies_activas,
+            d.lista_especies || []
+        ];
     });
-    
-    // Forzamos la descarga en el navegador
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `PAM_Informe_Diario_${date}.csv`;
-    link.click();
+
+    downloadTableCSV(
+        `birdmonitor_actividad_horaria_${date}.csv`,
+        [
+            'Fecha',
+            'Eje_X_Hora',
+            'Tramo_Horario',
+            'Eje_Y_Cantos_Total_Detecciones',
+            'Confianza_Media',
+            'Especies_Activas',
+            'Taxones_Identificados'
+        ],
+        rows
+    );
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1382,7 +1483,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // pal responsive del movil
     const menuToggle = document.getElementById('mobile-menu-toggle');
     const sidebar = document.getElementById('sidebar-wrapper');
-    
+
     const overlay = document.createElement('div');
     overlay.className = 'sidebar-overlay d-md-none';
     document.body.appendChild(overlay);
@@ -1393,7 +1494,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (menuToggle) menuToggle.addEventListener('click', toggleMenu);
-    overlay.addEventListener('click', toggleMenu); 
+    overlay.addEventListener('click', toggleMenu);
 
     document.querySelectorAll('.sidebar-nav .nav-link').forEach(link => {
         link.addEventListener('click', () => {
