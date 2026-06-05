@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es" data-bs-theme="dark">
+<html lang="es" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BirdMonitor | Panel Control de Datos</title>
+    <title>BirdMonitor | Panel de monitoreo acústico</title>
     
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -21,7 +21,7 @@
             
             <div class="sidebar-brand">
                 <i class="bi bi-feather brand-icon"></i>
-                <div class="brand-text">BirdMonitor<span class="brand-accent">.AI</span></div>
+                <div class="brand-text">BirdMonitor</div>
             </div>
 
             <nav class="sidebar-nav">
@@ -39,14 +39,14 @@
                 </a>
                 <a href="#" id="btn-science" class="nav-link" onclick="switchView('science'); return false;">
                     <i class="bi bi-bar-chart-line-fill"></i>
-                    <span>Análisis Eco</span>
+                    <span>Análisis ecológico</span>
                 </a>
                 <a href="#" id="btn-nodes" class="nav-link" onclick="switchView('nodes'); return false;">
                     <i class="bi bi-hdd-network"></i>
                     <span>Nodos</span>
                 </a>
                 <a href="#" id="btn-daily" class="nav-link" onclick="switchView('daily')">
-                    <i class="bi bi-calendar-check me-2"></i>Informe Diario
+                    <i class="bi bi-calendar-check me-2"></i>Informe diario
                 </a>
             </nav>
 
@@ -69,14 +69,7 @@
                         <i class="bi bi-list fs-1"></i>
                     </button>
                     <i class="bi bi-broadcast-pin topbar-icon d-none d-md-block me-2"></i>
-                    <span id="topbar-view-title" class="fw-bold">Monitorización Global</span>
-                </div>
-                <div class="topbar-right">
-                    <span class="text-muted small me-2 d-none d-sm-inline">Estado del Sistema:</span>
-                    <span class="status-pill">
-                        <span class="status-dot"></span>
-                        En Línea
-                    </span>
+                    <span id="topbar-view-title" class="fw-bold">Monitorización global</span>
                 </div>
             </header>
             <!-- Contenido dinámico -->

@@ -500,10 +500,7 @@ async function renderHistoryView(container) {
     }
 }
 
-// ════════════════════════════════════════════════════════════════
-// DASHBOARD TIEMPO REAL
-// ════════════════════════════════════════════════════════════════
-
+//DASHBOARD TIEMPO REAL
 async function updateDashboard() {
     if (currentView !== 'dashboard') return;
     try {
@@ -797,11 +794,11 @@ function updateChart(counts) {
     const ctx = canvas.getContext('2d');
     const labels = Object.keys(counts).map(cleanName);
     const values = Object.values(counts);
-    const natureColors = ['#2E7D32', '#C49A6C', '#0288D1', '#689F38', '#8D6E63'];
+    const natureColors = ['#2f6f4e', '#326f72', '#a66f2f', '#6f7f5a', '#405f82'];
     myChart = new Chart(ctx, {
         type: 'doughnut',
         data: { labels, datasets: [{ data: values, backgroundColor: natureColors, borderWidth: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#e0e0e0' } } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#5f6f65' } } } }
     });
 }
 
@@ -809,18 +806,16 @@ function safeSetText(id, text) { const el = document.getElementById(id); if (el)
 function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.split('_')[1] || name; return cleaned.charAt(0).toUpperCase() + cleaned.slice(1); }
 
 
-// ════════════════════════════════════════════════════════════════
 // TOOLTIP CUSTOM — se monta una sola vez en el body
-// ════════════════════════════════════════════════════════════════
 
 (function mountTooltip() {
     const tt = document.createElement('div');
     tt.id = 'gauge-tooltip';
     tt.style.cssText = `
         position:fixed; z-index:9999; pointer-events:none;
-        background:#0f1412; color:#e2e8e2; border:1px solid #2a3530;
+        background:#ffffff; color:#1f2923; border:1px solid #c6d0c2;
         border-radius:8px; padding:8px 12px; font-size:0.75rem;
-        max-width:260px; line-height:1.5; box-shadow:0 4px 20px #00000080;
+        max-width:260px; line-height:1.5; box-shadow:0 8px 22px rgba(31,41,35,0.14);
         opacity:0; transition:opacity 0.15s; font-family:'DM Sans',sans-serif;`;
     document.body.appendChild(tt);
 
@@ -846,10 +841,7 @@ function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.s
     });
 })();
 
-
-// ════════════════════════════════════════════════════════════════
 // GAUGE SVG
-// ════════════════════════════════════════════════════════════════
 
 function buildGaugeSVG(value, min, max, color, label, tooltip) {
     const R = 52;
@@ -875,37 +867,33 @@ function buildGaugeSVG(value, min, max, color, label, tooltip) {
     const endAngle = startAngle + sweepTotal;
     const activeEnd = startAngle + sweepActive;
     const displayVal = (value % 1 === 0) ? value.toFixed(0) : value.toFixed(3);
-    const textColor = pct >= 0.65 ? '#4ade80' : pct >= 0.35 ? '#fbbf24' : '#f87171';
-    // Escapamos las comillas del tooltip para el atributo HTML
+    const textColor = pct >= 0.65 ? '#2f6f4e' : pct >= 0.35 ? '#a66f2f' : '#9c3f3f';
     const tipEscaped = tooltip.replace(/"/g, '&quot;');
 
     return `
     <div class="gauge-wrapper" data-gauge-tip="${tipEscaped}">
         <svg viewBox="0 0 140 100" width="140" height="100" xmlns="http://www.w3.org/2000/svg" style="pointer-events:none;">
             <path d="${arcPath(startAngle, endAngle, R)}"
-                  fill="none" stroke="#2a2e2c" stroke-width="10" stroke-linecap="round"/>
+                  fill="none" stroke="#dfe5db" stroke-width="10" stroke-linecap="round"/>
             <path d="${arcPath(startAngle, activeEnd, R)}"
                   fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round"
-                  style="filter:drop-shadow(0 0 4px ${color}80);"/>
+                  />
             <text x="${CX}" y="${CY - 4}" text-anchor="middle"
                   font-size="18" font-weight="700" fill="${textColor}" font-family="DM Sans,sans-serif">
                 ${displayVal}
             </text>
             <text x="${CX}" y="${CY + 13}" text-anchor="middle"
-                  font-size="9" fill="#6b7280" font-family="DM Sans,sans-serif" letter-spacing="1">
+                  font-size="9" fill="#879389" font-family="DM Sans,sans-serif" letter-spacing="1">
                 ${label.toUpperCase()}
             </text>
-            <text x="20"  y="92" text-anchor="middle" font-size="8" fill="#4b5563">${min}</text>
-            <text x="120" y="92" text-anchor="middle" font-size="8" fill="#4b5563">${max % 1 === 0 ? max : max.toFixed(1)}</text>
+            <text x="20"  y="92" text-anchor="middle" font-size="8" fill="#879389">${min}</text>
+            <text x="120" y="92" text-anchor="middle" font-size="8" fill="#879389">${max % 1 === 0 ? max : max.toFixed(1)}</text>
         </svg>
         <p class="gauge-label">${label}</p>
     </div>`;
 }
 
-
-// ════════════════════════════════════════════════════════════════
 // VISTA ANÁLISIS ECO
-// ════════════════════════════════════════════════════════════════
 
 async function renderScienceView(container) {
     container.innerHTML = `
@@ -930,15 +918,15 @@ async function renderScienceView(container) {
 
         // ── Gauges biodiversidad — LAYOUT 3+2 ────────────────────────────
         // Usamos flex-wrap + flex-basis 33%/50% para forzar la rejilla
-        const g1 = buildGaugeSVG(r.shannon, 0, 5, '#60a5fa', "Shannon H'",
+        const g1 = buildGaugeSVG(r.shannon, 0, 5, '#405f82', "Shannon H'",
             "Índice de Shannon-Wiener (H'): mide diversidad considerando riqueza y equitabilidad. >3 = Excelente, 1.5–3 = Moderado, <1.5 = Pobre.");
-        const g2 = buildGaugeSVG(r.simpson, 0, 1, '#a78bfa', "Simpson 1-D",
+        const g2 = buildGaugeSVG(r.simpson, 0, 1, '#326f72', "Simpson 1-D",
             "Índice de Simpson (1-D): probabilidad de que dos individuos elegidos al azar pertenezcan a especies distintas. Próximo a 1 = alta diversidad.");
-        const g3 = buildGaugeSVG(r.pielou, 0, 1, '#34d399', "Pielou J'",
+        const g3 = buildGaugeSVG(r.pielou, 0, 1, '#2f6f4e', "Pielou J'",
             "Índice de equitabilidad de Pielou (J'): uniformidad en la distribución de individuos entre especies. 1 = perfectamente equitativo.");
-        const g4 = buildGaugeSVG(Math.min(r.riqueza, 30), 0, 30, '#f59e0b', "Riqueza S",
+        const g4 = buildGaugeSVG(Math.min(r.riqueza, 30), 0, 30, '#a66f2f', "Riqueza S",
             "Riqueza específica (S): número de especies únicas detectadas. Indicador primario de biodiversidad.");
-        const g5 = buildGaugeSVG(Math.min(r.abundancia, 999), 0, 999, '#fb923c', "Abundancia",
+        const g5 = buildGaugeSVG(Math.min(r.abundancia, 999), 0, 999, '#6f7f5a', "Abundancia",
             "Abundancia total (N): número total de detecciones acumuladas. Refleja la actividad acústica del ecosistema.");
 
         // Fila superior: 3 gauges | Fila inferior: 2 gauges centrados
@@ -949,36 +937,36 @@ async function renderScienceView(container) {
         </div>`;
 
         // ── Gauges entropía acústica — los 3 EN UNA SOLA FILA ────────────
-        const ge1 = buildGaugeSVG(r.ht_avg ?? 0, 0, 1, '#38bdf8', "Ht",
+        const ge1 = buildGaugeSVG(r.ht_avg ?? 0, 0, 1, '#326f72', "Ht",
             "Entropía temporal (Ht): mide cuánto varía la energía acústica en el tiempo. Valores altos = diversidad temporal de sonidos.");
-        const ge2 = buildGaugeSVG(r.hf_avg ?? 0, 0, 1, '#818cf8', "Hf",
+        const ge2 = buildGaugeSVG(r.hf_avg ?? 0, 0, 1, '#405f82', "Hf",
             "Entropía espectral (Hf): distribución de energía entre bandas de frecuencia. Valores altos = uso espectral diverso.");
-        const ge3 = buildGaugeSVG(r.h_avg ?? 0, 0, 1, '#e879f9', "H",
+        const ge3 = buildGaugeSVG(r.h_avg ?? 0, 0, 1, '#2f6f4e', "H",
             "Entropía acústica compuesta (H = Ht × Hf): índice global de complejidad del paisaje sonoro. >0.6 = ecosistema sano.");
 
         const gaugesEntropyHTML = `
         <div class="gauges-entropy-row">${ge1}${ge2}${ge3}</div>`;
 
-        // ── HTML completo ─────────────────────────────────────────────────
+        //HTML completo 
         container.innerHTML = `
         <style>
             .sci-section-title {
                 font-size:0.68rem; font-weight:700; letter-spacing:0.12em;
-                text-transform:uppercase; color:#6b7280; margin-bottom:0.9rem;
+                text-transform:uppercase; color:#879389; margin-bottom:0.9rem;
                 display:flex; align-items:center; gap:0.5rem;
             }
             .sci-section-title::before {
                 content:''; display:inline-block; width:3px; height:14px;
-                border-radius:2px; background:#38b261;
+                border-radius:2px; background:#2f6f4e;
             }
             /* ── GAUGE WRAPPER ── */
             .gauge-wrapper {
                 display:flex; flex-direction:column; align-items:center;
                 gap:0; cursor:help; transition:transform 0.15s;
             }
-            .gauge-wrapper:hover { transform:scale(1.06); }
+            .gauge-wrapper:hover { transform:none; }
             .gauge-label {
-                font-size:0.7rem; font-weight:600; color:#9ca3af;
+                font-size:0.7rem; font-weight:600; color:#5f6f65;
                 margin:0; letter-spacing:0.05em; text-align:center;
             }
 
@@ -1004,10 +992,10 @@ async function renderScienceView(container) {
                 display:grid; grid-template-columns:90px 1fr 56px;
                 align-items:center; gap:0.6rem; margin-bottom:0.55rem;
             }
-            .index-bar-label { font-size:0.75rem; color:#9ca3af; font-weight:600; cursor:help; }
-            .index-bar-track { height:8px; background:#1f2421; border-radius:99px; overflow:hidden; }
+            .index-bar-label { font-size:0.75rem; color:#5f6f65; font-weight:600; cursor:help; }
+            .index-bar-track { height:8px; background:#dfe5db; border-radius:99px; overflow:hidden; }
             .index-bar-fill  { height:100%; border-radius:99px; transition:width 0.6s cubic-bezier(.4,0,.2,1); }
-            .index-bar-val   { font-size:0.78rem; color:#e5e7eb; text-align:right; font-variant-numeric:tabular-nums; }
+            .index-bar-val   { font-size:0.78rem; color:#1f2923; text-align:right; font-variant-numeric:tabular-nums; }
         </style>
 
         <!-- CABECERA -->
@@ -1057,19 +1045,18 @@ async function renderScienceView(container) {
                             <div class="d-flex align-items-center gap-3">
                                 <div class="position-relative" style="width:56px;height:56px;flex-shrink:0;">
                                     <svg viewBox="0 0 56 56" width="56" height="56">
-                                        <circle cx="28" cy="28" r="24" fill="none" stroke="#1f2421" stroke-width="6"/>
+                                        <circle cx="28" cy="28" r="24" fill="none" stroke="#dfe5db" stroke-width="6"/>
                                         <circle cx="28" cy="28" r="24" fill="none"
-                                            stroke="${(r.ndsi_avg ?? 0) >= 0 ? '#4ade80' : '#f87171'}"
+                                            stroke="${(r.ndsi_avg ?? 0) >= 0 ? '#2f6f4e' : '#9c3f3f'}"
                                             stroke-width="6"
                                             stroke-dasharray="${Math.abs((r.ndsi_avg ?? 0)) * 75.4} 150.8"
                                             stroke-dashoffset="37.7"
                                             stroke-linecap="round"
-                                            style="filter:drop-shadow(0 0 5px ${(r.ndsi_avg ?? 0) >= 0 ? '#4ade8060' : '#f8717160'});"
                                             transform="rotate(-90 28 28)"/>
                                     </svg>
                                 </div>
                                 <div>
-                                    <div class="ndsi-badge" style="color:${(r.ndsi_avg ?? 0) >= 0 ? '#4ade80' : '#f87171'};">
+                                    <div class="ndsi-badge" style="color:${(r.ndsi_avg ?? 0) >= 0 ? '#2f6f4e' : '#9c3f3f'};">
                                         ${(r.ndsi_avg ?? 0).toFixed(3)}
                                     </div>
                                     <div class="text-muted" style="font-size:0.72rem;line-height:1.3;">
@@ -1102,22 +1089,22 @@ async function renderScienceView(container) {
                         <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos del Paisaje Sonoro</p>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Complexity Index: variabilidad espectral de la grabación. Valores altos indican gran actividad biótica.">ACI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg ?? 0) / 2000 * 100, 100)}%;background:linear-gradient(90deg,#60a5fa,#818cf8);"></div></div>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg ?? 0) / 2000 * 100, 100)}%;background:#405f82;"></div></div>
                             <span class="index-bar-val">${(r.aci_avg ?? 0).toFixed(1)}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Diversity Index: diversidad de bandas de frecuencia ocupadas. Mayor ADI → mayor biodiversidad.">ADI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg ?? 0) / 3 * 100, 100)}%;background:linear-gradient(90deg,#34d399,#059669);"></div></div>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg ?? 0) / 3 * 100, 100)}%;background:#2f6f4e;"></div></div>
                             <span class="index-bar-val">${(r.adi_avg ?? 0).toFixed(3)}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Acoustic Evenness Index: uniformidad del uso espectral. Valores bajos indican mayor riqueza sonora.">AEI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg ?? 0) * 100, 100)}%;background:linear-gradient(90deg,#fbbf24,#f59e0b);"></div></div>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg ?? 0) * 100, 100)}%;background:#a66f2f;"></div></div>
                             <span class="index-bar-val">${(r.aei_avg ?? 0).toFixed(3)}</span>
                         </div>
                         <div class="index-bar-row">
                             <span class="index-bar-label" data-gauge-tip="Bioacoustic Index: energía acústica en la banda de biofonia (2–8 kHz). Indica intensidad de la actividad biológica.">BIO</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg ?? 0) / 100 * 100, 100)}%;background:linear-gradient(90deg,#f87171,#dc2626);"></div></div>
+                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg ?? 0) / 100 * 100, 100)}%;background:#6f7f5a;"></div></div>
                             <span class="index-bar-val">${(r.bio_avg ?? 0).toFixed(2)}</span>
                         </div>
                         <p class="text-muted mt-2 mb-0" style="font-size:0.68rem;">
@@ -1156,7 +1143,7 @@ async function renderScienceView(container) {
             </div>
         </div>`;
 
-        // ── Chart.js barras ───────────────────────────────────────────────
+        // Chart.js barras 
         const barCtx = document.getElementById('scienceBarChart');
         if (barCtx) {
             new Chart(barCtx.getContext('2d'), {
@@ -1173,11 +1160,11 @@ async function renderScienceView(container) {
                             r.h_avg ?? 0
                         ],
                         backgroundColor: [
-                            'rgba(96,165,250,0.75)', 'rgba(167,139,250,0.75)',
-                            'rgba(52,211,153,0.75)', 'rgba(251,191,36,0.75)',
-                            'rgba(232,121,249,0.75)'
+                            'rgba(64,95,130,0.82)', 'rgba(50,111,114,0.82)',
+                            'rgba(47,111,78,0.82)', 'rgba(166,111,47,0.82)',
+                            'rgba(111,127,90,0.82)'
                         ],
-                        borderColor: ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#e879f9'],
+                        borderColor: ['#405f82', '#326f72', '#2f6f4e', '#a66f2f', '#6f7f5a'],
                         borderWidth: 1.5, borderRadius: 6,
                     }]
                 },
@@ -1201,14 +1188,14 @@ async function renderScienceView(container) {
                         }
                     },
                     scales: {
-                        y: { min: 0, max: 5, grid: { color: '#ffffff0d' }, ticks: { color: '#9ca3af', font: { size: 11 } } },
-                        x: { grid: { display: false }, ticks: { color: '#e5e7eb', font: { size: 12 } } }
+                        y: { min: 0, max: 5, grid: { color: '#dde3d8' }, ticks: { color: '#5f6f65', font: { size: 11 } } },
+                        x: { grid: { display: false }, ticks: { color: '#5f6f65', font: { size: 12 } } }
                     }
                 }
             });
         }
 
-        // ── Mapa Leaflet ──────────────────────────────────────────────────
+        //Mapa Leaflet
         fetch("http://100.98.248.58:8000/analytics/map")
             .then(res => res.json())
             .then(mapData => {
@@ -1219,7 +1206,7 @@ async function renderScienceView(container) {
                 }).addTo(map);
                 const marker = L.marker([mapData.lat, mapData.lon]).addTo(map);
                 marker.bindPopup(`<b>${mapData.ciudad}</b><br>Biodiversidad H': <b>${mapData.shannon}</b>`).openPopup();
-                const circleColor = mapData.shannon > 1.5 ? '#4ade80' : '#f87171';
+                const circleColor = mapData.shannon > 1.5 ? '#2f6f4e' : '#9c3f3f';
                 L.circle([mapData.lat, mapData.lon], {
                     color: circleColor, fillColor: circleColor,
                     fillOpacity: 0.15, radius: mapData.radio_km * 1000
@@ -1281,10 +1268,7 @@ function downloadScienceCSV() {
     );
 }
 
-// ════════════════════════════════════════════════════════════════
-// NODOS
-// ════════════════════════════════════════════════════════════════
-
+//NODOS
 async function renderNodesView(container) {
     container.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-success"></div></div>`;
     try {
@@ -1319,9 +1303,7 @@ async function renderNodesView(container) {
         container.innerHTML = `<div class="alert alert-danger">Error cargando nodos: ${e.message}</div>`;
     }
 }
-// ════════════════════════════════════════════════════════════════
-// VISTA INFORME DIARIO (DAILY VIEW)
-// ════════════════════════════════════════════════════════════════
+//VISTA INFORME DIARIO 
 
 let dailyChartInst = null;
 let currentDailyData = [];
@@ -1404,8 +1386,8 @@ async function loadDailyData(dateStr) {
                 datasets: [{
                     label: 'Registros válidos',
                     data: counts,
-                    backgroundColor: 'rgba(52, 211, 153, 0.8)', // Verde nature
-                    borderColor: '#059669',
+                    backgroundColor: 'rgba(47, 111, 78, 0.82)',
+                    borderColor: '#22543a',
                     borderWidth: 1,
                     borderRadius: 4
                 }]
@@ -1413,8 +1395,8 @@ async function loadDailyData(dateStr) {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    y: { beginAtZero: true, grid: { color: '#ffffff0d' }, ticks: { color: '#9ca3af' } },
-                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                    y: { beginAtZero: true, grid: { color: '#dde3d8' }, ticks: { color: '#5f6f65' } },
+                    x: { grid: { display: false }, ticks: { color: '#5f6f65' } }
                 },
                 plugins: { legend: { display: false } }
             }
@@ -1470,10 +1452,7 @@ function downloadDailyCSV() {
     );
 }
 
-// ════════════════════════════════════════════════════════════════
-// ARRANQUE
-// ════════════════════════════════════════════════════════════════
-
+//ARRANQUE
 document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('main-content');
     if (container) { container.className = "d-flex flex-column flex-grow-1 w-100"; container.innerHTML = getDashboardHTML(); }
