@@ -522,7 +522,7 @@ async function updateDashboard() {
         if (noiseEl) {
             noiseEl.innerText = `${noiseLabel} (Vol: ${avgAmp.toFixed(0)})`;
             noiseEl.className = `fw-bold mb-0 fs-5 text-${noiseColor}`;
-            document.getElementById('noise-card').className = `card kpi-card border-start-${noiseColor}`;
+            document.getElementById('noise-card').className = `kpi-item kpi-item-${noiseColor}`;
             document.getElementById('noise-icon-box').className = `icon-box bg-${noiseColor}-subtle text-${noiseColor}`;
             document.getElementById('noise-icon').className = `bi ${noiseIcon} fs-3`;
         }
@@ -550,36 +550,10 @@ async function updateDashboard() {
 
 function getDashboardHTML() {
     return `
-    <section class="dashboard-hero mb-4 animate-fade-in">
-        <div class="dashboard-hero-main">
-            <p class="hero-eyebrow mb-2">
-                <i class="bi bi-cpu me-2"></i>Nodo Edge · BirdNET · Bioacústica
-            </p>
-            <h3 class="dashboard-hero-title mb-2">Monitorización Global</h3>
-            <p class="dashboard-hero-subtitle mb-0">
-                Vista operativa del sistema: detecciones recientes, actividad acústica, especies dominantes y estado sonoro del entorno.
-            </p>
-        </div>
-        <div class="hero-status-grid">
-            <div class="hero-status-chip">
-                <i class="bi bi-router"></i>
-                <span>Nodo activo</span>
-            </div>
-            <div class="hero-status-chip">
-                <i class="bi bi-database-check"></i>
-                <span>Backend conectado</span>
-            </div>
-            <div class="hero-status-chip">
-                <i class="bi bi-soundwave"></i>
-                <span>Ciclo 5 min</span>
-            </div>
-        </div>
-    </section>
-
-    <div class="row g-4 mb-4">
-        <div class="col-md-3">
-            <div class="card kpi-card kpi-card-primary border-start-success">
-                <div class="card-body d-flex align-items-center justify-content-between">
+    <section class="card kpi-panel mb-4 animate-fade-in">
+        <div class="kpi-grid">
+            <div class="kpi-item kpi-item-success">
+                <div class="kpi-content">
                     <div>
                         <p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p>
                         <h3 class="fw-bold mb-0" id="total-counter">0</h3>
@@ -587,10 +561,8 @@ function getDashboardHTML() {
                     <div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div>
                 </div>
             </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card kpi-card kpi-card-earth border-start-earth">
-                <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="kpi-item kpi-item-earth">
+                <div class="kpi-content">
                     <div>
                         <p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p>
                         <h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species">-</h4>
@@ -598,10 +570,8 @@ function getDashboardHTML() {
                     <div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div>
                 </div>
             </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card kpi-card kpi-card-info border-start-info">
-                <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="kpi-item kpi-item-info">
+                <div class="kpi-content">
                     <div>
                         <p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p>
                         <h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4>
@@ -609,10 +579,8 @@ function getDashboardHTML() {
                     <div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div>
                 </div>
             </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card kpi-card kpi-card-noise border-start-secondary" id="noise-card">
-                <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="kpi-item kpi-item-secondary" id="noise-card">
+                <div class="kpi-content">
                     <div>
                         <p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p>
                         <h4 class="fw-bold mb-0 fs-5" id="noise-metric">Calculando...</h4>
@@ -621,7 +589,7 @@ function getDashboardHTML() {
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
     <div class="row g-4 mb-5">
         <div class="col-lg-7">
@@ -842,7 +810,6 @@ function cleanName(name) { if (!name) return "Desconocido"; let cleaned = name.s
 })();
 
 // GAUGE SVG
-
 function buildGaugeSVG(value, min, max, color, label, tooltip) {
     const R = 52;
     const CX = 70, CY = 70;
@@ -894,7 +861,6 @@ function buildGaugeSVG(value, min, max, color, label, tooltip) {
 }
 
 // VISTA ANÁLISIS ECO
-
 async function renderScienceView(container) {
     container.innerHTML = `
         <div class="d-flex justify-content-center align-items-center py-5">
@@ -986,6 +952,33 @@ async function renderScienceView(container) {
                 flex-wrap:nowrap; gap:0.5rem;
             }
 
+            .science-composite-card { width:100%; }
+            .science-card-body {
+                display:flex; flex-direction:column; gap:1.05rem;
+                height:100%; padding:1.25rem 1.45rem;
+            }
+            .science-card-head {
+                display:flex; align-items:center; justify-content:space-between;
+                gap:1rem; margin-bottom:0.1rem;
+            }
+            .science-card-head .sci-section-title { margin-bottom:0; }
+            .science-panel-section { min-width:0; }
+            .science-panel-divider {
+                height:1px; width:100%; background:#dde3d8;
+            }
+            .science-chart-frame {
+                height:260px; min-height:0; width:100%;
+            }
+            .soundscape-summary {
+                display:flex; align-items:center; gap:1rem;
+                min-width:0;
+            }
+            .soundscape-copy { min-width:0; }
+            .soundscape-copy p {
+                color:#5f6f65; font-size:0.82rem; line-height:1.4;
+                margin:0;
+            }
+
             /* ── BARRAS bioacústicas ── */
             .ndsi-badge { font-size:1.6rem; font-weight:800; line-height:1; }
             .index-bar-row {
@@ -1020,29 +1013,45 @@ async function renderScienceView(container) {
             </div>
         </div>
 
-        <!-- FILA 1: Gauges biodiversidad (3+2) | NDSI + entropías (3 en fila) -->
-        <div class="row g-3 mb-3 animate-fade-in">
+        <!-- Tarjetas compuestas: biodiversidad | paisaje sonoro -->
+        <div class="row g-3 mb-3 animate-fade-in science-composite-row">
 
-            <div class="col-lg-7">
-                <div class="card border-0 bg-dark h-100">
-                    <div class="card-body">
-                        <p class="sci-section-title"><i class="bi bi-bar-chart-steps me-1"></i>Índices de Biodiversidad</p>
-                        ${gaugesBioHTML}
-                        <p class="text-muted mb-0" style="font-size:0.7rem;margin-top:0.5rem;">
-                            <i class="bi bi-info-circle me-1"></i>Pasa el cursor sobre cada medidor para ver su definición.
-                        </p>
+            <div class="col-xl-7 d-flex">
+                <div class="card border-0 bg-dark science-composite-card">
+                    <div class="card-body science-card-body">
+                        <div class="science-card-head">
+                            <p class="sci-section-title"><i class="bi bi-bar-chart-steps me-1"></i>Índices de Biodiversidad</p>
+                        </div>
+
+                        <div class="science-panel-section">
+                            ${gaugesBioHTML}
+                            <p class="text-muted mb-0" style="font-size:0.7rem;margin-top:0.5rem;">
+                                <i class="bi bi-info-circle me-1"></i>Pasa el cursor sobre cada medidor para ver su definición.
+                            </p>
+                        </div>
+
+                        <div class="science-panel-divider"></div>
+
+                        <div class="science-panel-section">
+                            <p class="sci-section-title"><i class="bi bi-bar-chart-fill me-1"></i>Comparativa de diversidad</p>
+                            <div class="science-chart-frame">
+                                <canvas id="scienceBarChart"></canvas>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-lg-5">
-                <div class="card border-0 bg-dark h-100">
-                    <div class="card-body d-flex flex-column gap-3">
+            <div class="col-xl-5 d-flex">
+                <div class="card border-0 bg-dark science-composite-card">
+                    <div class="card-body science-card-body">
+                        <div class="science-card-head">
+                            <p class="sci-section-title"><i class="bi bi-soundwave me-1"></i>Paisaje Sonoro</p>
+                        </div>
 
-                        <!-- NDSI -->
-                        <div>
-                            <p class="sci-section-title"><i class="bi bi-soundwave me-1"></i>Paisaje Sonoro (NDSI)</p>
-                            <div class="d-flex align-items-center gap-3">
+                        <div class="science-panel-section">
+                            <p class="sci-section-title"><i class="bi bi-activity me-1"></i>NDSI</p>
+                            <div class="soundscape-summary">
                                 <div class="position-relative" style="width:56px;height:56px;flex-shrink:0;">
                                     <svg viewBox="0 0 56 56" width="56" height="56">
                                         <circle cx="28" cy="28" r="24" fill="none" stroke="#dfe5db" stroke-width="6"/>
@@ -1055,72 +1064,54 @@ async function renderScienceView(container) {
                                             transform="rotate(-90 28 28)"/>
                                     </svg>
                                 </div>
-                                <div>
+                                <div class="soundscape-copy">
                                     <div class="ndsi-badge" style="color:${(r.ndsi_avg ?? 0) >= 0 ? '#2f6f4e' : '#9c3f3f'};">
                                         ${(r.ndsi_avg ?? 0).toFixed(3)}
                                     </div>
-                                    <div class="text-muted" style="font-size:0.72rem;line-height:1.3;">
-                                        ${(r.ndsi_avg ?? 0) > 0.5 ? '🌿 Ambiente predominantemente natural' :
-                (r.ndsi_avg ?? 0) > 0 ? '⚖️ Balance naturaleza / antropogénico' :
-                    '🏙️ Ruido antropogénico dominante'}
+                                    <p>
+                                        ${(r.ndsi_avg ?? 0) > 0.5 ? 'Ambiente predominantemente natural' :
+                (r.ndsi_avg ?? 0) > 0 ? 'Balance naturaleza / antropogénico' :
+                    'Ruido antropogénico dominante'}
                                         <br><span class="text-white-50">Rango: −1 (urbano) → +1 (natural)</span>
-                                    </div>
+                                    </p>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Entropías acústicas — 3 en una fila -->
-                        <div>
+                        <div class="science-panel-divider"></div>
+
+                        <div class="science-panel-section">
                             <p class="sci-section-title"><i class="bi bi-waveform me-1"></i>Entropía Acústica</p>
                             ${gaugesEntropyHTML}
                         </div>
 
-                    </div>
-                </div>
-            </div>
-        </div>
+                        <div class="science-panel-divider"></div>
 
-        <!-- FILA 2: Barras bioacústicas | Gráfico barras diversidad -->
-        <div class="row g-3 mb-3 animate-fade-in">
-
-            <div class="col-lg-5">
-                <div class="card border-0 bg-dark h-100">
-                    <div class="card-body">
-                        <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos del Paisaje Sonoro</p>
-                        <div class="index-bar-row">
-                            <span class="index-bar-label" data-gauge-tip="Acoustic Complexity Index: variabilidad espectral de la grabación. Valores altos indican gran actividad biótica.">ACI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg ?? 0) / 2000 * 100, 100)}%;background:#405f82;"></div></div>
-                            <span class="index-bar-val">${(r.aci_avg ?? 0).toFixed(1)}</span>
-                        </div>
-                        <div class="index-bar-row">
-                            <span class="index-bar-label" data-gauge-tip="Acoustic Diversity Index: diversidad de bandas de frecuencia ocupadas. Mayor ADI → mayor biodiversidad.">ADI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg ?? 0) / 3 * 100, 100)}%;background:#2f6f4e;"></div></div>
-                            <span class="index-bar-val">${(r.adi_avg ?? 0).toFixed(3)}</span>
-                        </div>
-                        <div class="index-bar-row">
-                            <span class="index-bar-label" data-gauge-tip="Acoustic Evenness Index: uniformidad del uso espectral. Valores bajos indican mayor riqueza sonora.">AEI</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg ?? 0) * 100, 100)}%;background:#a66f2f;"></div></div>
-                            <span class="index-bar-val">${(r.aei_avg ?? 0).toFixed(3)}</span>
-                        </div>
-                        <div class="index-bar-row">
-                            <span class="index-bar-label" data-gauge-tip="Bioacoustic Index: energía acústica en la banda de biofonia (2–8 kHz). Indica intensidad de la actividad biológica.">BIO</span>
-                            <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg ?? 0) / 100 * 100, 100)}%;background:#6f7f5a;"></div></div>
-                            <span class="index-bar-val">${(r.bio_avg ?? 0).toFixed(2)}</span>
-                        </div>
-                        <p class="text-muted mt-2 mb-0" style="font-size:0.68rem;">
-                            <i class="bi bi-info-circle me-1"></i>Media agregada de las muestras acústicas registradas.
-                            Pasa el cursor sobre cada etiqueta para más info.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-7">
-                <div class="card border-0 bg-dark h-100">
-                    <div class="card-body d-flex flex-column">
-                        <p class="sci-section-title"><i class="bi bi-bar-chart-fill me-1"></i>Índices de Diversidad — Comparativa</p>
-                        <div style="flex:1;min-height:0;">
-                            <canvas id="scienceBarChart"></canvas>
+                        <div class="science-panel-section">
+                            <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos</p>
+                            <div class="index-bar-row">
+                                <span class="index-bar-label" data-gauge-tip="Acoustic Complexity Index: variabilidad espectral de la grabación. Valores altos indican gran actividad biótica.">ACI</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg ?? 0) / 2000 * 100, 100)}%;background:#405f82;"></div></div>
+                                <span class="index-bar-val">${(r.aci_avg ?? 0).toFixed(1)}</span>
+                            </div>
+                            <div class="index-bar-row">
+                                <span class="index-bar-label" data-gauge-tip="Acoustic Diversity Index: diversidad de bandas de frecuencia ocupadas. Mayor ADI → mayor biodiversidad.">ADI</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg ?? 0) / 3 * 100, 100)}%;background:#2f6f4e;"></div></div>
+                                <span class="index-bar-val">${(r.adi_avg ?? 0).toFixed(3)}</span>
+                            </div>
+                            <div class="index-bar-row">
+                                <span class="index-bar-label" data-gauge-tip="Acoustic Evenness Index: uniformidad del uso espectral. Valores bajos indican mayor riqueza sonora.">AEI</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg ?? 0) * 100, 100)}%;background:#a66f2f;"></div></div>
+                                <span class="index-bar-val">${(r.aei_avg ?? 0).toFixed(3)}</span>
+                            </div>
+                            <div class="index-bar-row">
+                                <span class="index-bar-label" data-gauge-tip="Bioacoustic Index: energía acústica en la banda de biofonia (2–8 kHz). Indica intensidad de la actividad biológica.">BIO</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg ?? 0) / 100 * 100, 100)}%;background:#6f7f5a;"></div></div>
+                                <span class="index-bar-val">${(r.bio_avg ?? 0).toFixed(2)}</span>
+                            </div>
+                            <p class="text-muted mt-2 mb-0" style="font-size:0.68rem;">
+                                <i class="bi bi-info-circle me-1"></i>Media agregada de las muestras acústicas registradas.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -1303,8 +1294,8 @@ async function renderNodesView(container) {
         container.innerHTML = `<div class="alert alert-danger">Error cargando nodos: ${e.message}</div>`;
     }
 }
-//VISTA INFORME DIARIO 
 
+//VISTA INFORME DIARIO 
 let dailyChartInst = null;
 let currentDailyData = [];
 

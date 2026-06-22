@@ -102,7 +102,7 @@ http://localhost:8000
 Y desde la Raspberry Pi, mediante la IP de Tailscale del servidor Windows:
 
 ```text
-http://100.98.248.58:8000
+http://XXX.XXX.XXX:8000
 ```
 
 4. La base de datos SQLite se genera automáticamente si no existe. Solo debe eliminarse manualmente en caso de querer reiniciar completamente los datos históricos durante pruebas de desarrollo.
