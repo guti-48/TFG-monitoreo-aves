@@ -261,13 +261,34 @@ def obtener_reporte_biodiversidad():
 
 def obetenerDatosMapa():
     '''Obtengo las coordenadas del nodo y su biodiversidad'''
-    ip = geocoder.ip('me')
-    if ip.latlng:
-        lat, lon   = ip.latlng
-        ciudad     = ip.city or "Desconocida"
-    else:
-        lat, lon   = 40.4168, -3.7038   # fallback: Madrid
-        ciudad     = "Madrid (Desconocida)"
+    lat, lon, ciudad = None, None, None
+
+    try:
+        conexion = sqlite3.connect(DB_PATH)
+        row = conexion.execute(
+            """
+            SELECT location, lat, lon
+            FROM devices
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        conexion.close()
+
+        if row:
+            ciudad, lat, lon = row
+    except Exception as e:
+        print(f"No se pudieron leer coordenadas del nodo desde DB: {e}")
+
+    if lat is None or lon is None:
+        ip = geocoder.ip('me')
+        if ip.latlng:
+            lat, lon = ip.latlng
+            ciudad = ip.city or "Desconocida"
+        else:
+            lat, lon = 40.4168, -3.7038   # fallback: Madrid
+            ciudad = "Madrid (Desconocida)"
 
     df = conectar_db()
     shannon_global = 0.5

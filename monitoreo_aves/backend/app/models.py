@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 from datetime import datetime, timezone
@@ -12,6 +12,8 @@ class Device(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     location = Column(String)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
 
     detections = relationship("Detection", back_populates="device")
     audio_metrics = relationship("AudioMetric", back_populates="device")
@@ -21,6 +23,9 @@ Esta clase representa la tabla para almacenar detecciones biológicas o acústic
 '''
 class Detection(Base):
     __tablename__ = "detections"
+    __table_args__ = (
+        UniqueConstraint("device_id", "timestamp", "species", "filename", name="uq_detection_event"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -38,6 +43,9 @@ No equivale a una detección de ave: guarda métricas del paisaje sonoro aunque 
 '''
 class AudioMetric(Base):
     __tablename__ = "audio_metrics"
+    __table_args__ = (
+        UniqueConstraint("device_id", "timestamp", "filename", name="uq_audio_metric_event"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)

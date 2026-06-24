@@ -882,8 +882,7 @@ async function renderScienceView(container) {
         const calidadUpper = calidad.toUpperCase();
         const calBadge = calidadUpper === 'EXCELENTE' ? 'success' : calidadUpper === 'MODERADO' ? 'warning' : 'danger';
 
-        // ── Gauges biodiversidad — LAYOUT 3+2 ────────────────────────────
-        // Usamos flex-wrap + flex-basis 33%/50% para forzar la rejilla
+        // ── Gauges biodiversidad — LAYOUT 3+2 
         const g1 = buildGaugeSVG(r.shannon, 0, 5, '#405f82', "Shannon H'",
             "Índice de Shannon-Wiener (H'): mide diversidad considerando riqueza y equitabilidad. >3 = Excelente, 1.5–3 = Moderado, <1.5 = Pobre.");
         const g2 = buildGaugeSVG(r.simpson, 0, 1, '#326f72', "Simpson 1-D",

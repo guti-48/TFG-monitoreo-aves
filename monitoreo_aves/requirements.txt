@@ -18,3 +18,5 @@ geocoder
 scikit-maad
 python-multipart
 datetime
+pytest
+httpx

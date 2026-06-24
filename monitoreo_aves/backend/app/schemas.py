@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import Optional
 
 #### Esquemas para detecciones ####
 
@@ -23,6 +24,11 @@ class Detection(DetectionCreate):
 class DeviceCreate(BaseModel):
     name: str
     location: str
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+
+    class Config:
+        from_attributes = True
 
 
 class DetectionResponse(BaseModel):
@@ -32,6 +38,7 @@ class DetectionResponse(BaseModel):
     timestamp: datetime
     filename: str
     device_id: int
+    amplitude: float
 
     class Config:
         from_attributes = True

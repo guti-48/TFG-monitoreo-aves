@@ -39,6 +39,21 @@ ALLOWED_IMAGE_EXTENSIONS = {".png"}
 ## Creamos las tablas automaticamente en la base de datos
 models.Base.metadata.create_all(bind=database.engine)
 
+def asegurar_esquema_runtime() -> None:
+    with database.engine.begin() as conn:
+        columnas_devices = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(devices)").fetchall()
+        }
+
+        if "lat" not in columnas_devices:
+            conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN lat FLOAT")
+
+        if "lon" not in columnas_devices:
+            conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN lon FLOAT")
+
+asegurar_esquema_runtime()
+
 app = FastAPI(title="BirdMonitor API", version="1.0")
 
 cors_origins_env = os.getenv("BIRDMONITOR_CORS_ORIGINS", "").strip()
@@ -310,6 +325,14 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.g
         if nueva_ubicacion not in ubicaciones_invalidas and db_device.location != nueva_ubicacion:
             print(f"Actualizando ubicación de {device.name}: {db_device.location} -> {nueva_ubicacion}")
             db_device.location = nueva_ubicacion
+
+        if device.lat is not None:
+            db_device.lat = device.lat
+
+        if device.lon is not None:
+            db_device.lon = device.lon
+
+        if db.is_modified(db_device):
             db.commit()
             db.refresh(db_device)
 
@@ -317,7 +340,9 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.g
 
     new_device = models.Device(
         name=device.name,
-        location=nueva_ubicacion if nueva_ubicacion not in ubicaciones_invalidas else "Desconocida"
+        location=nueva_ubicacion if nueva_ubicacion not in ubicaciones_invalidas else "Desconocida",
+        lat=device.lat,
+        lon=device.lon
     )
     db.add(new_device)
     db.commit()
@@ -336,6 +361,20 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
         db.add(db_device)
         db.commit()
         db.refresh(db_device)
+
+    existing_detection = (
+        db.query(models.Detection)
+        .filter(
+            models.Detection.device_id == db_device.id,
+            models.Detection.timestamp == detection.timestamp,
+            models.Detection.species == detection.species,
+            models.Detection.filename == detection.filename,
+        )
+        .first()
+    )
+
+    if existing_detection:
+        return existing_detection
 
     # guadaremos la deteccion
     new_detection = models.Detection(
@@ -373,6 +412,19 @@ def create_audio_metric(metric: schemas.AudioMetricCreate, db: Session = Depends
         db.add(db_device)
         db.commit()
         db.refresh(db_device)
+
+    existing_metric = (
+        db.query(models.AudioMetric)
+        .filter(
+            models.AudioMetric.device_id == db_device.id,
+            models.AudioMetric.timestamp == metric.timestamp,
+            models.AudioMetric.filename == metric.filename,
+        )
+        .first()
+    )
+
+    if existing_metric:
+        return existing_metric
 
     new_metric = models.AudioMetric(
         timestamp=metric.timestamp,
