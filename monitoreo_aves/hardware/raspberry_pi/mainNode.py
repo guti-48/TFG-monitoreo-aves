@@ -11,6 +11,7 @@ from datetime import datetime
 from analyzer import BirdAnalyzer
 
 #### CONFIGURACION DEL NODO ####
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
 SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://100.98.248.58:8000").rstrip("/")
 
@@ -21,12 +22,45 @@ NODE_LON = os.getenv("BIRDMONITOR_NODE_LON", "").strip()
 
 # Geolocalización automática por IP pública
 AUTO_GEOLOCATION = os.getenv("BIRDMONITOR_AUTO_GEOLOCATION", "1") == "1"
-GEO_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "node_location_cache.json")
+GEO_CACHE_FILE = os.path.join(CURRENT_DIR, "node_location_cache.json")
 
-BIRDWEATHER_ID = os.getenv("BIRDWEATHER_ID", "")
-BIRDWEATHER_URL = "https://app.birdweather.com/api/v1/stations/detections"
+def cargarTokenBirdWeather():
+    """
+    Carga el token sin obligar a escribirlo en el codigo.
+    Prioridad: variable directa -> archivo secreto local.
+    """
+    for env_name in ("BIRDWEATHER_TOKEN", "BIRDWEATHER_ID"):
+        token = os.getenv(env_name, "").strip()
+        if token:
+            return token
+
+    for env_name in ("BIRDWEATHER_TOKEN_FILE", "BIRDWEATHER_ID_FILE"):
+        token_file = os.getenv(env_name, "").strip()
+        if not token_file:
+            continue
+
+        try:
+            with open(token_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception as e:
+            print(f"No se pudo leer el token de BirdWeather desde {env_name}: {e}")
+
+    return ""
+
+
+BIRDWEATHER_ENABLED = os.getenv("BIRDWEATHER_ENABLED", "1") == "1"
+BIRDWEATHER_TOKEN = cargarTokenBirdWeather()
+BIRDWEATHER_URL = os.getenv(
+    "BIRDWEATHER_URL",
+    "https://app.birdweather.com/api/v1/stations/detections"
+).strip()
 
 MIC_DEVICE = os.getenv("BIRDMONITOR_MIC_DEVICE", "").strip()
+
+try:
+    RETENTION_DAYS = max(1, int(os.getenv("BIRDMONITOR_RETENTION_DAYS", "9")))
+except ValueError:
+    RETENTION_DAYS = 9
 
 #### CONFIGURACION AUDIO ####
 SAMPLE_RATE = 48000  # Frecuencia que suele usar birdNet
@@ -220,13 +254,17 @@ def resolverDispositivoEntrada():
 
 def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
     """Envía datos de PÁJAROS a la app BirdWeather."""
-    if BIRDWEATHER_ID == "":
+    if not BIRDWEATHER_ENABLED or not BIRDWEATHER_TOKEN:
+        return
+
+    if lat is None or lon is None:
+        print("No se envia a BirdWeather: faltan coordenadas del nodo.")
         return
 
     cleanSpecies = species.split('_')[1] if "_" in species else species
 
     datos_publicos = {
-        "token":      BIRDWEATHER_ID,
+        "token":      BIRDWEATHER_TOKEN,
         "timestamp":  timestamp,
         "species":    cleanSpecies,
         "confidence": confidence,
@@ -236,8 +274,13 @@ def enviarDatosBirdWeather(species, confidence, lat, lon, timestamp):
     }
 
     try:
-        response = requests.post(BIRDWEATHER_URL, json=datos_publicos, timeout=15)
-        if response.status_code == 200:
+        response = requests.post(
+            BIRDWEATHER_URL,
+            json=datos_publicos,
+            headers={"User-Agent": "BirdMonitor-TFG/1.0"},
+            timeout=15
+        )
+        if response.status_code in (200, 201):
             print("Datos enviados a BirdWeather correctamente.")
         else:
             print(f"BirdWeather rechazó los datos: {response.status_code} - {response.text}")
@@ -650,14 +693,14 @@ def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
 def limpiarArchivosAntiguos():
     """
     Mantiene la salud del sistema borrando archivos WAV y PNG antiguos.
-    Con ciclos de 5 min se generan ~288 archivos/día — se conservan 72h.
+    Con ciclos de 5 min se generan ~288 archivos/día.
     """
     carpetas    = [OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG]
     ahora       = time.time()
-    TIEMPO_VIDA = 86400 * 3   # 3 días en segundos
+    TIEMPO_VIDA = 86400 * RETENTION_DAYS
     pendientes  = obtenerFilenameBasesPendientes()
 
-    print("Iniciando limpieza de disco...")
+    print(f"Iniciando limpieza de disco: conservando archivos de los últimos {RETENTION_DAYS} días...")
     archivos_borrados = 0
 
     for carpeta in carpetas:

@@ -1,4 +1,9 @@
 # .gitignore
+.env
+.env.local
+.env.production
+*.secret
+secrets/
 *.wav
 *.png
 *.jpg
@@ -8,3 +13,6 @@ venv/
 __pycache__/
 hardware/raspberry_pi/records/
 hardware/raspberry_pi/spectrograms/
+hardware/raspberry_pi/birdmonitor.env
+hardware/raspberry_pi/birdweather_token
+hardware/raspberry_pi/birdweather_token.txt

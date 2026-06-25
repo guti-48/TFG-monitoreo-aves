@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 
 ###DIRECTORIO DE LA BASE DE DATOS Y UMBRAL
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'app', 'birdmonitor.db')
+DB_PATH = os.getenv("BIRDMONITOR_DB_PATH", os.path.join(BASE_DIR, 'app', 'birdmonitor.db'))
 
 #ruta para los archivos wav
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
