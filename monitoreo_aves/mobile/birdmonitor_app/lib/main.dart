@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/connection_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/main_navigation_screen.dart';
 
 void main() {
   runApp(const BirdMonitorApp());
@@ -40,7 +40,7 @@ class BirdMonitorApp extends StatelessWidget {
             return const ConnectionScreen();
           }
 
-          return HomeScreen(baseUrl: savedUrl);
+          return MainNavigationScreen(baseUrl: savedUrl);
         },
       ),
     );

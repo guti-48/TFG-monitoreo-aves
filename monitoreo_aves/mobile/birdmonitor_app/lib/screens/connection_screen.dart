@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
-import 'home_screen.dart';
+import 'main_navigation_screen.dart';
 
 class ConnectionScreen extends StatefulWidget {
   const ConnectionScreen({super.key});
@@ -82,7 +82,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => HomeScreen(baseUrl: url),
+        builder: (_) => MainNavigationScreen(baseUrl: url),
       ),
     );
   }

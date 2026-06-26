@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/detection.dart';
 import '../services/api_service.dart';
 import 'connection_screen.dart';
+import 'live_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String baseUrl;
@@ -64,7 +65,8 @@ class _HomeScreenState extends State<HomeScreen> {
         data['desired_enabled'] ??
         data['desired_stream_enabled'];
 
-    final running = data['stream_running'] ??
+    final running = data['actual_running'] ??
+        data['stream_running'] ??
         data['real_running'] ??
         data['is_running'];
 
@@ -189,6 +191,19 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             _buildStreamCard(),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+            onPressed: () {
+                Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => LiveStreamScreen(baseUrl: widget.baseUrl),
+                ),
+                );
+            },
+            icon: const Icon(Icons.headphones),
+            label: const Text('Abrir escucha en directo'),
+            ),
             const SizedBox(height: 24),
             Text(
               'Últimas detecciones',
