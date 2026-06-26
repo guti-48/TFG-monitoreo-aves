@@ -12,13 +12,19 @@ const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 // Se usa el mismo hostname para que funcione tanto con 127.0.0.1 como con la IP Tailscale.
 const STREAM_NAME = "birdmonitor-audio";
 const MEDIAMTX_HLS_PORT = 8888;
-const LIVE_STREAM_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/index.m3u8`;
+const LIVE_STREAM_URL = "http://127.0.0.1:8888/birdmonitor-audio/index.m3u8";
 const LIVE_STREAM_PAGE_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/`;
 const STREAM_CONTROL_URL = "/stream/control";
 const STREAM_NODE_NAME = "birdmonitor";
 
 
 let hlsInstance = null;
+let liveAudioContext = null;
+let liveAnalyser = null;
+let liveSourceNode = null;
+let liveSourceAudio = null;
+let liveSpectrumFrame = null;
+let liveSpectrumData = null;
 
 let currentView = 'dashboard';
 let activeNodeFilter = null;
@@ -85,120 +91,60 @@ function renderLiveStreamView(container) {
     cleanupLiveStream();
 
     container.innerHTML = `
-        <div class="row mb-4 animate-fade-in">
-            <div class="col-12 d-flex justify-content-between align-items-start flex-wrap gap-3">
-                <div>
-                    <h3 class="fw-bold text-white mb-1">
-                        <i class="bi bi-broadcast-pin text-accent me-2"></i>Escucha en directo
-                    </h3>
-                </div>
-                <span id="live-stream-status" class="badge bg-secondary px-3 py-2">
-                    <i class="bi bi-circle-fill me-1"></i>Consultando estado...
-                </span>
-            </div>
-        </div>
-
-        <div class="row g-4 animate-fade-in">
-            <div class="col-xl-8">
-                <div class="card border-0 bg-dark live-stream-card">
+        <div class="row justify-content-center animate-fade-in">
+            <div class="col-12 col-xl-9">
+                <div class="card live-stream-card live-console">
                     <div class="card-body">
-                        <div class="live-stream-hero mb-4">
-                            <div class="live-stream-icon">
-                                <i class="bi bi-soundwave"></i>
+                        <div class="live-console-head">
+                            <div class="live-stream-hero">
+                                <div class="live-stream-icon">
+                                    <i class="bi bi-soundwave"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-muted small text-uppercase fw-bold mb-1">Escucha en directo</p>
+                                    <h4 class="fw-bold text-white mb-1">${STREAM_NAME}</h4>
+                                    <p class="text-muted mb-0 small">
+                                        <span id="live-hls-url" class="font-monospace">${LIVE_STREAM_URL}</span>
+                                    </p>
+                                </div>
                             </div>
-                            <div class="min-w-0">
-                                <p class="text-muted small text-uppercase fw-bold mb-1">Canal HLS</p>
-                                <h4 class="fw-bold text-white mb-1">${STREAM_NAME}</h4>
-                                <p class="text-muted mb-0 small">
-                                    Fuente: <span id="live-hls-url" class="font-monospace">${LIVE_STREAM_URL}</span>
-                                </p>
+                            <span id="live-stream-status" class="badge bg-secondary px-3 py-2">
+                                <i class="bi bi-circle-fill me-1"></i>Consultando...
+                            </span>
+                        </div>
+
+                        <div class="live-player-shell">
+                            <div class="audio-panel live-audio-panel">
+                                <audio id="live-audio-player" class="w-100" controls preload="none" crossorigin="anonymous"></audio>
+                            </div>
+
+                            <div class="live-spectrum-panel">
+                                <div class="live-spectrum-head">
+                                    <span><i class="bi bi-soundwave me-1"></i>Espectro en directo</span>
+                                    <small id="live-spectrum-state">Esperando audio</small>
+                                </div>
+                                <canvas id="live-spectrum-canvas" width="900" height="220"></canvas>
                             </div>
                         </div>
 
-                        <div class="audio-panel">
-                            <audio id="live-audio-player" class="w-100" controls preload="none"></audio>
-                        </div>
-
-                        <div class="d-flex flex-wrap gap-2 mt-4">
+                        <div class="live-actions">
                             <button class="btn btn-success" onclick="setLiveStreamEnabled(true)">
                                 <i class="bi bi-broadcast me-2"></i>Activar escucha
                             </button>
-
-                            <button class="btn btn-outline-secondary" onclick="setLiveStreamEnabled(false)">
-                                <i class="bi bi-stop-circle me-2"></i>Detener escucha
-                            </button>
-
                             <button class="btn btn-outline-info" onclick="initLiveStreamPlayer(true)">
                                 <i class="bi bi-headphones me-2"></i>Conectar reproductor
                             </button>
-
-                            <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
-                                <i class="bi bi-volume-mute me-2"></i>Detener en navegador
+                            <button class="btn btn-outline-secondary" onclick="setLiveStreamEnabled(false)">
+                                <i class="bi bi-stop-circle me-2"></i>Detener escucha
                             </button>
-
-                            <button class="btn btn-outline-info" onclick="refreshLiveStreamControlStatus()">
-                                <i class="bi bi-arrow-clockwise me-2"></i>Actualizar estado
-                            </button>
-
-                            <a id="live-stream-page-link"
-                               class="btn btn-outline-secondary"
-                               target="_blank"
-                               rel="noopener"
-                               href="${LIVE_STREAM_PAGE_URL}">
-                                <i class="bi bi-box-arrow-up-right me-2"></i>Abrir MediaMTX
-                            </a>
                         </div>
 
                         <p id="live-stream-message" class="text-muted small mb-0 mt-3">
-                            Activa la escucha para arrancar birdstream.service en la Raspberry. Después conecta el reproductor.
+                            Activa el servicio en la Raspberry; despues conecta el reproductor HLS para escuchar y ver el espectro.
                         </p>
-                    </div>
-                </div>
-            </div>
 
-            <div class="col-xl-4">
-                <div class="card border-0 bg-dark h-100">
-                    <div class="card-body">
-                        <h5 class="fw-bold text-white mb-3">
-                            <i class="bi bi-router text-info me-2"></i>Control del servicio
-                        </h5>
-
-                        <div class="live-info-box mb-4">
-                            <div class="live-info-row">
-                                <span>Estado deseado</span>
-                                <strong id="stream-desired-state">-</strong>
-                            </div>
-                            <div class="live-info-row">
-                                <span>Estado real</span>
-                                <strong id="stream-real-state">-</strong>
-                            </div>
-                            <div class="live-info-row">
-                                <span>Nodo</span>
-                                <strong>${STREAM_NODE_NAME}</strong>
-                            </div>
-                            <div class="live-info-row">
-                                <span>Último reporte</span>
-                                <strong id="stream-last-status">-</strong>
-                            </div>
-                        </div>
-
-                        <div id="live-stream-detail" class="live-status-detail mb-4">
-                            Esperando estado del backend...
-                        </div>
-
-                        <h5 class="fw-bold text-white mb-3">
-                            <i class="bi bi-shield-lock text-warning me-2"></i>Privacidad y uso
-                        </h5>
-                        <div class="privacy-note">
-                            <p class="mb-2">
-                                La escucha en directo transmite audio bruto del entorno antes del filtrado automático.
-                            </p>
-                            <p class="mb-2">
-                                Debe utilizarse solo para validación técnica, mantenimiento o supervisión puntual del nodo.
-                            </p>
-                            <p class="mb-0">
-                                El botón “Detener escucha” apaga el servicio <span class="font-monospace">birdstream.service</span> en la Raspberry.
-                            </p>
+                        <div class="live-mini-note">
+                            Activar arranca el servicio en la Raspberry. Conectar enlaza este navegador al stream HLS.
                         </div>
                     </div>
                 </div>
@@ -261,7 +207,7 @@ async function refreshLiveStreamControlStatus() {
         const data = await fetchLiveStreamControlStatus();
         lastStreamData = data;
 
-        const hlsUrl = data.hls_url || LIVE_STREAM_URL;
+        const hlsUrl = LIVE_STREAM_URL;
         const pageUrl = data.page_url || LIVE_STREAM_PAGE_URL;
 
         const hlsLabel = document.getElementById('live-hls-url');
@@ -350,12 +296,16 @@ async function setLiveStreamEnabled(enabled) {
 }
 
 function getCurrentHlsUrl() {
-    return lastStreamData?.hls_url || LIVE_STREAM_URL;
+    return LIVE_STREAM_URL;
 }
 
 function initLiveStreamPlayer(autoplay = false) {
     const audio = document.getElementById('live-audio-player');
     if (!audio) return;
+
+    audio.crossOrigin = 'anonymous';
+    audio.onplay = () => startLiveSpectrum(audio);
+    audio.onpause = () => setLiveSpectrumState('Pausado');
 
     if (hlsInstance) {
         hlsInstance.destroy();
@@ -380,6 +330,7 @@ function initLiveStreamPlayer(autoplay = false) {
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
             setLiveStreamStatus('online', 'Stream disponible');
             setLiveStreamMessage('Stream cargado. Usa el reproductor para escuchar en directo.');
+            startLiveSpectrum(audio);
             if (autoplay) {
                 audio.play().catch(() => {
                     setLiveStreamMessage('El navegador bloqueó la reproducción automática. Pulsa play manualmente.');
@@ -407,6 +358,7 @@ function initLiveStreamPlayer(autoplay = false) {
         audio.addEventListener('loadedmetadata', () => {
             setLiveStreamStatus('online', 'Stream disponible');
             setLiveStreamMessage('Stream cargado mediante soporte HLS nativo.');
+            startLiveSpectrum(audio);
             if (autoplay) {
                 audio.play().catch(() => {
                     setLiveStreamMessage('El navegador bloqueó la reproducción automática. Pulsa play manualmente.');
@@ -420,8 +372,123 @@ function initLiveStreamPlayer(autoplay = false) {
     setLiveStreamMessage('Este navegador no soporta HLS directamente. Abre MediaMTX en una pestaña nueva.', true);
 }
 
+function setLiveSpectrumState(text) {
+    const el = document.getElementById('live-spectrum-state');
+    if (el) el.textContent = text;
+}
+
+function startLiveSpectrum(audio) {
+    const canvas = document.getElementById('live-spectrum-canvas');
+    if (!canvas || !audio) return;
+
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+            setLiveSpectrumState('No soportado');
+            return;
+        }
+
+        if (!liveAudioContext) {
+            liveAudioContext = new AudioCtx();
+        }
+
+        if (!liveAnalyser) {
+            liveAnalyser = liveAudioContext.createAnalyser();
+            liveAnalyser.fftSize = 2048;
+            liveAnalyser.smoothingTimeConstant = 0.72;
+            liveSpectrumData = new Uint8Array(liveAnalyser.frequencyBinCount);
+        }
+
+        if (!liveSourceNode || liveSourceAudio !== audio) {
+            if (liveSourceNode) {
+                try {
+                    liveSourceNode.disconnect();
+                } catch (_) {}
+            }
+            liveSourceNode = liveAudioContext.createMediaElementSource(audio);
+            liveSourceAudio = audio;
+            liveSourceNode.connect(liveAnalyser);
+            liveAnalyser.connect(liveAudioContext.destination);
+        }
+
+        liveAudioContext.resume().catch(() => {});
+        setLiveSpectrumState('Analizando');
+
+        if (liveSpectrumFrame) {
+            cancelAnimationFrame(liveSpectrumFrame);
+            liveSpectrumFrame = null;
+        }
+
+        drawLiveSpectrum(canvas);
+
+    } catch (e) {
+        setLiveSpectrumState('Sin visualizacion');
+    }
+}
+
+function drawLiveSpectrum(canvas) {
+    if (!liveAnalyser || !liveSpectrumData || !canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    liveAnalyser.getByteFrequencyData(liveSpectrumData);
+
+    ctx.drawImage(canvas, 1, 0, width - 1, height, 0, 0, width - 1, height);
+    ctx.fillStyle = '#f4f6f1';
+    ctx.fillRect(width - 2, 0, 2, height);
+
+    for (let y = 0; y < height; y++) {
+        const normalized = 1 - (y / height);
+        const index = Math.min(
+            liveSpectrumData.length - 1,
+            Math.floor(normalized * normalized * liveSpectrumData.length)
+        );
+        const value = liveSpectrumData[index] / 255;
+        const hue = 135 + (value * 70);
+        const saturation = 24 + (value * 42);
+        const lightness = 91 - (value * 52);
+
+        ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        ctx.fillRect(width - 2, y, 2, 1);
+    }
+
+    liveSpectrumFrame = requestAnimationFrame(() => drawLiveSpectrum(canvas));
+}
+
+function stopLiveSpectrum(release = false) {
+    if (liveSpectrumFrame) {
+        cancelAnimationFrame(liveSpectrumFrame);
+        liveSpectrumFrame = null;
+    }
+
+    if (release) {
+        if (liveSourceNode) {
+            try {
+                liveSourceNode.disconnect();
+            } catch (_) {}
+            liveSourceNode = null;
+            liveSourceAudio = null;
+        }
+
+        if (liveAnalyser) {
+            try {
+                liveAnalyser.disconnect();
+            } catch (_) {}
+            liveAnalyser = null;
+        }
+
+        liveSpectrumData = null;
+    }
+
+    setLiveSpectrumState('Detenido');
+}
+
 function stopLiveStreamPlayer() {
     const audio = document.getElementById('live-audio-player');
+
+    stopLiveSpectrum();
 
     if (hlsInstance) {
         hlsInstance.destroy();
@@ -439,6 +506,7 @@ function stopLiveStreamPlayer() {
 
 function cleanupLiveStream() {
     stopLiveStreamPlayer();
+    stopLiveSpectrum(true);
 
     if (streamStatusTimer) {
         clearInterval(streamStatusTimer);
