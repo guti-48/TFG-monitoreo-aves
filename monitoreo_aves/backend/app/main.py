@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from . import models, database, schemas
 
 current_file = Path(__file__).resolve()
@@ -74,7 +74,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_origin_regex=r"http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -409,9 +409,110 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
 ## TERCER ENDPOINT --> OBTENER DETECCIONES TODAS LAS DETECCIONES PARA PODER OBSERVARLAS
 @app.get("/detections/")
 def read_detections(skip: int = 0, limit: int = 500, db: Session = Depends(database.get_db)):
-    detections = db.query(models.Detection).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
+    detections = db.query(models.Detection).options(joinedload(models.Detection.review)).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
     return detections
 
+## ENDPOINTS relacionados con la revision humana de dettecines
+@app.patch("/detections/{detection_id}/review", response_model=schemas.DetectionReviewResponse)
+def update_detection_review(
+    detection_id: int,
+    review_data: schemas.DetectionReviewUpdate,
+    db: Session = Depends(database.get_db)
+):
+    """
+    Crea o actualiza la revisión humana de una detección automática.
+    No modifica la especie ni la confianza originales generadas por BirdNET.
+    """
+    detection = (
+        db.query(models.Detection)
+        .filter(models.Detection.id == detection_id)
+        .first()
+    )
+
+    if detection is None:
+        raise HTTPException(status_code=404, detail="Detection not found")
+
+    if review_data.status == "corrected" and not review_data.corrected_species:
+        raise HTTPException(
+            status_code=400,
+            detail="corrected_species is required when status is corrected"
+        )
+
+    review = (
+        db.query(models.DetectionReview)
+        .filter(models.DetectionReview.detection_id == detection_id)
+        .first()
+    )
+
+    now = datetime.now(timezone.utc)
+
+    if review is None:
+        review = models.DetectionReview(
+            detection_id=detection_id,
+            status=review_data.status,
+            corrected_species=review_data.corrected_species,
+            note=review_data.note,
+            reviewer=review_data.reviewer,
+            reviewed_at=now,
+            updated_at=now,
+        )
+        db.add(review)
+    else:
+        review.status = review_data.status
+        review.corrected_species = review_data.corrected_species
+        review.note = review_data.note
+        review.reviewer = review_data.reviewer
+        review.reviewed_at = now
+        review.updated_at = now
+
+    db.commit()
+    db.refresh(review)
+
+    return review
+
+@app.get("/detections/{detection_id}/review", response_model=schemas.DetectionReviewResponse)
+def get_detection_review(
+    detection_id: int,
+    db: Session = Depends(database.get_db)
+):
+    """
+    Devuelve la revisión humana asociada a una detección concreta.
+    """
+    detection = (
+        db.query(models.Detection)
+        .filter(models.Detection.id == detection_id)
+        .first()
+    )
+
+    if detection is None:
+        raise HTTPException(status_code=404, detail="Detection not found")
+
+    review = (
+        db.query(models.DetectionReview)
+        .filter(models.DetectionReview.detection_id == detection_id)
+        .first()
+    )
+
+    if review is None:
+        raise HTTPException(status_code=404, detail="Detection review not found")
+
+    return review
+
+@app.get("/species/options")
+def get_species_options(db: Session = Depends(database.get_db)):
+    """
+    Devuelve la lista de especies detectadas hasta ahora.
+    Sirve para el selector de especie corregida.
+    """
+    species_rows = (
+        db.query(models.Detection.species)
+        .filter(models.Detection.species.isnot(None))
+        .distinct()
+        .order_by(models.Detection.species.asc())
+        .all()
+    )
+
+    return [row[0] for row in species_rows if row[0]]
 
 ## ENDPOINTS --> relacionados ocn la metrica de escucha
 @app.post("/audio-metrics/", response_model=schemas.AudioMetricResponse)

@@ -1,4 +1,6 @@
 const API_URL = "/detections/";
+const DETECTION_REVIEW_BASE_URL = "/detections";
+const SPECIES_OPTIONS_URL = "/species/options";
 const IMG_BASE_URL = "/spectrograms/";
 const ASSETS_PATH = 'assets/';
 const NOISE_MAP = {
@@ -515,6 +517,172 @@ function cleanupLiveStream() {
     }
 }
 
+function getReviewStatus(detection) {
+    return detection.review?.status || "unreviewed";
+}
+
+function getReviewMeta(status) {
+    const map = {
+        unreviewed: {
+            label: "Sin revisar",
+            badge: "bg-secondary",
+            icon: "bi-hourglass-split"
+        },
+        validated: {
+            label: "Validada",
+            badge: "bg-success",
+            icon: "bi-check-circle-fill"
+        },
+        corrected: {
+            label: "Corregida",
+            badge: "bg-info",
+            icon: "bi-pencil-square"
+        },
+        noise: {
+            label: "Ruido",
+            badge: "bg-warning text-dark",
+            icon: "bi-volume-mute-fill"
+        },
+        doubtful: {
+            label: "Dudosa",
+            badge: "bg-primary",
+            icon: "bi-question-circle-fill"
+        },
+        discarded: {
+            label: "Descartada",
+            badge: "bg-danger",
+            icon: "bi-x-circle-fill"
+        }
+    };
+
+    return map[status] || map.unreviewed;
+}
+
+function getDisplaySpecies(detection) {
+    if (detection.review?.status === "corrected" && detection.review.corrected_species) {
+        return detection.review.corrected_species;
+    }
+
+    return detection.species;
+}
+
+function buildReviewBadge(detection) {
+    const status = getReviewStatus(detection);
+    const meta = getReviewMeta(status);
+
+    let extra = "";
+
+    if (status === "corrected" && detection.review?.corrected_species) {
+        extra = ` → ${cleanName(detection.review.corrected_species)}`;
+    }
+
+    return `
+        <span class="badge ${meta.badge}">
+            <i class="bi ${meta.icon} me-1"></i>${meta.label}${extra}
+        </span>
+    `;
+}
+
+function buildReviewActions(detection) {
+    return `
+        <div class="btn-group btn-group-sm review-actions" role="group" aria-label="Revisión detección ${detection.id}">
+            <button class="btn btn-outline-success" title="Validar detección" onclick="quickReviewDetection(${detection.id}, 'validated')">
+                <i class="bi bi-check-lg"></i>
+            </button>
+            <button class="btn btn-outline-warning" title="Marcar como ruido" onclick="quickReviewDetection(${detection.id}, 'noise')">
+                <i class="bi bi-volume-mute"></i>
+            </button>
+            <button class="btn btn-outline-info" title="Corregir especie" onclick="correctDetectionSpecies(${detection.id})">
+                <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-outline-primary" title="Marcar como dudosa" onclick="quickReviewDetection(${detection.id}, 'doubtful')">
+                <i class="bi bi-question-lg"></i>
+            </button>
+            <button class="btn btn-outline-danger" title="Descartar detección" onclick="quickReviewDetection(${detection.id}, 'discarded')">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    `;
+}
+
+async function patchDetectionReview(detectionId, payload) {
+    const response = await fetch(`${DETECTION_REVIEW_BASE_URL}/${detectionId}/review`, {
+        method: "PATCH",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`HTTP ${response.status}: ${detail}`);
+    }
+
+    return await response.json();
+}
+
+async function quickReviewDetection(detectionId, status) {
+    const labels = {
+        validated: "Detección validada desde dashboard",
+        noise: "Marcada como ruido desde dashboard",
+        doubtful: "Marcada como dudosa desde dashboard",
+        discarded: "Descartada desde dashboard"
+    };
+
+    try {
+        await patchDetectionReview(detectionId, {
+            status,
+            corrected_species: null,
+            note: labels[status] || "Revisión desde dashboard",
+            reviewer: "dashboard"
+        });
+
+        await refreshCurrentDetectionView();
+
+    } catch (e) {
+        alert(`No se pudo guardar la revisión: ${e.message}`);
+    }
+}
+
+async function correctDetectionSpecies(detectionId) {
+    const correctedSpecies = prompt("Introduce la especie correcta:");
+
+    if (!correctedSpecies || !correctedSpecies.trim()) {
+        return;
+    }
+
+    const note = prompt("Nota opcional de revisión:") || "";
+
+    try {
+        await patchDetectionReview(detectionId, {
+            status: "corrected",
+            corrected_species: correctedSpecies.trim(),
+            note,
+            reviewer: "dashboard"
+        });
+
+        await refreshCurrentDetectionView();
+
+    } catch (e) {
+        alert(`No se pudo corregir la detección: ${e.message}`);
+    }
+}
+
+async function refreshCurrentDetectionView() {
+    if (currentView === "history") {
+        const container = document.getElementById("main-content");
+        if (container) {
+            await renderHistoryView(container);
+        }
+        return;
+    }
+
+    if (currentView === "dashboard") {
+        await updateDashboard();
+    }
+}
+
 // HISTÓRICO
 async function renderHistoryView(container) {
     container.innerHTML = `<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-success" role="status"></div><span class="ms-3 text-muted">Cargando base de datos completa...</span></div>`;
@@ -528,19 +696,46 @@ async function renderHistoryView(container) {
             const dateStr = timeDate.toLocaleDateString();
             const timeStr = timeDate.toLocaleTimeString();
             const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
-            const clean = cleanName(d.species);
+            const displayedSpecies = getDisplaySpecies(d);
+            const clean = cleanName(displayedSpecies);
+            const originalClean = cleanName(d.species);
             let icon = '<i class="bi bi-music-note-beamed text-success"></i>';
             if (d.species.includes("Human") || d.species.includes("Motor") || d.species.includes("Noise"))
                 icon = '<i class="bi bi-boombox text-warning"></i>';
-            rowsHtml += `
-            <tr>
-                <td class="text-white-50 small">${d.id}</td>
-                <td>${dateStr} <small class="text-muted">${timeStr}</small></td>
-                <td><div class="d-flex align-items-center"><div class="me-2">${icon}</div><span class="fw-bold text-white">${clean}</span></div></td>
-                <td>${d.device_name || 'RaspberryPi'}</td>
-                <td><div class="progress" style="height:6px;width:100px;"><div class="progress-bar bg-${d.confidence > 0.8 ? 'success' : 'warning'}" role="progressbar" style="width:${d.confidence * 100}%"></div></div></td>
-                <td><a href="${imgUrl}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-image"></i> Ver</a></td>
-            </tr>`;
+                rowsHtml += `
+                <tr>
+                    <td class="text-white-50 small">${d.id}</td>
+                    <td>
+                        ${dateStr}
+                        <small class="text-muted">${timeStr}</small>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="me-2">${icon}</div>
+                            <div>
+                                <span class="fw-bold text-white">${clean}</span>
+                                ${d.review?.status === "corrected" ? `<div class="text-muted small">Original BirdNET: ${originalClean}</div>` : ""}
+                            </div>
+                        </div>
+                    </td>
+                    <td>${d.device_name || 'RaspberryPi'}</td>
+                    <td>
+                        <div class="progress" style="height:6px;width:100px;">
+                            <div class="progress-bar bg-${d.confidence > 0.8 ? 'success' : 'warning'}"
+                                role="progressbar"
+                                style="width:${d.confidence * 100}%">
+                            </div>
+                        </div>
+                        <small class="text-muted">${(d.confidence * 100).toFixed(1)}%</small>
+                    </td>
+                    <td>${buildReviewBadge(d)}</td>
+                    <td>${buildReviewActions(d)}</td>
+                    <td>
+                        <a href="${imgUrl}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-image"></i> Ver
+                        </a>
+                    </td>
+                </tr>`;
         });
         container.innerHTML = `
             <div class="row mb-4 animate-fade-in">
@@ -557,7 +752,16 @@ async function renderHistoryView(container) {
                     <div class="table-container">
                         <table class="table table-dark table-hover mb-0">
                             <thead class="table-sticky-header">
-                                <tr><th class="py-3 ps-3">ID</th><th class="py-3">Fecha</th><th class="py-3">Especie</th><th class="py-3">Nodo</th><th class="py-3">Confianza</th><th class="py-3 pe-3">Foto</th></tr>
+                                <tr>
+                                    <th class="py-3 ps-3">ID</th>
+                                    <th class="py-3">Fecha</th>
+                                    <th class="py-3">Especie</th>
+                                    <th class="py-3">Nodo</th>
+                                    <th class="py-3">Confianza</th>
+                                    <th class="py-3">Revisión</th>
+                                    <th class="py-3">Acciones</th>
+                                    <th class="py-3 pe-3">Foto</th>
+                                </tr>
                             </thead>
                             <tbody>${rowsHtml}</tbody>
                         </table>
@@ -691,7 +895,15 @@ function getDashboardHTML() {
                 <div class="table-responsive">
                     <table class="table table-dark table-hover align-middle mb-0">
                         <thead class="bg-dark-subtle text-uppercase small">
-                            <tr><th class="ps-4">Hora</th><th>Especie</th><th>Confianza</th><th>Espectrograma</th><th class="text-end pe-4">ID</th></tr>
+                            <tr>
+                                <th class="ps-4">Hora</th>
+                                <th>Especie</th>
+                                <th>Confianza</th>
+                                <th>Revisión</th>
+                                <th>Acciones</th>
+                                <th>Espectrograma</th>
+                                <th class="text-end pe-4">ID</th>
+                            </tr>
                         </thead>
                         <tbody id="history-table-body"></tbody>
                     </table>
@@ -813,14 +1025,62 @@ async function renderLiveFeedSplit(d) {
 function renderTable(data) {
     const tbody = document.getElementById('history-table-body');
     if (!tbody) return;
+
     tbody.innerHTML = "";
+
     data.forEach(d => {
         const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
-        const clean = cleanName(d.species);
+        const displayedSpecies = getDisplaySpecies(d);
+        const clean = cleanName(displayedSpecies);
+        const originalClean = cleanName(d.species);
+
         let icon = '<i class="bi bi-feather text-success me-2"></i>';
-        if (NOISE_MAP[clean] || d.species.includes("Human") || d.species.includes("Motor"))
+
+        if (NOISE_MAP[clean] || d.species.includes("Human") || d.species.includes("Motor")) {
             icon = '<i class="bi bi-boombox text-muted me-2"></i>';
-        tbody.innerHTML += `<tr><td class="ps-4 fw-bold text-muted">${new Date(d.timestamp).toLocaleTimeString()}</td><td><div class="d-flex align-items-center">${icon}<span class="fw-semibold text-white">${clean}</span></div></td><td><span class="badge bg-dark-subtle text-success border">${(d.confidence * 100).toFixed(0)}%</span></td><td><a href="${imgUrl}" target="_blank"><img src="${imgUrl}" class="table-img-preview" onerror="this.style.display='none'"></a></td><td class="text-end pe-4 text-muted small">#${d.id}</td></tr>`;
+        }
+
+        tbody.innerHTML += `
+            <tr>
+                <td class="ps-4 fw-bold text-muted">
+                    ${new Date(d.timestamp).toLocaleTimeString()}
+                </td>
+
+                <td>
+                    <div class="d-flex align-items-center">
+                        ${icon}
+                        <div>
+                            <span class="fw-semibold text-white">${clean}</span>
+                            ${d.review?.status === "corrected" ? `<div class="text-muted small">Original: ${originalClean}</div>` : ""}
+                        </div>
+                    </div>
+                </td>
+
+                <td>
+                    <span class="badge bg-dark-subtle text-success border">
+                        ${(d.confidence * 100).toFixed(0)}%
+                    </span>
+                </td>
+
+                <td>
+                    ${buildReviewBadge(d)}
+                </td>
+
+                <td>
+                    ${buildReviewActions(d)}
+                </td>
+
+                <td>
+                    <a href="${imgUrl}" target="_blank">
+                        <img src="${imgUrl}" class="table-img-preview" onerror="this.style.display='none'">
+                    </a>
+                </td>
+
+                <td class="text-end pe-4 text-muted small">
+                    #${d.id}
+                </td>
+            </tr>
+        `;
     });
 }
 

@@ -37,6 +37,49 @@ class Detection(Base):
     device_id = Column(Integer, ForeignKey("devices.id"))
     device = relationship("Device", back_populates="detections")
 
+    review = relationship(
+        "DetectionReview",
+        back_populates="detection",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+
+'''
+Esta clase resperenta la revision humana sobre el una detreccion automatica
+No sobreescribe simplemente añade una capa de validacion
+'''
+class DetectionReview(Base):
+    __tablename__ = "detection_reviews"
+    __table_args__ = (
+        UniqueConstraint("detection_id", name="uq_detection_review_detection_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    detection_id = Column(
+        Integer,
+        ForeignKey("detections.id"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    status = Column(String, default="unreviewed", nullable=False, index=True)
+
+    corrected_species = Column(String, nullable=True)
+    note = Column(String, nullable=True)
+    reviewer = Column(String, nullable=True)
+
+    reviewed_at = Column(DateTime, nullable=False) 
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    detection = relationship("Detection", back_populates="review")
+
 '''
 Esta clase representa una muestra acústica agregada por ciclo de grabación.
 No equivale a una detección de ave: guarda métricas del paisaje sonoro aunque no haya detecciones.

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 #### Esquemas para detecciones ####
 
@@ -20,6 +20,34 @@ class Detection(DetectionCreate):
     class Config:
         from_attributes = True
 
+#### Esquemas para revisión humana de detecciones ####
+ReviewStatus = Literal[
+    "unreviewed",
+    "validated",
+    "corrected",
+    "noise",
+    "doubtful",
+    "discarded",
+]
+
+class DetectionReviewUpdate(BaseModel):
+    status: ReviewStatus
+    corrected_species: Optional[str] = None
+    note: Optional[str] = None
+    reviewer: Optional[str] = None
+
+class DetectionReviewResponse(BaseModel):
+    id: int
+    detection_id: int
+    status: ReviewStatus
+    corrected_species: Optional[str] = None
+    note: Optional[str] = None
+    reviewer: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 class DeviceCreate(BaseModel):
     name: str
@@ -39,6 +67,7 @@ class DetectionResponse(BaseModel):
     filename: str
     device_id: int
     amplitude: float
+    review: Optional[DetectionReviewResponse] = None
 
     class Config:
         from_attributes = True
