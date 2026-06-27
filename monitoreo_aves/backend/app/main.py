@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from pydantic import BaseModel
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -164,16 +164,30 @@ async def guardar_upload_seguro(
 STREAM_CONTROL_FILE = current_file.parent / "stream_control.json"
 stream_lock = Lock()
 
-DEFAULT_STREAM_BASE_URL = os.getenv(
-    "BIRDMONITOR_STREAM_BASE_URL",
-    "http://100.98.248.58:8888"
-).rstrip("/")
+CONFIGURED_STREAM_BASE_URL = os.getenv("BIRDMONITOR_STREAM_BASE_URL")
 
 DEFAULT_STREAM_PATH = os.getenv(
     "BIRDMONITOR_STREAM_PATH",
     "birdmonitor-audio"
 ).strip("/")
 
+def _stream_base_url(request: Request | None = None) -> str:
+    if CONFIGURED_STREAM_BASE_URL:
+        return CONFIGURED_STREAM_BASE_URL.rstrip("/")
+
+    if request is None:
+        return f"http://127.0.0.1:8888"
+
+    host = request.url.hostname or "127.0.0.1"
+    scheme = request.url.scheme or "http"
+    return f"{scheme}://{host}:8888"
+
+
+def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
+    base_url = _stream_base_url(request)
+    current["hls_url"] = f"{base_url}/{DEFAULT_STREAM_PATH}/index.m3u8"
+    current["page_url"] = f"{base_url}/{DEFAULT_STREAM_PATH}/"
+    return current
 
 class StreamControlUpdate(BaseModel):
     node_name: str = "birdmonitor"
@@ -187,16 +201,14 @@ class StreamStatusUpdate(BaseModel):
 
 
 def _stream_default_state(node_name: str) -> dict:
-    return {
+    return _apply_stream_urls({
         "node_name": node_name,
         "stream_enabled": False,
         "actual_running": False,
         "detail": "",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "last_status_at": None,
-        "hls_url": f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/index.m3u8",
-        "page_url": f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/"
-    }
+    })
 
 
 def _load_stream_state() -> dict:
@@ -209,14 +221,12 @@ def _load_stream_state() -> dict:
     except Exception:
         return {}
 
-
 def _save_stream_state(state: dict) -> None:
     with open(STREAM_CONTROL_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-
 @app.get("/stream/control")
-def get_stream_control(node_name: str = "birdmonitor"):
+def get_stream_control(request: Request, node_name: str = "birdmonitor"):
     """
     Devuelve el estado deseado y real conocido del streaming para un nodo.
     """
@@ -227,11 +237,13 @@ def get_stream_control(node_name: str = "birdmonitor"):
             state[node_name] = _stream_default_state(node_name)
             _save_stream_state(state)
 
+        state[node_name] = _apply_stream_urls(state[node_name], request)
+
         return state[node_name]
 
 
 @app.post("/stream/control")
-def set_stream_control(payload: StreamControlUpdate):
+def set_stream_control(payload: StreamControlUpdate, request: Request):
     """
     Cambia el estado deseado del streaming.
     El dashboard llama a este endpoint.
@@ -243,8 +255,7 @@ def set_stream_control(payload: StreamControlUpdate):
         current = state.get(payload.node_name, _stream_default_state(payload.node_name))
         current["stream_enabled"] = payload.stream_enabled
         current["updated_at"] = datetime.now(timezone.utc).isoformat()
-        current["hls_url"] = f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/index.m3u8"
-        current["page_url"] = f"{DEFAULT_STREAM_BASE_URL}/{DEFAULT_STREAM_PATH}/"
+        current = _apply_stream_urls(current, request)
 
         state[payload.node_name] = current
         _save_stream_state(state)

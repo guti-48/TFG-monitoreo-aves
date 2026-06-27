@@ -107,6 +107,175 @@ http://XXX.XXX.XXX:8000
 
 4. La base de datos SQLite se genera automáticamente si no existe. Solo debe eliminarse manualmente en caso de querer reiniciar completamente los datos históricos durante pruebas de desarrollo.
 
+### Despliegue Automático en Windows
+
+Para facilitar el uso del sistema sin depender de terminales abiertas, el proyecto incluye scripts de automatización para Windows. Estos scripts permiten configurar el arranque automático de los servicios necesarios en el servidor central:
+
+* Backend FastAPI en el puerto `8000`.
+* MediaMTX en el puerto `8888`, encargado de servir el stream HLS de audio en directo.
+
+De esta forma, una vez configurado, el usuario solo necesita encender el ordenador servidor y abrir la app móvil o el dashboard web. No es necesario lanzar manualmente `uvicorn` ni `mediamtx` desde terminal.
+
+#### Requisitos Previos
+
+Antes de ejecutar los scripts, deben cumplirse estas condiciones:
+
+* Tener Python instalado.
+* Tener creado el entorno virtual del proyecto.
+* Tener instaladas las dependencias con:
+
+```bash
+pip install -r requirements.txt
+```
+
+* Tener disponible `mediamtx.exe`.
+* Tener disponible el archivo de configuración `mediamtx.yml`.
+
+Se recomienda colocar MediaMTX dentro del repositorio en la siguiente ruta:
+
+```text
+monitoreo_aves/
+└── tools/
+    └── mediamtx/
+        ├── mediamtx.exe
+        └── mediamtx.yml
+```
+
+Si MediaMTX no se encuentra en esa ubicación, el script de instalación solicitará manualmente la ruta completa de `mediamtx.exe` y `mediamtx.yml`.
+
+#### Scripts Disponibles
+
+Los scripts se encuentran en:
+
+```text
+scripts/windows/
+```
+
+Estructura:
+
+```text
+scripts/
+└── windows/
+    ├── install_birdmonitor_windows.ps1
+    ├── check_birdmonitor_windows.ps1
+    └── uninstall_birdmonitor_windows.ps1
+```
+
+#### Instalación Automática
+
+Para configurar el arranque automático, abrir **PowerShell como administrador** desde la raíz del repositorio y ejecutar:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\install_birdmonitor_windows.ps1
+```
+
+Este script realiza las siguientes acciones:
+
+* Detecta automáticamente la ruta del repositorio.
+* Comprueba que existe `backend/app/main.py`.
+* Busca `mediamtx.exe` y `mediamtx.yml`.
+* Crea scripts internos de arranque en:
+
+```text
+%LOCALAPPDATA%\BirdMonitor
+```
+
+* Crea una tarea programada para MediaMTX:
+
+```text
+BirdMonitor MediaMTX
+```
+
+* Crea una tarea programada para el backend FastAPI:
+
+```text
+BirdMonitor Backend
+```
+
+* Arranca ambos servicios.
+* Comprueba que los puertos `8000` y `8888` están activos.
+
+Una vez instalado, los servicios se iniciarán automáticamente al iniciar sesión en Windows.
+
+#### Comprobación del Estado
+
+Para comprobar que el sistema está funcionando correctamente:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
+```
+
+Este script comprueba:
+
+* Si MediaMTX está en ejecución.
+* Si el puerto `8888` está escuchando.
+* Si el backend está escuchando en el puerto `8000`.
+* El estado de las tareas programadas.
+* Si el endpoint `/devices/` responde correctamente.
+
+También muestra la ubicación de los logs generados:
+
+```text
+%LOCALAPPDATA%\BirdMonitor
+```
+
+#### Desinstalación de las Tareas Automáticas
+
+Para eliminar las tareas programadas y detener MediaMTX:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\uninstall_birdmonitor_windows.ps1
+```
+
+Este script elimina:
+
+```text
+BirdMonitor MediaMTX
+BirdMonitor Backend
+```
+
+y detiene el proceso `mediamtx.exe` si está activo.
+
+No elimina el repositorio, la base de datos ni los archivos de configuración.
+
+#### Comprobación Manual de Puertos
+
+También se puede comprobar manualmente desde PowerShell:
+
+```powershell
+netstat -ano | findstr :8000
+netstat -ano | findstr :8888
+```
+
+Resultado esperado:
+
+```text
+0.0.0.0:8000   LISTENING
+0.0.0.0:8888   LISTENING
+```
+
+#### Acceso al Sistema
+
+Una vez activos los servicios, el dashboard web queda disponible en:
+
+```text
+http://localhost:8000
+```
+
+Desde otro dispositivo en la misma red o mediante Tailscale:
+
+```text
+http://IP_DEL_SERVIDOR:8000
+```
+
+El stream HLS queda disponible en:
+
+```text
+http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+```
+
+La app móvil debe configurarse con la IP LAN o Tailscale del servidor. No debe usarse `127.0.0.1` desde un móvil real, ya que esa dirección apunta al propio dispositivo móvil.
+
 ### Ejecución del Nodo Edge en Raspberry Pi
 
 En la Raspberry Pi, el nodo puede ejecutarse manualmente para pruebas:

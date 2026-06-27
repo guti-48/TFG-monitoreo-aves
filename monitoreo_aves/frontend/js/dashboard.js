@@ -12,8 +12,9 @@ const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 // Se usa el mismo hostname para que funcione tanto con 127.0.0.1 como con la IP Tailscale.
 const STREAM_NAME = "birdmonitor-audio";
 const MEDIAMTX_HLS_PORT = 8888;
-const LIVE_STREAM_URL = "http://127.0.0.1:8888/birdmonitor-audio/index.m3u8";
-const LIVE_STREAM_PAGE_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}/${STREAM_NAME}/`;
+const LIVE_STREAM_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}`;
+const LIVE_STREAM_URL = `${LIVE_STREAM_BASE_URL}/${STREAM_NAME}/index.m3u8`;
+const LIVE_STREAM_PAGE_URL = `${LIVE_STREAM_BASE_URL}/${STREAM_NAME}/`;
 const STREAM_CONTROL_URL = "/stream/control";
 const STREAM_NODE_NAME = "birdmonitor";
 

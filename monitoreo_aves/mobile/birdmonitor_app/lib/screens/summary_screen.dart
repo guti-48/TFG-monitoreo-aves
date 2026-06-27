@@ -18,7 +18,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
   late final ApiService api;
 
   late Future<List<Detection>> _detectionsFuture;
-  late Future<Map<String, dynamic>> _streamFuture;
 
   @override
   void initState() {
@@ -29,7 +28,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
   void _loadData() {
     _detectionsFuture = api.getDetections();
-    _streamFuture = api.getStreamStatus();
   }
 
   Future<void> _refresh() async {
@@ -37,33 +35,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
       _loadData();
     });
 
-    await Future.wait([_detectionsFuture, _streamFuture]);
+    await _detectionsFuture;
   }
 
   String _formatConfidence(double confidence) {
     final value = confidence <= 1 ? confidence * 100 : confidence;
     return '${value.toStringAsFixed(1)}%';
-  }
-
-  bool? _readStreamBool(Map<String, dynamic> data, List<String> keys) {
-    for (final key in keys) {
-      final value = data[key];
-
-      if (value is bool) return value;
-      if (value is String) {
-        final normalized = value.toLowerCase();
-        if (normalized == 'true') return true;
-        if (normalized == 'false') return false;
-      }
-    }
-
-    return null;
-  }
-
-  String _statusLabel(bool? value) {
-    if (value == true) return 'Activado';
-    if (value == false) return 'Detenido';
-    return 'Desconocido';
   }
 
   Widget _buildLatestDetectionPanel(Detection? latest) {
@@ -127,22 +104,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Widget _buildSummaryContent(
-    List<Detection> detections,
-    Map<String, dynamic> streamStatus,
-  ) {
+  Widget _buildSummaryContent(List<Detection> detections) {
     final latest = detections.isNotEmpty ? detections.first : null;
-    final desired = _readStreamBool(streamStatus, [
-      'stream_enabled',
-      'desired_enabled',
-      'desired_stream_enabled',
-    ]);
-    final running = _readStreamBool(streamStatus, [
-      'actual_running',
-      'stream_running',
-      'real_running',
-      'is_running',
-    ]);
 
     return AppPage(
       children: [
@@ -168,7 +131,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
         ),
         const AppSectionTitle(
           title: 'Indicadores',
-          subtitle: 'Lectura rapida de actividad y streaming.',
+          subtitle: 'Lectura rapida de la actividad detectada.',
         ),
         AppMetricGrid(
           children: [
@@ -194,12 +157,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   : _formatConfidence(latest.confidence),
               detail: 'Ultima deteccion',
             ),
-            AppMetricCard(
-              icon: Icons.graphic_eq,
-              label: 'Stream',
-              value: _statusLabel(running),
-              detail: 'Solicitado: ${_statusLabel(desired)}',
-            ),
           ],
         ),
         const AppSectionTitle(title: 'Ultima deteccion'),
@@ -213,7 +170,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return RefreshIndicator(
       onRefresh: _refresh,
       child: FutureBuilder<List<dynamic>>(
-        future: Future.wait([_detectionsFuture, _streamFuture]),
+        future: Future.wait([_detectionsFuture]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const AppPage(
@@ -236,9 +193,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
           }
 
           final detections = snapshot.data![0] as List<Detection>;
-          final streamStatus = snapshot.data![1] as Map<String, dynamic>;
 
-          return _buildSummaryContent(detections, streamStatus);
+          return _buildSummaryContent(detections);
         },
       ),
     );
