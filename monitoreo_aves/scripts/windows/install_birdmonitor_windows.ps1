@@ -142,13 +142,16 @@ if (`$existing) {
     exit 0
 }
 
-Start-Process `
-    -FilePath "$MediaMtxExe" `
-    -ArgumentList "$MediaMtxConfig" `
-    -WorkingDirectory "$MediaMtxDir" `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput "$MediaMtxOutLog" `
-    -RedirectStandardError "$MediaMtxErrLog"
+`$startArgs = @{
+    FilePath = "$MediaMtxExe"
+    ArgumentList = @("$MediaMtxConfig")
+    WorkingDirectory = "$MediaMtxDir"
+    WindowStyle = "Hidden"
+    RedirectStandardOutput = "$MediaMtxOutLog"
+    RedirectStandardError = "$MediaMtxErrLog"
+}
+
+Start-Process @startArgs
 "@ | Set-Content -Path $MediaMtxStartScript -Encoding UTF8
 
 # =========================

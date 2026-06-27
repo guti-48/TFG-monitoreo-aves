@@ -9,10 +9,13 @@ $StreamName = "birdmonitor-audio"
 $HlsUrl = "http://127.0.0.1:8888/$StreamName/index.m3u8"
 $StreamControlUrl = "http://127.0.0.1:8000/stream/control?node_name=birdmonitor"
 $streamState = $null
+$mediaMtxIsRunning = $false
+$mediaMtxPortOpen = $false
 
 Write-Host "Procesos MediaMTX:" -ForegroundColor Yellow
 $mediaMtxProcess = Get-Process mediamtx -ErrorAction SilentlyContinue
 if ($mediaMtxProcess) {
+    $mediaMtxIsRunning = $true
     $mediaMtxProcess
 } else {
     Write-Host "MediaMTX no esta en ejecucion." -ForegroundColor Red
@@ -21,6 +24,7 @@ if ($mediaMtxProcess) {
 Write-Host ""
 Write-Host "Puerto 8888 MediaMTX:" -ForegroundColor Yellow
 netstat -ano | findstr ":8888"
+$mediaMtxPortOpen = $null -ne (Get-NetTCPConnection -LocalPort 8888 -State Listen -ErrorAction SilentlyContinue)
 
 Write-Host ""
 Write-Host "Puerto 8000 Backend:" -ForegroundColor Yellow
@@ -80,11 +84,13 @@ try {
     $response = Invoke-WebRequest -Uri $HlsUrl -UseBasicParsing -TimeoutSec 5
     Write-Host "Manifest HLS disponible. Codigo: $($response.StatusCode)" -ForegroundColor Green
 } catch {
-    Write-Host "MediaMTX esta levantado, pero el manifest HLS no esta disponible." -ForegroundColor Yellow
-
-    if ($streamState -and $streamState.actual_running) {
+    if (-not $mediaMtxIsRunning -or -not $mediaMtxPortOpen) {
+        Write-Host "MediaMTX no esta disponible en el puerto 8888. Revisa la tarea BirdMonitor MediaMTX o ejecuta Start-ScheduledTask -TaskName `"BirdMonitor MediaMTX`"." -ForegroundColor Red
+    } elseif ($streamState -and $streamState.actual_running) {
+        Write-Host "MediaMTX esta levantado, pero el manifest HLS no esta disponible." -ForegroundColor Yellow
         Write-Host "El backend cree que birdstream.service esta activo, asi que revisa en la Raspberry que ese servicio este publicando hacia MediaMTX con el path '$StreamName'." -ForegroundColor Yellow
     } else {
+        Write-Host "MediaMTX esta levantado, pero el manifest HLS no esta disponible." -ForegroundColor Yellow
         Write-Host "Esto suele significar que la Raspberry todavia no esta publicando audio en '$StreamName' o que birdstream.service no esta activo." -ForegroundColor Yellow
     }
 }
