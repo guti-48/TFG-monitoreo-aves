@@ -53,6 +53,24 @@ class ApiService {
         .toList();
   }
 
+  String getAudioUrl(String filename) {
+    final cleanName = filename.trim();
+    if (cleanName.isEmpty) return '';
+
+    return '$baseUrl/records/${Uri.encodeComponent(cleanName)}';
+  }
+
+  String getSpectrogramUrl(String filename) {
+    final cleanName = filename.trim();
+    if (cleanName.isEmpty) return '';
+
+    final baseName = cleanName.toLowerCase().endsWith('.wav')
+        ? cleanName.substring(0, cleanName.length - 4)
+        : cleanName;
+
+    return '$baseUrl/spectrograms/${Uri.encodeComponent('$baseName.png')}';
+  }
+
   Future<Map<String, dynamic>> getStreamStatus() async {
     final response = await http
         .get(Uri.parse('$baseUrl/stream/control?node_name=birdmonitor'))
@@ -74,38 +92,41 @@ class ApiService {
   Future<Map<String, dynamic>> setStreamEnabled(bool enabled) async {
     final response = await http
         .post(
-            Uri.parse('$baseUrl/stream/control'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
+          Uri.parse('$baseUrl/stream/control'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
             'node_name': 'birdmonitor',
             'stream_enabled': enabled,
-            }),
+          }),
         )
         .timeout(const Duration(seconds: 5));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Error ${response.statusCode} al cambiar el estado del stream');
+      throw Exception(
+        'Error ${response.statusCode} al cambiar el estado del stream',
+      );
     }
 
     final decoded = jsonDecode(response.body);
 
     if (decoded is! Map<String, dynamic>) {
-        throw Exception('La respuesta de /stream/control no es un objeto JSON');
+      throw Exception('La respuesta de /stream/control no es un objeto JSON');
     }
 
     return decoded;
   }
 
-String getHlsUrl() {
-  final uri = Uri.parse(baseUrl);
+  String getHlsUrl() {
+    final uri = Uri.parse(baseUrl);
 
-  return Uri(
-    scheme: uri.scheme,
-    host: uri.host,
-    port: 8888,
-    path: '/birdmonitor-audio/index.m3u8',
-  ).toString();
-}
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: 8888,
+      path: '/birdmonitor-audio/index.m3u8',
+    ).toString();
+  }
+
   Future<List<Device>> getDevices() async {
     final response = await http
         .get(Uri.parse('$baseUrl/devices/'))
@@ -132,7 +153,9 @@ String getHlsUrl() {
         .timeout(const Duration(seconds: 5));
 
     if (response.statusCode != 200) {
-      throw Exception('Error ${response.statusCode} al cargar métricas acústicas');
+      throw Exception(
+        'Error ${response.statusCode} al cargar métricas acústicas',
+      );
     }
 
     final decoded = jsonDecode(response.body);
@@ -152,7 +175,9 @@ String getHlsUrl() {
         .timeout(const Duration(seconds: 5));
 
     if (response.statusCode != 200) {
-      throw Exception('Error ${response.statusCode} al cargar análisis ecológico');
+      throw Exception(
+        'Error ${response.statusCode} al cargar análisis ecológico',
+      );
     }
 
     final decoded = jsonDecode(response.body);
@@ -172,17 +197,12 @@ String getHlsUrl() {
         return firstItem;
       }
 
-      return {
-        'registros': decoded.length,
-        'datos': decoded.toString(),
-      };
+      return {'registros': decoded.length, 'datos': decoded.toString()};
     }
 
-    return {
-      'respuesta': decoded.toString(),
-    };
+    return {'respuesta': decoded.toString()};
   }
-  
+
   Future<dynamic> getDailyActivity(String date) async {
     final response = await http
         .get(Uri.parse('$baseUrl/analytics/daily-activity?date=$date'))

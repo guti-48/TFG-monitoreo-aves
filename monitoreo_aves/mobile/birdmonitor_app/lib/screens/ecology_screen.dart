@@ -163,6 +163,74 @@ class _EcologyScreenState extends State<EcologyScreen> {
     );
   }
 
+  Widget _buildInterpretation(
+    AudioMetric? latestMetric,
+    Map<String, dynamic> biodiversity,
+  ) {
+    final notes = <String>[];
+    final ndsi = latestMetric?.ndsi;
+    final richnessRaw = biodiversity['riqueza'];
+    final shannonRaw = biodiversity['shannon'];
+    final quality = biodiversity['calidad']?.toString();
+
+    if (ndsi != null && ndsi < 0) {
+      notes.add(
+        'NDSI negativo: posible predominio de ruido antropogenico frente a biofonia.',
+      );
+    }
+
+    final richness = richnessRaw is num
+        ? richnessRaw
+        : num.tryParse(richnessRaw?.toString() ?? '');
+    if (richness != null && richness <= 3) {
+      notes.add(
+        'Riqueza baja: se han detectado pocas especies en el periodo analizado.',
+      );
+    }
+
+    final shannon = shannonRaw is num
+        ? shannonRaw
+        : num.tryParse(shannonRaw?.toString() ?? '');
+    if (shannon != null && shannon < 1) {
+      notes.add(
+        'Shannon bajo: la comunidad acustica detectada presenta baja diversidad relativa.',
+      );
+    }
+
+    if (quality != null && quality.trim().isNotEmpty) {
+      notes.add('Calidad ecologica reportada: $quality.');
+    }
+
+    if (notes.isEmpty) {
+      notes.add(
+        'Sin alertas interpretativas claras con los datos disponibles.',
+      );
+    }
+
+    return AppDataPanel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Diagnostico', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          for (final note in notes)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.insights, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(note)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContent(
     List<AudioMetric> metrics,
     Map<String, dynamic> biodiversity,
@@ -173,8 +241,8 @@ class _EcologyScreenState extends State<EcologyScreen> {
       children: [
         AppHeaderPanel(
           icon: Icons.eco,
-          title: 'Indicadores ecologicos',
-          subtitle: 'Resumen de biodiversidad y paisaje sonoro del sistema.',
+          title: 'Analisis bioacustico',
+          subtitle: 'Lectura ecologica y acustica del paisaje sonoro.',
           trailing: AppStatusPill(
             text: metrics.length.toString(),
             icon: Icons.graphic_eq,
@@ -186,7 +254,12 @@ class _EcologyScreenState extends State<EcologyScreen> {
         ),
         _buildBiodiversityGrid(biodiversity),
         const AppSectionTitle(
-          title: 'Paisaje sonoro',
+          title: 'Interpretacion',
+          subtitle: 'Lectura automatica basica de los indicadores.',
+        ),
+        _buildInterpretation(latestMetric, biodiversity),
+        const AppSectionTitle(
+          title: 'Indices acusticos',
           subtitle: 'Ultima muestra de metricas bioacusticas.',
         ),
         _buildLatestMetricGrid(latestMetric),

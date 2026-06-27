@@ -87,7 +87,7 @@ class _NodesScreenState extends State<NodesScreen> {
     if (devices.isEmpty) {
       return const AppDataPanel(
         padding: EdgeInsets.all(16),
-        child: Text('No hay nodos registrados.'),
+        child: Text('No hay estaciones registradas.'),
       );
     }
 
@@ -113,15 +113,15 @@ class _NodesScreenState extends State<NodesScreen> {
     return AppPage(
       children: [
         AppHeaderPanel(
-          icon: Icons.memory,
-          title: 'Nodos registrados',
-          subtitle: 'Inventario de dispositivos conectados al sistema.',
+          icon: Icons.place,
+          title: 'Estaciones',
+          subtitle: 'Puntos de monitorizacion conectados al sistema.',
           trailing: AppStatusPill(
             text: devices.length.toString(),
-            icon: Icons.memory,
+            icon: Icons.place,
           ),
         ),
-        const AppSectionTitle(title: 'Dispositivos'),
+        const AppSectionTitle(title: 'Estaciones registradas'),
         _buildNodesGrid(devices),
       ],
     );
@@ -148,7 +148,7 @@ class _NodesScreenState extends State<NodesScreen> {
               children: [
                 AppDataPanel(
                   padding: const EdgeInsets.all(16),
-                  child: Text('Error cargando nodos: ${snapshot.error}'),
+                  child: Text('Error cargando estaciones: ${snapshot.error}'),
                 ),
               ],
             );

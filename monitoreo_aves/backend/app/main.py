@@ -86,6 +86,7 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "../../frontend")
 
 #carpeta montada en la ruta /spectograms
 app.mount("/spectrograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectrograms")
+app.mount("/records", StaticFiles(directory=SERVER_AUDIO_DIR), name="records")
 
 def normalizar_nombre_archivo(filename: str, extensiones_permitidas: set[str]) -> str:
     """

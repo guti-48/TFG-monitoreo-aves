@@ -253,11 +253,14 @@ class AppStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveColor = color ?? Theme.of(context).colorScheme.primary;
+    final backgroundColor = Color.lerp(effectiveColor, Colors.white, 0.86);
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: appGreenSoft,
-        border: Border.all(color: appPanelBorder),
+        color: backgroundColor,
+        border: Border.all(
+          color: Color.lerp(effectiveColor, Colors.white, 0.58)!,
+        ),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Padding(

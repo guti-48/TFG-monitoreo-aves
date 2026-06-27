@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'summary_screen.dart';
+import 'daily_report_screen.dart';
 import 'detections_screen.dart';
+import 'ecology_screen.dart';
 import 'live_stream_screen.dart';
 import 'nodes_screen.dart';
-import 'ecology_screen.dart';
-import 'daily_report_screen.dart';
 import 'settings_screen.dart';
+import 'summary_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final String baseUrl;
@@ -25,23 +25,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     DetectionsScreen(baseUrl: widget.baseUrl),
     LiveStreamScreen(baseUrl: widget.baseUrl),
     EcologyScreen(baseUrl: widget.baseUrl),
-    DailyReportScreen(baseUrl: widget.baseUrl),
-    NodesScreen(baseUrl: widget.baseUrl),
   ];
 
-  final List<String> _titles = [
-    'Resumen',
-    'Detecciones',
-    'Escucha',
-    'Índices',
-    'Informe diario',
-    'Nodos',
-  ];
+  final List<String> _titles = ['Inicio', 'Detecciones', 'Escucha', 'Analisis'];
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  void _openScreen(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+
+  void _showAbout() {
+    showAboutDialog(
+      context: context,
+      applicationName: 'BirdMonitor App',
+      applicationVersion: '1.0.0',
+      children: const [
+        Text(
+          'Cliente movil para detecciones, escucha en directo y analisis bioacustico de campo.',
+        ),
+      ],
+    );
   }
 
   @override
@@ -74,17 +82,55 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Configuración',
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SettingsScreen(baseUrl: widget.baseUrl),
-                ),
-              );
+          PopupMenuButton<String>(
+            tooltip: 'Menu',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              switch (value) {
+                case 'daily':
+                  _openScreen(DailyReportScreen(baseUrl: widget.baseUrl));
+                  break;
+                case 'stations':
+                  _openScreen(NodesScreen(baseUrl: widget.baseUrl));
+                  break;
+                case 'settings':
+                  _openScreen(SettingsScreen(baseUrl: widget.baseUrl));
+                  break;
+                case 'about':
+                  _showAbout();
+                  break;
+              }
             },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'daily',
+                child: ListTile(
+                  leading: Icon(Icons.today_outlined),
+                  title: Text('Informe diario'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'stations',
+                child: ListTile(
+                  leading: Icon(Icons.place_outlined),
+                  title: Text('Estaciones'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Configuracion'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'about',
+                child: ListTile(
+                  leading: Icon(Icons.info_outline),
+                  title: Text('Acerca de'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -100,7 +146,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             NavigationDestination(
               icon: Icon(Icons.dashboard_outlined),
               selectedIcon: Icon(Icons.dashboard),
-              label: 'Resumen',
+              label: 'Inicio',
             ),
             NavigationDestination(
               icon: Icon(Icons.list_alt_outlined),
@@ -115,17 +161,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             NavigationDestination(
               icon: Icon(Icons.eco_outlined),
               selectedIcon: Icon(Icons.eco),
-              label: 'Índices',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.today_outlined),
-              selectedIcon: Icon(Icons.today),
-              label: 'Informe',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.memory_outlined),
-              selectedIcon: Icon(Icons.memory),
-              label: 'Nodos',
+              label: 'Analisis',
             ),
           ],
         ),

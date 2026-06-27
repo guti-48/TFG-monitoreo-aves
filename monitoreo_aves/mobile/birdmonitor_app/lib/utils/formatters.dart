@@ -7,7 +7,7 @@ String formatTimestamp(String? raw) {
 
   if (parsed == null) return raw;
 
-  return DateFormat('dd/MM/yyyy HH:mm:ss').format(parsed);
+  return DateFormat('dd/MM/yyyy - HH:mm').format(parsed);
 }
 
 String formatDateOnly(DateTime date) {
@@ -179,6 +179,22 @@ String formatFilename(String? filename) {
   }
 
   return filename;
+}
+
+double confidencePercent(double confidence) {
+  return confidence <= 1 ? confidence * 100 : confidence;
+}
+
+String formatConfidence(double confidence) {
+  return '${confidencePercent(confidence).toStringAsFixed(1)}%';
+}
+
+String confidenceLabel(double confidence) {
+  final value = confidencePercent(confidence);
+
+  if (value >= 80) return 'Alta confianza';
+  if (value >= 60) return 'Confianza media';
+  return 'Revision recomendada';
 }
 
 int _toInt(dynamic value) {
