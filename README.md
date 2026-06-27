@@ -1,4 +1,4 @@
-# Sistema IoT de Monitoreo Acústico de Aves (TFG)
+﻿# Sistema IoT de Monitoreo Acústico de Aves (TFG)
 
 Este repositorio contiene un sistema distribuido para la detección, clasificación y monitorización de avifauna mediante análisis acústico pasivo e inteligencia artificial. El proyecto combina un nodo Edge basado en Raspberry Pi, un backend FastAPI y un dashboard web para visualizar detecciones, métricas acústicas y análisis ecológicos.
 
@@ -205,6 +205,82 @@ http://100.98.248.58:8000
 
 La base de datos SQLite se crea automáticamente si no existe. Solo conviene eliminar `backend/app/birdmonitor.db` cuando se quiera reiniciar completamente el histórico de pruebas.
 
+## Despliegue Automático En Windows
+
+Para evitar tener terminales abiertas manualmente, el proyecto incluye scripts de automatización en `monitoreo_aves/scripts/windows/`. Estos scripts crean tareas programadas de Windows para arrancar los servicios principales del servidor central:
+
+- `BirdMonitor Backend`: arranca FastAPI/Uvicorn en el puerto `8000`.
+- `BirdMonitor MediaMTX`: arranca MediaMTX en el puerto `8888` para servir el stream HLS.
+
+La instalación se realiza una sola vez desde PowerShell como administrador, desde la carpeta `monitoreo_aves/`:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\install_birdmonitor_windows.ps1
+```
+
+Una vez creada la tarea, no hace falta ejecutar `uvicorn` ni `mediamtx` manualmente cada vez. Al iniciar sesión en Windows, las tareas quedan registradas y pueden arrancar los servicios automáticamente. También pueden lanzarse manualmente cuando se quiera con:
+
+```powershell
+Start-ScheduledTask -TaskName "BirdMonitor Backend"
+Start-ScheduledTask -TaskName "BirdMonitor MediaMTX"
+```
+
+El estado puede comprobarse con:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
+```
+
+Si `Get-ScheduledTaskInfo -TaskName "BirdMonitor Backend"` muestra:
+
+```text
+LastTaskResult : 267009
+```
+
+no indica necesariamente un error. En una tarea programada de Windows, ese código suele indicar que la tarea sigue en ejecución. Para `uvicorn` es normal, porque el backend queda levantado como proceso continuo mientras el puerto `8000` responda.
+
+La desinstalación de las tareas se realiza con:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\uninstall_birdmonitor_windows.ps1
+```
+
+Esto elimina las tareas programadas y detiene MediaMTX, pero no borra el repositorio, la base de datos ni los archivos de configuración.
+
+### MediaMTX Y Stream HLS
+
+MediaMTX debe estar activo en el servidor, pero el stream HLS solo estará disponible cuando la Raspberry Pi publique audio hacia MediaMTX con el path configurado:
+
+```text
+birdmonitor-audio
+```
+
+Por tanto, si MediaMTX escucha en `8888` pero el dashboard muestra `Stream no disponible`, el problema no suele ser la tarea de Windows, sino que la Raspberry no está publicando audio todavía o `birdstream.service` no está enviando al path correcto.
+
+Comprobación en Raspberry Pi:
+
+```bash
+sudo systemctl status birdstream.service
+journalctl -u birdstream.service -f
+```
+
+El backend genera la URL HLS usando el host con el que se accede al servidor. Por ejemplo:
+
+- Si se entra por `localhost`, usará `localhost:8888`.
+- Si se entra por IP LAN, usará esa IP LAN.
+- Si se entra por Tailscale, usará la IP Tailscale correspondiente.
+
+También puede forzarse una URL concreta mediante variable de entorno:
+
+```bash
+BIRDMONITOR_STREAM_BASE_URL="http://IP_DEL_SERVIDOR:8888"
+```
+
+El acceso esperado al stream es:
+
+```text
+http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+```
 ## Ejecución Del Nodo Edge
 
 En Raspberry Pi:
@@ -255,10 +331,10 @@ sudo systemctl status birdstream.service
 
 ## Configuración Del Streaming
 
-El backend usa estas variables para construir las URLs HLS que muestra el dashboard:
+El backend construye las URLs HLS usando el host con el que se accede al servidor. Opcionalmente, se puede forzar una URL concreta con estas variables:
 
 ```bash
-export BIRDMONITOR_STREAM_BASE_URL="http://100.98.248.58:8888"
+export BIRDMONITOR_STREAM_BASE_URL="http://IP_DEL_SERVIDOR:8888"
 export BIRDMONITOR_STREAM_PATH="birdmonitor-audio"
 ```
 
