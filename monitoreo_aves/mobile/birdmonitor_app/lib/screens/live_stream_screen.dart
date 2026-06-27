@@ -1,15 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/api_service.dart';
+import '../widgets/app_ui.dart';
 
 class LiveStreamScreen extends StatefulWidget {
   final String baseUrl;
 
-  const LiveStreamScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const LiveStreamScreen({super.key, required this.baseUrl});
 
   @override
   State<LiveStreamScreen> createState() => _LiveStreamScreenState();
@@ -18,7 +17,7 @@ class LiveStreamScreen extends StatefulWidget {
 class _LiveStreamScreenState extends State<LiveStreamScreen> {
   late final ApiService api;
   late String hlsUrl;
-    String? pageUrl;
+  String? pageUrl;
 
   Map<String, dynamic>? streamStatus;
   VideoPlayerController? _controller;
@@ -27,6 +26,8 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   bool changingStream = false;
   bool loadingPlayer = false;
   String? error;
+  String? playerNotice;
+  String? playerDetails;
 
   @override
   void initState() {
@@ -51,24 +52,24 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     try {
       final status = await api.getStreamStatus();
 
-        final backendHlsUrl = status['hls_url']?.toString();
-        final backendPageUrl = status['page_url']?.toString();
+      final backendHlsUrl = status['hls_url']?.toString();
+      final backendPageUrl = status['page_url']?.toString();
 
-        if (!mounted) return;
+      if (!mounted) return;
 
-        setState(() {
+      setState(() {
         streamStatus = status;
 
         if (backendHlsUrl != null && backendHlsUrl.isNotEmpty) {
-            hlsUrl = backendHlsUrl;
+          hlsUrl = backendHlsUrl;
         }
 
         if (backendPageUrl != null && backendPageUrl.isNotEmpty) {
-            pageUrl = backendPageUrl;
+          pageUrl = backendPageUrl;
         }
 
         loadingStatus = false;
-    });
+      });
     } catch (e) {
       if (!mounted) return;
 
@@ -95,11 +96,11 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         error = e.toString();
       });
     } finally {
-      if (!mounted) return;
-
-      setState(() {
-        changingStream = false;
-      });
+      if (mounted) {
+        setState(() {
+          changingStream = false;
+        });
+      }
     }
   }
 
@@ -107,7 +108,20 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     setState(() {
       loadingPlayer = true;
       error = null;
+      playerNotice = null;
+      playerDetails = null;
     });
+
+    if (kIsWeb) {
+      setState(() {
+        loadingPlayer = false;
+        playerNotice =
+            'Edge no reproduce HLS (.m3u8) de forma nativa dentro de Flutter Web. '
+            'La escucha queda activada en el nodo; valida el reproductor en Android/iOS '
+            'o usa la URL HLS con un reproductor compatible.';
+      });
+      return;
+    }
 
     try {
       await _controller?.dispose();
@@ -127,10 +141,9 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
 
       setState(() {
         loadingPlayer = false;
-        error =
-        'No se pudo cargar el reproductor HLS. '
-        'Si estás probando en Edge/Flutter Web, puede ser una limitación del navegador. '
-        'La reproducción HLS se validará mejor en Android/iOS. Detalle: $e';
+        playerNotice =
+            'No se pudo cargar el reproductor HLS en este dispositivo.';
+        playerDetails = e.toString();
       });
     }
   }
@@ -147,6 +160,86 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     return 'desconocido';
   }
 
+  bool? _readBool(List<String> keys) {
+    final data = streamStatus ?? {};
+
+    for (final key in keys) {
+      final value = data[key];
+
+      if (value is bool) return value;
+      if (value is String) {
+        final normalized = value.toLowerCase();
+        if (normalized == 'true') return true;
+        if (normalized == 'false') return false;
+      }
+    }
+
+    return null;
+  }
+
+  String _statusLabel(bool? value) {
+    if (value == true) return 'Activado';
+    if (value == false) return 'Detenido';
+    return 'Desconocido';
+  }
+
+  bool get _showPlayerSection {
+    final controller = _controller;
+    return !kIsWeb ||
+        loadingPlayer ||
+        (controller != null && controller.value.isInitialized);
+  }
+
+  Widget _buildEndpointCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.graphic_eq,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Stream HLS',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Actualizar estado',
+                  onPressed: _loadStatus,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text('URL HLS', style: Theme.of(context).textTheme.bodySmall),
+            SelectableText(
+              hlsUrl,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (pageUrl != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Pagina del stream',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              SelectableText(
+                pageUrl!,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatusCard() {
     if (loadingStatus) {
       return const Card(
@@ -158,24 +251,144 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
       );
     }
 
-    final desired = _readValue([
+    final desired = _readBool([
       'stream_enabled',
       'desired_enabled',
       'desired_stream_enabled',
     ]);
 
-    final real = _readValue([
-        'actual_running',
-        'stream_running',
-        'real_running',
-        'is_running',
+    final real = _readBool([
+      'actual_running',
+      'stream_running',
+      'real_running',
+      'is_running',
     ]);
+
+    final detail = _readValue(['detail', 'status_detail', 'message']);
+    final subtitle = desired == true && real == false
+        ? 'Solicitado: activado | Nodo: esperando confirmacion'
+        : 'Solicitado: ${_statusLabel(desired)} | Nodo: ${_statusLabel(real)}';
 
     return Card(
       child: ListTile(
-        leading: const Icon(Icons.graphic_eq),
+        leading: const Icon(Icons.sensors),
         title: const Text('Estado del stream'),
-        subtitle: Text('Deseado: $desired | Real: $real'),
+        subtitle: Text(
+          detail == 'desconocido' ? subtitle : '$subtitle\n$detail',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildControls(BoxConstraints constraints) {
+    final disabled = changingStream || loadingStatus;
+    final wide = constraints.maxWidth >= 720;
+
+    final actions = [
+      ElevatedButton.icon(
+        onPressed: disabled ? null : () => _setStream(true),
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('Activar'),
+      ),
+      OutlinedButton.icon(
+        onPressed: disabled ? null : _connectPlayer,
+        icon: const Icon(Icons.speaker),
+        label: const Text('Reproductor'),
+      ),
+      OutlinedButton.icon(
+        onPressed: disabled ? null : () => _setStream(false),
+        icon: const Icon(Icons.stop),
+        label: const Text('Detener'),
+      ),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Control de escucha',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            if (wide)
+              Row(
+                children: [
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 10),
+                    Expanded(child: actions[i]),
+                  ],
+                ],
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    actions[i],
+                  ],
+                ],
+              ),
+            if (changingStream) ...[
+              const SizedBox(height: 16),
+              const Center(child: CircularProgressIndicator()),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError() {
+    final currentError = error;
+
+    if (currentError == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          Icons.error_outline,
+          color: Theme.of(context).colorScheme.error,
+        ),
+        title: const Text('No se pudo consultar el stream'),
+        subtitle: Text(
+          currentError,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayerNotice() {
+    final notice = playerNotice;
+
+    if (notice == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: ExpansionTile(
+        leading: Icon(
+          Icons.info_outline,
+          color: Theme.of(context).colorScheme.secondary,
+        ),
+        title: const Text('Reproductor no disponible en esta vista'),
+        subtitle: Text(notice),
+        children: [
+          if (playerDetails != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SelectableText(
+                playerDetails!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -193,15 +406,32 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     }
 
     if (controller == null || !controller.value.isInitialized) {
-      return const Card(
+      return Card(
         child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('Reproductor no conectado'),
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              Icon(
+                Icons.speaker_outlined,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  kIsWeb
+                      ? 'En Edge se muestra el control del stream; el audio HLS se valida mejor en movil.'
+                      : 'Reproductor no conectado',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: AspectRatio(
         aspectRatio: controller.value.aspectRatio,
         child: VideoPlayer(controller),
@@ -209,82 +439,39 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final disabled = changingStream || loadingStatus;
-
-    return ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Stream HLS',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ),
-          IconButton(
+  Widget _buildContent(BoxConstraints constraints) {
+    return AppPage(
+      children: [
+        AppHeaderPanel(
+          icon: Icons.headphones,
+          title: 'Escucha en directo',
+          subtitle:
+              'Controla el stream del nodo y consulta las URLs de salida HLS.',
+          trailing: IconButton(
+            tooltip: 'Actualizar estado',
             onPressed: _loadStatus,
             icon: const Icon(Icons.refresh),
           ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      SelectableText(
-        hlsUrl,
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      const SizedBox(height: 16),
-
-      _buildStatusCard(),
-
-      const SizedBox(height: 16),
-
-      ElevatedButton.icon(
-        onPressed: disabled ? null : () => _setStream(true),
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Activar escucha'),
-      ),
-
-      const SizedBox(height: 8),
-
-      ElevatedButton.icon(
-        onPressed: disabled ? null : _connectPlayer,
-        icon: const Icon(Icons.speaker),
-        label: const Text('Conectar reproductor'),
-      ),
-
-      const SizedBox(height: 8),
-
-      ElevatedButton.icon(
-        onPressed: disabled ? null : () => _setStream(false),
-        icon: const Icon(Icons.stop),
-        label: const Text('Detener escucha'),
-      ),
-
-      if (changingStream) ...[
-        const SizedBox(height: 16),
-        const Center(child: CircularProgressIndicator()),
-      ],
-
-      if (error != null) ...[
-        const SizedBox(height: 16),
-        Text(
-          error!,
-          style: const TextStyle(color: Colors.red),
         ),
+        _buildStatusCard(),
+        _buildControls(constraints),
+        _buildEndpointCard(),
+        _buildError(),
+        _buildPlayerNotice(),
+        if (_showPlayerSection) ...[
+          const AppSectionTitle(title: 'Reproductor'),
+          _buildPlayer(),
+        ],
       ],
+    );
+  }
 
-      const SizedBox(height: 24),
-
-      Text(
-        'Reproductor',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 8),
-      _buildPlayer(),
-    ],
-  );
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return _buildContent(constraints);
+      },
+    );
   }
 }

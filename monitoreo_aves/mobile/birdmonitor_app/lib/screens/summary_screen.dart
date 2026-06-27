@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/detection.dart';
 import '../services/api_service.dart';
+import '../utils/formatters.dart';
+import '../widgets/app_ui.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String baseUrl;
 
-  const SummaryScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const SummaryScreen({super.key, required this.baseUrl});
 
   @override
   State<SummaryScreen> createState() => _SummaryScreenState();
@@ -38,10 +37,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
       _loadData();
     });
 
-    await Future.wait([
-      _detectionsFuture,
-      _streamFuture,
-    ]);
+    await Future.wait([_detectionsFuture, _streamFuture]);
   }
 
   String _formatConfidence(double confidence) {
@@ -49,32 +45,84 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return '${value.toStringAsFixed(1)}%';
   }
 
-  String _formatStreamStatus(Map<String, dynamic> data) {
-    final desired = data['stream_enabled'] ??
-        data['desired_enabled'] ??
-        data['desired_stream_enabled'];
+  bool? _readStreamBool(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
 
-    final running = data['actual_running'] ??
-        data['stream_running'] ??
-        data['real_running'] ??
-        data['is_running'];
+      if (value is bool) return value;
+      if (value is String) {
+        final normalized = value.toLowerCase();
+        if (normalized == 'true') return true;
+        if (normalized == 'false') return false;
+      }
+    }
 
-    return 'Deseado: ${desired ?? 'desconocido'} | Real: ${running ?? 'desconocido'}';
+    return null;
   }
 
-  Widget _buildInfoCard({
-    required IconData icon,
-    required String title,
-    required String value,
-  }) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(
-          value,
-          style: const TextStyle(fontSize: 16),
-        ),
+  String _statusLabel(bool? value) {
+    if (value == true) return 'Activado';
+    if (value == false) return 'Detenido';
+    return 'Desconocido';
+  }
+
+  Widget _buildLatestDetectionPanel(Detection? latest) {
+    if (latest == null) {
+      return const AppDataPanel(
+        padding: EdgeInsets.all(16),
+        child: Text('Todavia no hay detecciones registradas.'),
+      );
+    }
+
+    return AppDataPanel(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: appGreenSoft,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(
+                Icons.pets,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  latest.species,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  formatTimestamp(latest.timestamp),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (latest.filename != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    formatFilename(latest.filename),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          AppStatusPill(
+            text: _formatConfidence(latest.confidence),
+            icon: Icons.verified,
+          ),
+        ],
       ),
     );
   }
@@ -84,49 +132,78 @@ class _SummaryScreenState extends State<SummaryScreen> {
     Map<String, dynamic> streamStatus,
   ) {
     final latest = detections.isNotEmpty ? detections.first : null;
+    final desired = _readStreamBool(streamStatus, [
+      'stream_enabled',
+      'desired_enabled',
+      'desired_stream_enabled',
+    ]);
+    final running = _readStreamBool(streamStatus, [
+      'actual_running',
+      'stream_running',
+      'real_running',
+      'is_running',
+    ]);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return AppPage(
       children: [
-        Text(
-          'Servidor',
-          style: Theme.of(context).textTheme.titleMedium,
+        AppHeaderPanel(
+          icon: Icons.dashboard,
+          title: 'Centro de control',
+          subtitle: 'Vista rapida del estado actual de BirdMonitor.',
         ),
-        SelectableText(
-          widget.baseUrl,
-          style: Theme.of(context).textTheme.bodySmall,
+        AppDataPanel(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              const Icon(Icons.dns_outlined),
+              const SizedBox(width: 10),
+              Expanded(
+                child: SelectableText(
+                  widget.baseUrl,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-
-        _buildInfoCard(
-          icon: Icons.pets,
-          title: 'Total de detecciones cargadas',
-          value: detections.length.toString(),
+        const AppSectionTitle(
+          title: 'Indicadores',
+          subtitle: 'Lectura rapida de actividad y streaming.',
         ),
-
-        _buildInfoCard(
-          icon: Icons.timeline,
-          title: 'Última especie detectada',
-          value: latest?.species ?? 'Sin detecciones',
+        AppMetricGrid(
+          children: [
+            AppMetricCard(
+              icon: Icons.pets,
+              label: 'Detecciones',
+              value: detections.length.toString(),
+              detail: 'Registros cargados',
+            ),
+            AppMetricCard(
+              icon: Icons.eco,
+              label: 'Ultima especie',
+              value: latest?.species ?? 'Sin datos',
+              detail: latest == null
+                  ? 'Sin actividad reciente'
+                  : 'Actividad reciente',
+            ),
+            AppMetricCard(
+              icon: Icons.verified,
+              label: 'Confianza',
+              value: latest == null
+                  ? 'Sin datos'
+                  : _formatConfidence(latest.confidence),
+              detail: 'Ultima deteccion',
+            ),
+            AppMetricCard(
+              icon: Icons.graphic_eq,
+              label: 'Stream',
+              value: _statusLabel(running),
+              detail: 'Solicitado: ${_statusLabel(desired)}',
+            ),
+          ],
         ),
-
-        _buildInfoCard(
-          icon: Icons.verified,
-          title: 'Confianza última detección',
-          value: latest == null ? 'Sin datos' : _formatConfidence(latest.confidence),
-        ),
-
-        _buildInfoCard(
-          icon: Icons.access_time,
-          title: 'Última actividad',
-          value: latest?.timestamp ?? 'Sin datos',
-        ),
-
-        _buildInfoCard(
-          icon: Icons.graphic_eq,
-          title: 'Estado del streaming',
-          value: _formatStreamStatus(streamStatus),
-        ),
+        const AppSectionTitle(title: 'Ultima deteccion'),
+        _buildLatestDetectionPanel(latest),
       ],
     );
   }
@@ -136,29 +213,23 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return RefreshIndicator(
       onRefresh: _refresh,
       child: FutureBuilder<List<dynamic>>(
-        future: Future.wait([
-          _detectionsFuture,
-          _streamFuture,
-        ]),
+        future: Future.wait([_detectionsFuture, _streamFuture]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return ListView(
+            return const AppPage(
               children: [
-                SizedBox(height: 240),
+                SizedBox(height: 220),
                 Center(child: CircularProgressIndicator()),
               ],
             );
           }
 
           if (snapshot.hasError) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
+            return AppPage(
               children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('Error cargando resumen: ${snapshot.error}'),
-                  ),
+                AppDataPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Error cargando resumen: ${snapshot.error}'),
                 ),
               ],
             );

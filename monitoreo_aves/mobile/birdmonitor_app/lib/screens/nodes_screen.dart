@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../models/devices.dart';
 import '../services/api_service.dart';
+import '../widgets/app_ui.dart';
 
 class NodesScreen extends StatefulWidget {
   final String baseUrl;
 
-  const NodesScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const NodesScreen({super.key, required this.baseUrl});
 
   @override
   State<NodesScreen> createState() => _NodesScreenState();
@@ -43,33 +41,89 @@ class _NodesScreenState extends State<NodesScreen> {
   }
 
   Widget _buildDeviceCard(Device device) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.memory),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    device.name,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+    return AppDataPanel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: appGreenSoft,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text('ID: ${device.id}'),
-            const SizedBox(height: 4),
-            Text('Ubicación: ${device.location ?? 'No especificada'}'),
-            const SizedBox(height: 4),
-            Text('Coordenadas: ${_coordinates(device)}'),
-          ],
-        ),
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(Icons.memory),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  device.name,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              AppStatusPill(text: '#${device.id}', icon: Icons.tag),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            device.location ?? 'Ubicacion no especificada',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _coordinates(device),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildNodesGrid(List<Device> devices) {
+    if (devices.isEmpty) {
+      return const AppDataPanel(
+        padding: EdgeInsets.all(16),
+        child: Text('No hay nodos registrados.'),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 760 ? 2 : 1;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final device in devices)
+              SizedBox(width: width, child: _buildDeviceCard(device)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildContent(List<Device> devices) {
+    return AppPage(
+      children: [
+        AppHeaderPanel(
+          icon: Icons.memory,
+          title: 'Nodos registrados',
+          subtitle: 'Inventario de dispositivos conectados al sistema.',
+          trailing: AppStatusPill(
+            text: devices.length.toString(),
+            icon: Icons.memory,
+          ),
+        ),
+        const AppSectionTitle(title: 'Dispositivos'),
+        _buildNodesGrid(devices),
+      ],
     );
   }
 
@@ -81,51 +135,26 @@ class _NodesScreenState extends State<NodesScreen> {
         future: _devicesFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return ListView(
-              children: const [
-                SizedBox(height: 240),
+            return const AppPage(
+              children: [
+                SizedBox(height: 220),
                 Center(child: CircularProgressIndicator()),
               ],
             );
           }
 
           if (snapshot.hasError) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
+            return AppPage(
               children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('Error cargando nodos: ${snapshot.error}'),
-                  ),
+                AppDataPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Error cargando nodos: ${snapshot.error}'),
                 ),
               ],
             );
           }
 
-          final devices = snapshot.data ?? [];
-
-          if (devices.isEmpty) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: const [
-                Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No hay nodos registrados'),
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: devices.length,
-            itemBuilder: (context, index) {
-              return _buildDeviceCard(devices[index]);
-            },
-          );
+          return _buildContent(snapshot.data ?? []);
         },
       ),
     );

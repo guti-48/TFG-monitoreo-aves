@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/detection.dart';
 import '../models/devices.dart';
+import '../models/audio_metrics.dart';
 
 class ApiService {
   final String baseUrl;
@@ -123,5 +124,74 @@ String getHlsUrl() {
     return decoded
         .map((item) => Device.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<List<AudioMetric>> getAudioMetrics() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/audio-metrics/'))
+        .timeout(const Duration(seconds: 5));
+
+    if (response.statusCode != 200) {
+      throw Exception('Error ${response.statusCode} al cargar métricas acústicas');
+    }
+
+    final decoded = jsonDecode(response.body);
+
+    if (decoded is! List) {
+      throw Exception('La respuesta de /audio-metrics/ no es una lista');
+    }
+
+    return decoded
+        .map((item) => AudioMetric.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> getBiodiversityAnalytics() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/analytics/biodiversity'))
+        .timeout(const Duration(seconds: 5));
+
+    if (response.statusCode != 200) {
+      throw Exception('Error ${response.statusCode} al cargar análisis ecológico');
+    }
+
+    final decoded = jsonDecode(response.body);
+
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+
+    if (decoded is List) {
+      if (decoded.isEmpty) {
+        return {};
+      }
+
+      final firstItem = decoded.first;
+
+      if (firstItem is Map<String, dynamic>) {
+        return firstItem;
+      }
+
+      return {
+        'registros': decoded.length,
+        'datos': decoded.toString(),
+      };
+    }
+
+    return {
+      'respuesta': decoded.toString(),
+    };
+  }
+  
+  Future<dynamic> getDailyActivity(String date) async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/analytics/daily-activity?date=$date'))
+        .timeout(const Duration(seconds: 5));
+
+    if (response.statusCode != 200) {
+      throw Exception('Error ${response.statusCode} al cargar informe diario');
+    }
+
+    return jsonDecode(response.body);
   }
 }

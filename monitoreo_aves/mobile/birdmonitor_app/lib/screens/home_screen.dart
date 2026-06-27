@@ -3,15 +3,12 @@ import 'package:flutter/material.dart';
 import '../models/detection.dart';
 import '../services/api_service.dart';
 import 'connection_screen.dart';
-import 'live_screen.dart';
+import 'live_stream_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String baseUrl;
 
-  const HomeScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const HomeScreen({super.key, required this.baseUrl});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -40,18 +37,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadData();
     });
 
-    await Future.wait([
-      _detectionsFuture,
-      _streamFuture,
-    ]);
+    await Future.wait([_detectionsFuture, _streamFuture]);
   }
 
   Future<void> _changeServer() async {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => const ConnectionScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const ConnectionScreen()),
     );
   }
 
@@ -61,11 +53,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _streamText(Map<String, dynamic> data) {
-    final desired = data['stream_enabled'] ??
+    final desired =
+        data['stream_enabled'] ??
         data['desired_enabled'] ??
         data['desired_stream_enabled'];
 
-    final running = data['actual_running'] ??
+    final running =
+        data['actual_running'] ??
         data['stream_running'] ??
         data['real_running'] ??
         data['is_running'];
@@ -166,10 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('BirdMonitor'),
         actions: [
-          IconButton(
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh),
-          ),
+          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
           IconButton(
             onPressed: _changeServer,
             icon: const Icon(Icons.settings),
@@ -181,28 +172,22 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text(
-              'Servidor',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            Text(
-              widget.baseUrl,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text('Servidor', style: Theme.of(context).textTheme.titleMedium),
+            Text(widget.baseUrl, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 16),
             _buildStreamCard(),
             const SizedBox(height: 12),
             ElevatedButton.icon(
-            onPressed: () {
+              onPressed: () {
                 Navigator.push(
-                context,
-                MaterialPageRoute(
+                  context,
+                  MaterialPageRoute(
                     builder: (_) => LiveStreamScreen(baseUrl: widget.baseUrl),
-                ),
+                  ),
                 );
-            },
-            icon: const Icon(Icons.headphones),
-            label: const Text('Abrir escucha en directo'),
+              },
+              icon: const Icon(Icons.headphones),
+              label: const Text('Abrir escucha en directo'),
             ),
             const SizedBox(height: 24),
             Text(

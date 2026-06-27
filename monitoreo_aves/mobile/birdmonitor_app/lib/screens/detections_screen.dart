@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/detection.dart';
 import '../services/api_service.dart';
+import '../utils/formatters.dart';
+import '../widgets/app_ui.dart';
 
 class DetectionsScreen extends StatefulWidget {
   final String baseUrl;
 
-  const DetectionsScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const DetectionsScreen({super.key, required this.baseUrl});
 
   @override
   State<DetectionsScreen> createState() => _DetectionsScreenState();
@@ -39,27 +38,110 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     return '${value.toStringAsFixed(1)}%';
   }
 
-  Widget _buildDetectionCard(Detection detection) {
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.pets),
-        title: Text(detection.species),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildDetectionRow(Detection detection) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: appPanelMuted,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: appPanelBorder),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(10),
+              child: Icon(Icons.pets, size: 20),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  detection.species,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  formatTimestamp(detection.timestamp),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Text(
+                  formatFilename(detection.filename),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          AppStatusPill(
+            text: _formatConfidence(detection.confidence),
+            icon: Icons.verified,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetectionsPanel(List<Detection> detections) {
+    if (detections.isEmpty) {
+      return const AppDataPanel(
+        padding: EdgeInsets.all(16),
+        child: Text('Todavia no hay detecciones registradas.'),
+      );
+    }
+
+    return AppDataPanel(
+      child: Column(
+        children: [
+          for (var i = 0; i < detections.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            _buildDetectionRow(detections[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(List<Detection> detections) {
+    final latest = detections.isNotEmpty ? detections.first : null;
+
+    return AppPage(
+      children: [
+        AppHeaderPanel(
+          icon: Icons.list_alt,
+          title: 'Historial de detecciones',
+          subtitle: 'Ultimas identificaciones recibidas desde el nodo.',
+          trailing: AppStatusPill(
+            text: detections.length.toString(),
+            icon: Icons.pets,
+          ),
+        ),
+        AppMetricGrid(
           children: [
-            Text(detection.timestamp),
-            if (detection.filename != null && detection.filename!.isNotEmpty)
-              Text(
-                detection.filename!,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+            AppMetricCard(
+              icon: Icons.timeline,
+              label: 'Total cargado',
+              value: detections.length.toString(),
+              detail: 'Limite actual de la API',
+            ),
+            AppMetricCard(
+              icon: Icons.eco,
+              label: 'Ultima especie',
+              value: latest?.species ?? 'Sin datos',
+              detail: latest == null
+                  ? 'Sin actividad'
+                  : formatTimestamp(latest.timestamp),
+            ),
           ],
         ),
-        trailing: Text(
-          _formatConfidence(detection.confidence),
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
+        const AppSectionTitle(title: 'Registros'),
+        _buildDetectionsPanel(detections),
+      ],
     );
   }
 
@@ -71,51 +153,26 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
         future: _detectionsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return ListView(
+            return const AppPage(
               children: [
-                SizedBox(height: 240),
+                SizedBox(height: 220),
                 Center(child: CircularProgressIndicator()),
               ],
             );
           }
 
           if (snapshot.hasError) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
+            return const AppPage(
               children: [
-                Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Error cargando detecciones'),
-                  ),
+                AppDataPanel(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Error cargando detecciones'),
                 ),
               ],
             );
           }
 
-          final detections = snapshot.data ?? [];
-
-          if (detections.isEmpty) {
-            return ListView(
-              padding: EdgeInsets.all(16),
-              children: [
-                Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Todavía no hay detecciones registradas'),
-                  ),
-                ),
-              ],
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: detections.length,
-            itemBuilder: (context, index) {
-              return _buildDetectionCard(detections[index]);
-            },
-          );
+          return _buildContent(snapshot.data ?? []);
         },
       ),
     );

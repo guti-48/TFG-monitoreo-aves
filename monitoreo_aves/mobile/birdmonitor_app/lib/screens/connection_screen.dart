@@ -23,6 +23,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     _loadSavedUrl();
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadSavedUrl() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString('backend_url');
@@ -81,8 +87,70 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => MainNavigationScreen(baseUrl: url),
+      MaterialPageRoute(builder: (_) => MainNavigationScreen(baseUrl: url)),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Icon(
+                  Icons.eco,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 28,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'BirdMonitor',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Cliente móvil para consultar el sistema de monitoreo acústico.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError(BuildContext context) {
+    final error = _error;
+
+    if (error == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          Icons.error_outline,
+          color: Theme.of(context).colorScheme.error,
+        ),
+        title: Text(
+          error,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
       ),
     );
   }
@@ -90,55 +158,58 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('BirdMonitor'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: ListView(
-          children: [
-            const Text(
-              'Conexión con BirdMonitor',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+      appBar: AppBar(title: const Text('Conexión')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildHeader(context),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Servidor FastAPI',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Usa la IP LAN o Tailscale del servidor. En móvil real evita 127.0.0.1, porque apunta al propio dispositivo.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _controller,
+                    keyboardType: TextInputType.url,
+                    decoration: const InputDecoration(
+                      labelText: 'URL del backend',
+                      hintText: 'http://192.168.1.45:8000',
+                      prefixIcon: Icon(Icons.dns_outlined),
+                    ),
+                    onSubmitted: (_) => _testConnection(),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: _loading ? null : _testConnection,
+                    icon: _loading
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.wifi_tethering),
+                    label: Text(
+                      _loading ? 'Comprobando...' : 'Probar conexión',
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Introduce la URL del backend FastAPI. Debe ser la IP LAN o Tailscale del servidor, no 127.0.0.1 si usas móvil real.',
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _controller,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'URL del backend',
-                hintText: 'http://192.168.1.45:8000',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _testConnection(),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loading ? null : _testConnection,
-              child: _loading
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Probar conexión'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-              ),
-            ],
-          ],
-        ),
+          ),
+          _buildError(context),
+        ],
       ),
     );
   }
