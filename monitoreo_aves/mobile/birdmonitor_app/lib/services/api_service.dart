@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/detection.dart';
 import '../models/devices.dart';
 import '../models/audio_metrics.dart';
+import '../models/review_status.dart';
 
 class ApiService {
   final String baseUrl;
@@ -51,6 +52,69 @@ class ApiService {
     return decoded
         .map((item) => Detection.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<DetectionReview> updateDetectionReview({
+    required int detectionId,
+    required DetectionReviewStatus status,
+    String? correctedSpecies,
+    String? note,
+    String reviewer = 'mobile',
+  }) async {
+    final cleanCorrectedSpecies = correctedSpecies?.trim();
+
+    final response = await http
+        .patch(
+          Uri.parse('$baseUrl/detections/$detectionId/review'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'status': status.storageValue,
+            'corrected_species':
+                cleanCorrectedSpecies == null || cleanCorrectedSpecies.isEmpty
+                ? null
+                : cleanCorrectedSpecies,
+            'note': note?.trim(),
+            'reviewer': reviewer,
+          }),
+        )
+        .timeout(const Duration(seconds: 5));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Error ${response.statusCode} al guardar revision');
+    }
+
+    final decoded = jsonDecode(response.body);
+
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception(
+        'La respuesta de /detections/$detectionId/review no es un objeto JSON',
+      );
+    }
+
+    return DetectionReview.fromJson(decoded);
+  }
+
+  Future<List<String>> getSpeciesOptions() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/species/options'))
+        .timeout(const Duration(seconds: 5));
+
+    if (response.statusCode != 200) {
+      throw Exception('Error ${response.statusCode} al cargar especies');
+    }
+
+    final decoded = jsonDecode(response.body);
+
+    if (decoded is! List) {
+      throw Exception('La respuesta de /species/options no es una lista');
+    }
+
+    return decoded
+        .map((item) => item.toString())
+        .where((item) => item.trim().isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
   }
 
   String getAudioUrl(String filename) {

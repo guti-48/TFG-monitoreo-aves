@@ -1,10 +1,21 @@
-enum DetectionReviewStatus { unreviewed, validated, doubtful, discarded }
+enum DetectionReviewStatus {
+  unreviewed,
+  validated,
+  corrected,
+  noise,
+  doubtful,
+  discarded,
+}
 
 extension DetectionReviewStatusLabel on DetectionReviewStatus {
   String get storageValue {
     switch (this) {
       case DetectionReviewStatus.validated:
         return 'validated';
+      case DetectionReviewStatus.corrected:
+        return 'corrected';
+      case DetectionReviewStatus.noise:
+        return 'noise';
       case DetectionReviewStatus.doubtful:
         return 'doubtful';
       case DetectionReviewStatus.discarded:
@@ -18,6 +29,10 @@ extension DetectionReviewStatusLabel on DetectionReviewStatus {
     switch (this) {
       case DetectionReviewStatus.validated:
         return 'Validada';
+      case DetectionReviewStatus.corrected:
+        return 'Corregida';
+      case DetectionReviewStatus.noise:
+        return 'Ruido ambiente';
       case DetectionReviewStatus.doubtful:
         return 'Dudosa';
       case DetectionReviewStatus.discarded:
@@ -31,6 +46,10 @@ extension DetectionReviewStatusLabel on DetectionReviewStatus {
     switch (this) {
       case DetectionReviewStatus.validated:
         return 'Validar';
+      case DetectionReviewStatus.corrected:
+        return 'Corregir especie';
+      case DetectionReviewStatus.noise:
+        return 'Ruido';
       case DetectionReviewStatus.doubtful:
         return 'Marcar duda';
       case DetectionReviewStatus.discarded:
@@ -44,6 +63,10 @@ extension DetectionReviewStatusLabel on DetectionReviewStatus {
     switch (value) {
       case 'validated':
         return DetectionReviewStatus.validated;
+      case 'corrected':
+        return DetectionReviewStatus.corrected;
+      case 'noise':
+        return DetectionReviewStatus.noise;
       case 'doubtful':
         return DetectionReviewStatus.doubtful;
       case 'discarded':

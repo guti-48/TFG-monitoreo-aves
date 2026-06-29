@@ -407,7 +407,7 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
     return new_detection
 
 ## TERCER ENDPOINT --> OBTENER DETECCIONES TODAS LAS DETECCIONES PARA PODER OBSERVARLAS
-@app.get("/detections/")
+@app.get("/detections/", response_model=list[schemas.DetectionResponse])
 def read_detections(skip: int = 0, limit: int = 500, db: Session = Depends(database.get_db)):
     detections = db.query(models.Detection).options(joinedload(models.Detection.review)).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
     return detections

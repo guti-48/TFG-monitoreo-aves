@@ -5,7 +5,6 @@ import '../models/detection.dart';
 import '../models/devices.dart';
 import '../models/review_status.dart';
 import '../services/api_service.dart';
-import '../services/review_service.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_ui.dart';
 import 'detection_detail_screen.dart';
@@ -22,19 +21,16 @@ class SummaryScreen extends StatefulWidget {
 
 class _SummaryScreenState extends State<SummaryScreen> {
   late final ApiService api;
-  late final ReviewService reviewService;
 
   late Future<List<Detection>> _detectionsFuture;
   late Future<List<Device>> _devicesFuture;
   late Future<List<AudioMetric>> _metricsFuture;
   late Future<Map<String, dynamic>> _streamFuture;
-  late Future<Map<int, DetectionReviewStatus>> _reviewFuture;
 
   @override
   void initState() {
     super.initState();
     api = ApiService(widget.baseUrl);
-    reviewService = ReviewService();
     _loadData();
   }
 
@@ -43,7 +39,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
     _devicesFuture = _safeDevices();
     _metricsFuture = _safeMetrics();
     _streamFuture = _safeStream();
-    _reviewFuture = reviewService.getStatuses();
   }
 
   Future<List<Detection>> _safeDetections() async {
@@ -88,7 +83,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
       _devicesFuture,
       _metricsFuture,
       _streamFuture,
-      _reviewFuture,
     ]);
   }
 
@@ -132,6 +126,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
     switch (status) {
       case DetectionReviewStatus.validated:
         return Icons.check_circle_outline;
+      case DetectionReviewStatus.corrected:
+        return Icons.edit_outlined;
+      case DetectionReviewStatus.noise:
+        return Icons.volume_off_outlined;
       case DetectionReviewStatus.doubtful:
         return Icons.help_outline;
       case DetectionReviewStatus.discarded:
@@ -145,6 +143,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
     switch (status) {
       case DetectionReviewStatus.validated:
         return Theme.of(context).colorScheme.primary;
+      case DetectionReviewStatus.corrected:
+        return Theme.of(context).colorScheme.secondary;
+      case DetectionReviewStatus.noise:
+        return const Color(0xFF8A6A2A);
       case DetectionReviewStatus.doubtful:
         return const Color(0xFF9A6A1E);
       case DetectionReviewStatus.discarded:
@@ -166,9 +168,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
 
     if (!mounted) return;
-    setState(() {
-      _reviewFuture = reviewService.getStatuses();
-    });
+    setState(_loadData);
   }
 
   void _openStream() {
@@ -270,10 +270,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Widget _buildLatestDetectionPanel(
-    Detection? latest,
-    Map<int, DetectionReviewStatus> reviews,
-  ) {
+  Widget _buildLatestDetectionPanel(Detection? latest) {
     if (latest == null) {
       return const AppDataPanel(
         padding: EdgeInsets.all(16),
@@ -281,7 +278,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
       );
     }
 
-    final reviewStatus = reviews[latest.id] ?? DetectionReviewStatus.unreviewed;
+    final reviewStatus = latest.reviewStatus;
 
     return AppDataPanel(
       padding: EdgeInsets.zero,
@@ -310,9 +307,14 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      latest.species,
+                      latest.displaySpecies,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
+                    if (latest.reviewStatus == DetectionReviewStatus.corrected)
+                      Text(
+                        'Original BirdNET: ${latest.species}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     const SizedBox(height: 4),
                     Text(
                       formatTimestamp(latest.timestamp),
@@ -356,7 +358,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
     List<Device> devices,
     List<AudioMetric> metrics,
     Map<String, dynamic> stream,
-    Map<int, DetectionReviewStatus> reviews,
   ) {
     final latest = detections.isNotEmpty ? detections.first : null;
     final todayDetections = detections.where(_isToday).toList();
@@ -367,8 +368,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     final pendingReviews = detections
         .where(
           (detection) =>
-              (reviews[detection.id] ?? DetectionReviewStatus.unreviewed) ==
-              DetectionReviewStatus.unreviewed,
+              detection.reviewStatus == DetectionReviewStatus.unreviewed,
         )
         .length;
     final latestMetric = metrics.isNotEmpty ? metrics.first : null;
@@ -427,7 +427,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
           title: 'Ultima evidencia',
           subtitle: 'Toca el registro para revisar audio y espectrograma.',
         ),
-        _buildLatestDetectionPanel(latest, reviews),
+        _buildLatestDetectionPanel(latest),
       ],
     );
   }
@@ -442,7 +442,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
           _devicesFuture,
           _metricsFuture,
           _streamFuture,
-          _reviewFuture,
         ]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -471,7 +470,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
             data[1] as List<Device>,
             data[2] as List<AudioMetric>,
             data[3] as Map<String, dynamic>,
-            data[4] as Map<int, DetectionReviewStatus>,
           );
         },
       ),

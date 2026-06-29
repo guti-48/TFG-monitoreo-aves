@@ -4,7 +4,6 @@ import 'package:video_player/video_player.dart';
 import '../models/detection.dart';
 import '../models/review_status.dart';
 import '../services/api_service.dart';
-import '../services/review_service.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_ui.dart';
 
@@ -24,11 +23,12 @@ class DetectionDetailScreen extends StatefulWidget {
 
 class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
   late final ApiService api;
-  late final ReviewService reviewService;
   late final TextEditingController _noteController;
+  late final TextEditingController _correctedSpeciesController;
+  late Future<List<String>> _speciesOptionsFuture;
   VideoPlayerController? _audioController;
   bool loadingAudio = false;
-  bool loadingReview = true;
+  bool loadingReview = false;
   bool savingReview = false;
   String? audioError;
   DetectionReviewStatus reviewStatus = DetectionReviewStatus.unreviewed;
@@ -37,9 +37,10 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
   void initState() {
     super.initState();
     api = ApiService(widget.baseUrl);
-    reviewService = ReviewService();
     _noteController = TextEditingController();
-    _loadReview();
+    _correctedSpeciesController = TextEditingController();
+    _speciesOptionsFuture = _loadSpeciesOptions();
+    _loadReviewFromDetection();
   }
 
   @override
@@ -47,6 +48,7 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
     _audioController?.removeListener(_onAudioChanged);
     _audioController?.dispose();
     _noteController.dispose();
+    _correctedSpeciesController.dispose();
     super.dispose();
   }
 
@@ -56,60 +58,141 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
 
   String get _filename => widget.detection.filename?.trim() ?? '';
 
-  Future<void> _loadReview() async {
-    final status = await reviewService.getStatus(widget.detection.id);
-    final note = await reviewService.getNote(widget.detection.id);
+  String get _displaySpecies {
+    if (reviewStatus == DetectionReviewStatus.noise) {
+      return 'Ruido ambiente';
+    }
 
-    if (!mounted) return;
+    final correctedSpecies = _correctedSpeciesController.text.trim();
+    if (reviewStatus == DetectionReviewStatus.corrected &&
+        correctedSpecies.isNotEmpty) {
+      return correctedSpecies;
+    }
 
-    setState(() {
-      reviewStatus = status;
-      _noteController.text = note;
-      loadingReview = false;
-    });
+    return widget.detection.species;
+  }
+
+  Future<List<String>> _loadSpeciesOptions() async {
+    try {
+      return await api.getSpeciesOptions();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _loadReviewFromDetection() {
+    final review = widget.detection.review;
+
+    reviewStatus = widget.detection.reviewStatus;
+    _noteController.text = review?.note ?? '';
+    _correctedSpeciesController.text = review?.correctedSpecies ?? '';
   }
 
   Future<void> _setReviewStatus(DetectionReviewStatus status) async {
+    final correctedSpecies = _correctedSpeciesController.text.trim();
+
+    if (status == DetectionReviewStatus.corrected && correctedSpecies.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Indica la especie corregida')),
+      );
+      return;
+    }
+
     setState(() {
       savingReview = true;
     });
 
-    await reviewService.setStatus(widget.detection.id, status);
+    try {
+      final review = await api.updateDetectionReview(
+        detectionId: widget.detection.id,
+        status: status,
+        correctedSpecies: status == DetectionReviewStatus.corrected
+            ? correctedSpecies
+            : null,
+        note: _noteController.text,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      reviewStatus = status;
-      savingReview = false;
-    });
+      setState(() {
+        reviewStatus = review.status;
+        _noteController.text = review.note ?? '';
+        _correctedSpeciesController.text = review.correctedSpecies ?? '';
+        savingReview = false;
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Revision guardada: ${status.label}')),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Revision guardada: ${review.status.label}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        savingReview = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+    }
   }
 
   Future<void> _saveNote() async {
+    if (reviewStatus == DetectionReviewStatus.corrected &&
+        _correctedSpeciesController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Indica la especie corregida')),
+      );
+      return;
+    }
+
     setState(() {
       savingReview = true;
     });
 
-    await reviewService.setNote(widget.detection.id, _noteController.text);
+    try {
+      final review = await api.updateDetectionReview(
+        detectionId: widget.detection.id,
+        status: reviewStatus,
+        correctedSpecies: reviewStatus == DetectionReviewStatus.corrected
+            ? _correctedSpeciesController.text
+            : null,
+        note: _noteController.text,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      savingReview = false;
-    });
+      setState(() {
+        reviewStatus = review.status;
+        _noteController.text = review.note ?? '';
+        _correctedSpeciesController.text = review.correctedSpecies ?? '';
+        savingReview = false;
+      });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Nota de revision guardada')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Revision guardada en backend')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        savingReview = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+    }
   }
 
   IconData _reviewIcon(DetectionReviewStatus status) {
     switch (status) {
       case DetectionReviewStatus.validated:
         return Icons.check_circle_outline;
+      case DetectionReviewStatus.corrected:
+        return Icons.edit_outlined;
+      case DetectionReviewStatus.noise:
+        return Icons.volume_off_outlined;
       case DetectionReviewStatus.doubtful:
         return Icons.help_outline;
       case DetectionReviewStatus.discarded:
@@ -123,6 +206,10 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
     switch (status) {
       case DetectionReviewStatus.validated:
         return Theme.of(context).colorScheme.primary;
+      case DetectionReviewStatus.corrected:
+        return Theme.of(context).colorScheme.secondary;
+      case DetectionReviewStatus.noise:
+        return const Color(0xFF8A6A2A);
       case DetectionReviewStatus.doubtful:
         return const Color(0xFF9A6A1E);
       case DetectionReviewStatus.discarded:
@@ -190,9 +277,10 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
 
     return AppHeaderPanel(
       icon: Icons.pets,
-      title: detection.species,
+      title: _displaySpecies,
       subtitle:
-          '${confidenceLabel(detection.confidence)} - ${formatConfidence(detection.confidence)}',
+          '${confidenceLabel(detection.confidence)} - ${formatConfidence(detection.confidence)}'
+          '${reviewStatus == DetectionReviewStatus.corrected ? ' - Original: ${detection.species}' : ''}',
       trailing: AppStatusPill(
         text: loadingReview
             ? formatConfidence(detection.confidence)
@@ -419,10 +507,52 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
             runSpacing: 8,
             children: [
               _buildReviewButton(DetectionReviewStatus.validated),
+              _buildReviewButton(DetectionReviewStatus.noise),
+              _buildReviewButton(DetectionReviewStatus.corrected),
               _buildReviewButton(DetectionReviewStatus.doubtful),
               _buildReviewButton(DetectionReviewStatus.discarded),
               _buildReviewButton(DetectionReviewStatus.unreviewed),
             ],
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _correctedSpeciesController,
+            enabled: !savingReview,
+            decoration: const InputDecoration(
+              labelText: 'Especie corregida',
+              hintText: 'Solo si no coincide con la prediccion original',
+              prefixIcon: Icon(Icons.edit_outlined),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FutureBuilder<List<String>>(
+            future: _speciesOptionsFuture,
+            builder: (context, snapshot) {
+              final options = (snapshot.data ?? [])
+                  .where((species) => species != widget.detection.species)
+                  .take(8)
+                  .toList();
+
+              if (options.isEmpty) return const SizedBox.shrink();
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final species in options)
+                    ActionChip(
+                      label: Text(species),
+                      onPressed: savingReview
+                          ? null
+                          : () {
+                              setState(() {
+                                _correctedSpeciesController.text = species;
+                              });
+                            },
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
           TextField(
@@ -450,7 +580,7 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Guardado localmente en este dispositivo. La sincronizacion con backend puede anadirse cuando exista el endpoint de revision.',
+            'La revision se guarda en el backend y queda visible tambien en el dashboard.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

@@ -3,14 +3,21 @@ import 'package:flutter/material.dart';
 import '../models/detection.dart';
 import '../models/review_status.dart';
 import '../services/api_service.dart';
-import '../services/review_service.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_ui.dart';
 import 'detection_detail_screen.dart';
 
 enum _DateFilter { today, sevenDays, all }
 
-enum _ReviewFilter { all, pending, validated, doubtful, discarded }
+enum _ReviewFilter {
+  all,
+  pending,
+  validated,
+  corrected,
+  noise,
+  doubtful,
+  discarded,
+}
 
 class DetectionsScreen extends StatefulWidget {
   final String baseUrl;
@@ -23,9 +30,7 @@ class DetectionsScreen extends StatefulWidget {
 
 class _DetectionsScreenState extends State<DetectionsScreen> {
   late final ApiService api;
-  late final ReviewService reviewService;
   late Future<List<Detection>> _detectionsFuture;
-  late Future<Map<int, DetectionReviewStatus>> _reviewFuture;
   _DateFilter _dateFilter = _DateFilter.all;
   _ReviewFilter _reviewFilter = _ReviewFilter.all;
   String _speciesFilter = 'Todas';
@@ -35,24 +40,18 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
   void initState() {
     super.initState();
     api = ApiService(widget.baseUrl);
-    reviewService = ReviewService();
     _detectionsFuture = api.getDetections();
-    _reviewFuture = reviewService.getStatuses();
   }
 
   Future<void> _refresh() async {
     setState(() {
       _detectionsFuture = api.getDetections();
-      _reviewFuture = reviewService.getStatuses();
     });
 
-    await Future.wait([_detectionsFuture, _reviewFuture]);
+    await _detectionsFuture;
   }
 
-  List<Detection> _filteredDetections(
-    List<Detection> detections,
-    Map<int, DetectionReviewStatus> reviews,
-  ) {
+  List<Detection> _filteredDetections(List<Detection> detections) {
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
     final sevenDaysStart = todayStart.subtract(const Duration(days: 6));
@@ -68,7 +67,8 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
         if (parsed == null || parsed.isBefore(sevenDaysStart)) return false;
       }
 
-      if (_speciesFilter != 'Todas' && detection.species != _speciesFilter) {
+      if (_speciesFilter != 'Todas' &&
+          detection.displaySpecies != _speciesFilter) {
         return false;
       }
 
@@ -76,8 +76,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
         return false;
       }
 
-      final reviewStatus =
-          reviews[detection.id] ?? DetectionReviewStatus.unreviewed;
+      final reviewStatus = detection.reviewStatus;
 
       switch (_reviewFilter) {
         case _ReviewFilter.pending:
@@ -85,6 +84,12 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
           break;
         case _ReviewFilter.validated:
           if (reviewStatus != DetectionReviewStatus.validated) return false;
+          break;
+        case _ReviewFilter.corrected:
+          if (reviewStatus != DetectionReviewStatus.corrected) return false;
+          break;
+        case _ReviewFilter.noise:
+          if (reviewStatus != DetectionReviewStatus.noise) return false;
           break;
         case _ReviewFilter.doubtful:
           if (reviewStatus != DetectionReviewStatus.doubtful) return false;
@@ -101,8 +106,9 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
   }
 
   List<String> _speciesOptions(List<Detection> detections) {
-    final species = detections.map((detection) => detection.species).toSet()
-      ..removeWhere((value) => value.trim().isEmpty);
+    final species =
+        detections.map((detection) => detection.displaySpecies).toSet()
+          ..removeWhere((value) => value.trim().isEmpty);
 
     return ['Todas', ...species.toList()..sort()];
   }
@@ -120,7 +126,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
 
     if (!mounted) return;
     setState(() {
-      _reviewFuture = reviewService.getStatuses();
+      _detectionsFuture = api.getDetections();
     });
   }
 
@@ -152,6 +158,10 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     switch (status) {
       case DetectionReviewStatus.validated:
         return Icons.check_circle_outline;
+      case DetectionReviewStatus.corrected:
+        return Icons.edit_outlined;
+      case DetectionReviewStatus.noise:
+        return Icons.volume_off_outlined;
       case DetectionReviewStatus.doubtful:
         return Icons.help_outline;
       case DetectionReviewStatus.discarded:
@@ -165,6 +175,10 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     switch (status) {
       case DetectionReviewStatus.validated:
         return Theme.of(context).colorScheme.primary;
+      case DetectionReviewStatus.corrected:
+        return Theme.of(context).colorScheme.secondary;
+      case DetectionReviewStatus.noise:
+        return const Color(0xFF8A6A2A);
       case DetectionReviewStatus.doubtful:
         return const Color(0xFF9A6A1E);
       case DetectionReviewStatus.discarded:
@@ -204,9 +218,14 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    detection.species,
+                    detection.displaySpecies,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  if (detection.reviewStatus == DetectionReviewStatus.corrected)
+                    Text(
+                      'Original BirdNET: ${detection.species}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   const SizedBox(height: 4),
                   Text(
                     formatTimestamp(detection.timestamp),
@@ -240,10 +259,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     );
   }
 
-  Widget _buildDetectionsPanel(
-    List<Detection> detections,
-    Map<int, DetectionReviewStatus> reviews,
-  ) {
+  Widget _buildDetectionsPanel(List<Detection> detections) {
     if (detections.isEmpty) {
       return const AppDataPanel(
         padding: EdgeInsets.all(16),
@@ -256,28 +272,21 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
         children: [
           for (var i = 0; i < detections.length; i++) ...[
             if (i > 0) const Divider(height: 1),
-            _buildDetectionRow(
-              detections[i],
-              reviews[detections[i].id] ?? DetectionReviewStatus.unreviewed,
-            ),
+            _buildDetectionRow(detections[i], detections[i].reviewStatus),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildContent(
-    List<Detection> detections,
-    Map<int, DetectionReviewStatus> reviews,
-  ) {
-    final filtered = _filteredDetections(detections, reviews);
+  Widget _buildContent(List<Detection> detections) {
+    final filtered = _filteredDetections(detections);
     final latest = detections.isNotEmpty ? detections.first : null;
     final speciesOptions = _speciesOptions(detections);
     final pendingCount = detections
         .where(
           (detection) =>
-              (reviews[detection.id] ?? DetectionReviewStatus.unreviewed) ==
-              DetectionReviewStatus.unreviewed,
+              detection.reviewStatus == DetectionReviewStatus.unreviewed,
         )
         .length;
 
@@ -307,7 +316,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
             AppMetricCard(
               icon: Icons.eco,
               label: 'Ultima deteccion',
-              value: latest?.species ?? 'Sin datos',
+              value: latest?.displaySpecies ?? 'Sin datos',
               detail: latest == null
                   ? 'Sin actividad'
                   : formatTimestamp(latest.timestamp),
@@ -352,6 +361,8 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
                   _buildReviewChip('Todo', _ReviewFilter.all),
                   _buildReviewChip('Sin revisar', _ReviewFilter.pending),
                   _buildReviewChip('Validadas', _ReviewFilter.validated),
+                  _buildReviewChip('Corregidas', _ReviewFilter.corrected),
+                  _buildReviewChip('Ruido', _ReviewFilter.noise),
                   _buildReviewChip('Dudosas', _ReviewFilter.doubtful),
                   _buildReviewChip('Descartadas', _ReviewFilter.discarded),
                 ],
@@ -378,7 +389,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
           ),
         ),
         const AppSectionTitle(title: 'Registros'),
-        _buildDetectionsPanel(filtered, reviews),
+        _buildDetectionsPanel(filtered),
       ],
     );
   }
@@ -387,8 +398,8 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
   Widget build(BuildContext context) {
     return RefreshIndicator(
       onRefresh: _refresh,
-      child: FutureBuilder<List<dynamic>>(
-        future: Future.wait([_detectionsFuture, _reviewFuture]),
+      child: FutureBuilder<List<Detection>>(
+        future: _detectionsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const AppPage(
@@ -410,21 +421,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
             );
           }
 
-          if (snapshot.hasError || snapshot.data == null) {
-            return const AppPage(
-              children: [
-                AppDataPanel(
-                  padding: EdgeInsets.all(16),
-                  child: Text('Error cargando detecciones'),
-                ),
-              ],
-            );
-          }
-
-          return _buildContent(
-            snapshot.data![0] as List<Detection>,
-            snapshot.data![1] as Map<int, DetectionReviewStatus>,
-          );
+          return _buildContent(snapshot.data ?? []);
         },
       ),
     );

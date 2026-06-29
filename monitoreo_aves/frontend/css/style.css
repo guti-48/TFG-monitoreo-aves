@@ -680,6 +680,63 @@ code {
   color: var(--text-secondary) !important;
 }
 
+.review-badge {
+  border: 1px solid var(--border-subtle) !important;
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.review-badge-unreviewed {
+  background: var(--bg-muted) !important;
+  color: var(--text-secondary) !important;
+}
+
+.review-badge-validated {
+  background: #e8f1ea !important;
+  color: var(--green-strong) !important;
+}
+
+.review-badge-corrected {
+  background: #e4eeee !important;
+  color: var(--teal) !important;
+}
+
+.review-badge-noise,
+.review-badge-doubtful {
+  background: #f4eadb !important;
+  color: #755022 !important;
+}
+
+.review-badge-discarded {
+  background: #f2e3e1 !important;
+  color: var(--red) !important;
+}
+
+.review-actions {
+  gap: 4px;
+}
+
+.review-actions .btn {
+  width: 30px;
+  height: 30px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--text-secondary) !important;
+}
+
+.review-actions .btn:hover,
+.review-actions .btn:focus {
+  background: var(--green-soft) !important;
+  border-color: var(--green) !important;
+  color: var(--green-strong) !important;
+}
+
 .btn {
   border-radius: var(--radius-sm) !important;
   font-weight: 700 !important;

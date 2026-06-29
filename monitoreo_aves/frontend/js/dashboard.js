@@ -525,32 +525,32 @@ function getReviewMeta(status) {
     const map = {
         unreviewed: {
             label: "Sin revisar",
-            badge: "bg-secondary",
+            badge: "review-badge-unreviewed",
             icon: "bi-hourglass-split"
         },
         validated: {
             label: "Validada",
-            badge: "bg-success",
+            badge: "review-badge-validated",
             icon: "bi-check-circle-fill"
         },
         corrected: {
             label: "Corregida",
-            badge: "bg-info",
+            badge: "review-badge-corrected",
             icon: "bi-pencil-square"
         },
         noise: {
             label: "Ruido",
-            badge: "bg-warning text-dark",
+            badge: "review-badge-noise",
             icon: "bi-volume-mute-fill"
         },
         doubtful: {
             label: "Dudosa",
-            badge: "bg-primary",
+            badge: "review-badge-doubtful",
             icon: "bi-question-circle-fill"
         },
         discarded: {
             label: "Descartada",
-            badge: "bg-danger",
+            badge: "review-badge-discarded",
             icon: "bi-x-circle-fill"
         }
     };
@@ -559,6 +559,10 @@ function getReviewMeta(status) {
 }
 
 function getDisplaySpecies(detection) {
+    if (detection.review?.status === "noise") {
+        return "Ruido ambiente";
+    }
+
     if (detection.review?.status === "corrected" && detection.review.corrected_species) {
         return detection.review.corrected_species;
     }
@@ -577,7 +581,7 @@ function buildReviewBadge(detection) {
     }
 
     return `
-        <span class="badge ${meta.badge}">
+        <span class="badge review-badge ${meta.badge}">
             <i class="bi ${meta.icon} me-1"></i>${meta.label}${extra}
         </span>
     `;
