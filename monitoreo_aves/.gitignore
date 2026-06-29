@@ -6,6 +6,8 @@
 secrets/
 *.wav
 *.png
+!frontend/assets/birdmonitor-ostrero.png
+!mobile/birdmonitor_app/assets/birdmonitor-ostrero.png
 *.jpg
 *.db
 *.sqlite3

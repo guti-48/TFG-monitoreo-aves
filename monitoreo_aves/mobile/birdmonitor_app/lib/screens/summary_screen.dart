@@ -7,8 +7,11 @@ import '../models/review_status.dart';
 import '../services/api_service.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_ui.dart';
+import 'daily_report_screen.dart';
 import 'detection_detail_screen.dart';
+import 'detections_screen.dart';
 import 'live_stream_screen.dart';
+import 'nodes_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
   final String baseUrl;
@@ -156,6 +159,25 @@ class _SummaryScreenState extends State<SummaryScreen> {
     }
   }
 
+  String _relativeTime(String? raw) {
+    final parsed = DateTime.tryParse(raw ?? '');
+    if (parsed == null) return 'Sin actividad reciente';
+
+    final diff = DateTime.now().difference(parsed);
+    if (diff.inMinutes < 1) return 'Ahora mismo';
+    if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'Hace ${diff.inHours} h';
+    return 'Hace ${diff.inDays} dias';
+  }
+
+  String _stationState(bool? desired, bool? running, bool hasError) {
+    if (hasError) return 'Esperando nodo';
+    if (running == true) return 'Estacion escuchando';
+    if (desired == true) return 'Activacion solicitada';
+    if (desired == false || running == false) return 'Stream detenido';
+    return 'Estado sin confirmar';
+  }
+
   Future<void> _openDetail(Detection detection) async {
     await Navigator.push(
       context,
@@ -180,6 +202,31 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
+  void _openDetections() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetectionsScreen(baseUrl: widget.baseUrl),
+      ),
+    );
+  }
+
+  void _openDailyReport() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DailyReportScreen(baseUrl: widget.baseUrl),
+      ),
+    );
+  }
+
+  void _openStations() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => NodesScreen(baseUrl: widget.baseUrl)),
+    );
+  }
+
   Widget _buildStationPanel(List<Device> devices, Map<String, dynamic> stream) {
     final station = devices.isNotEmpty ? devices.first : null;
     final desired = _readBool(stream, [
@@ -195,54 +242,29 @@ class _SummaryScreenState extends State<SummaryScreen> {
     ]);
     final hasStreamError = stream['error'] != null;
 
-    return AppDataPanel(
-      padding: const EdgeInsets.all(16),
+    return AppFieldHero(
+      icon: Icons.sensors,
+      eyebrow: 'Estacion activa',
+      title: station?.name ?? 'Estacion BirdMonitor',
+      subtitle: station?.location ?? widget.baseUrl,
+      status: AppStatusPill(
+        text: _stationState(desired, running, hasStreamError),
+        icon: running == true ? Icons.graphic_eq : Icons.sensors_off_outlined,
+        color: hasStreamError
+            ? Theme.of(context).colorScheme.error
+            : _statusColor(context, running ?? desired),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: appGreenSoft,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.sensors,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      station?.name ?? 'Estacion BirdMonitor',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      station?.location ?? widget.baseUrl,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
+          AppSoundBars(active: running == true, height: 46),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               AppStatusPill(
-                text: 'Peticion: ${_statusLabel(desired)}',
+                text: 'Escucha: ${_statusLabel(desired)}',
                 icon: Icons.power_settings_new,
                 color: _statusColor(context, desired),
               ),
@@ -253,17 +275,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
               ),
               if (hasStreamError)
                 AppStatusPill(
-                  text: 'Stream sin confirmar',
+                  text: 'Sin confirmar',
                   icon: Icons.warning_amber_outlined,
                   color: Theme.of(context).colorScheme.error,
                 ),
             ],
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _openStream,
-            icon: const Icon(Icons.headphones),
-            label: const Text('Abrir escucha'),
           ),
         ],
       ),
@@ -273,76 +289,101 @@ class _SummaryScreenState extends State<SummaryScreen> {
   Widget _buildLatestDetectionPanel(Detection? latest) {
     if (latest == null) {
       return const AppDataPanel(
-        padding: EdgeInsets.all(16),
-        child: Text('Todavia no hay detecciones registradas.'),
+        padding: EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Icon(Icons.eco_outlined),
+            SizedBox(width: 12),
+            Expanded(child: Text('Aun no hay actividad registrada.')),
+          ],
+        ),
       );
     }
 
     final reviewStatus = latest.reviewStatus;
+    final filename = latest.filename?.trim() ?? '';
 
     return AppDataPanel(
       padding: EdgeInsets.zero,
       child: InkWell(
+        borderRadius: BorderRadius.circular(8),
         onTap: () => _openDetail(latest),
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: appGreenSoft,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.pets,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      latest.displaySpecies,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    if (latest.reviewStatus == DetectionReviewStatus.corrected)
-                      Text(
-                        'Original BirdNET: ${latest.species}',
-                        style: Theme.of(context).textTheme.bodySmall,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: filename.isEmpty
+                    ? Container(
+                        height: 96,
+                        color: appPanelMuted,
+                        padding: const EdgeInsets.all(18),
+                        child: const AppSoundBars(active: true, height: 54),
+                      )
+                    : Image.network(
+                        api.getSpectrogramUrl(filename),
+                        height: 120,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            height: 96,
+                            color: appPanelMuted,
+                            padding: const EdgeInsets.all(18),
+                            child: const AppSoundBars(active: true, height: 54),
+                          );
+                        },
                       ),
-                    const SizedBox(height: 4),
-                    Text(
-                      formatTimestamp(latest.timestamp),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${confidenceLabel(latest.confidence)} - ${formatFilename(latest.filename)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
               ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AppStatusPill(
-                    text: formatConfidence(latest.confidence),
-                    icon: Icons.verified,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          latest.displaySpecies,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        if (latest.reviewStatus ==
+                            DetectionReviewStatus.corrected)
+                          Text(
+                            'Original BirdNET: ${latest.species}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '${_relativeTime(latest.timestamp)} - ${formatTimestamp(latest.timestamp)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '${confidenceLabel(latest.confidence)} - WAV + espectrograma',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  AppStatusPill(
-                    text: reviewStatus.label,
-                    icon: _reviewIcon(reviewStatus),
-                    color: _reviewColor(context, reviewStatus),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      AppStatusPill(
+                        text: formatConfidence(latest.confidence),
+                        icon: Icons.verified,
+                      ),
+                      const SizedBox(height: 6),
+                      AppStatusPill(
+                        text: reviewStatus.label,
+                        icon: _reviewIcon(reviewStatus),
+                        color: _reviewColor(context, reviewStatus),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -376,10 +417,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return AppPage(
       children: [
         AppHeaderPanel(
-          icon: Icons.dashboard,
+          icon: Icons.eco,
+          leading: const BirdMonitorLogo(size: 40),
           title: 'BirdMonitor',
-          subtitle:
-              'Estacion, evidencia reciente y trabajo pendiente de campo.',
+          subtitle: latest == null
+              ? 'Sin actividad reciente. La estacion esta lista para registrar.'
+              : 'Ultima escucha ${_relativeTime(latest.timestamp).toLowerCase()}.',
           trailing: IconButton(
             tooltip: 'Actualizar',
             onPressed: _refresh,
@@ -388,8 +431,13 @@ class _SummaryScreenState extends State<SummaryScreen> {
         ),
         _buildStationPanel(devices, stream),
         const AppSectionTitle(
-          title: 'Resumen de campo',
-          subtitle: 'Lectura rapida de actividad, evidencia y revision.',
+          title: 'Ultima evidencia',
+          subtitle: 'La pieza mas reciente para escuchar y revisar.',
+        ),
+        _buildLatestDetectionPanel(latest),
+        const AppSectionTitle(
+          title: 'Hoy',
+          subtitle: 'Actividad detectada por la estacion en la fecha local.',
         ),
         AppMetricGrid(
           children: [
@@ -404,7 +452,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
               label: 'Especies hoy',
               value: todaySpecies.length.toString(),
               detail: todaySpecies.isEmpty
-                  ? 'Sin especies nuevas'
+                  ? 'Sin actividad reciente'
                   : todaySpecies.take(2).join(', '),
             ),
             AppMetricCard(
@@ -424,10 +472,37 @@ class _SummaryScreenState extends State<SummaryScreen> {
           ],
         ),
         const AppSectionTitle(
-          title: 'Ultima evidencia',
-          subtitle: 'Toca el registro para revisar audio y espectrograma.',
+          title: 'Accesos rapidos',
+          subtitle: 'Herramientas de campo para moverte sin rodeos.',
         ),
-        _buildLatestDetectionPanel(latest),
+        AppMetricGrid(
+          children: [
+            AppQuickAction(
+              icon: Icons.headphones,
+              title: 'Escucha',
+              subtitle: 'Activar o detener el stream',
+              onTap: _openStream,
+            ),
+            AppQuickAction(
+              icon: Icons.list_alt,
+              title: 'Detecciones',
+              subtitle: 'Revisar actividad registrada',
+              onTap: _openDetections,
+            ),
+            AppQuickAction(
+              icon: Icons.today_outlined,
+              title: 'Informe diario',
+              subtitle: 'Ver el resumen por fecha',
+              onTap: _openDailyReport,
+            ),
+            AppQuickAction(
+              icon: Icons.place_outlined,
+              title: 'Estaciones',
+              subtitle: 'Ubicacion y nodos propios',
+              onTap: _openStations,
+            ),
+          ],
+        ),
       ],
     );
   }

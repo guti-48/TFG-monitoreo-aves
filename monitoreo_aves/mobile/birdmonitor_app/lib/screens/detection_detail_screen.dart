@@ -275,18 +275,24 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
   Widget _buildHero() {
     final detection = widget.detection;
 
-    return AppHeaderPanel(
+    return AppFieldHero(
       icon: Icons.pets,
+      eyebrow: 'Evidencia de campo',
       title: _displaySpecies,
       subtitle:
           '${confidenceLabel(detection.confidence)} - ${formatConfidence(detection.confidence)}'
           '${reviewStatus == DetectionReviewStatus.corrected ? ' - Original: ${detection.species}' : ''}',
-      trailing: AppStatusPill(
+      status: AppStatusPill(
         text: loadingReview
             ? formatConfidence(detection.confidence)
             : reviewStatus.label,
         icon: loadingReview ? Icons.verified : _reviewIcon(reviewStatus),
         color: loadingReview ? null : _reviewColor(reviewStatus),
+      ),
+      child: AppSoundBars(
+        active: reviewStatus != DetectionReviewStatus.discarded,
+        height: 42,
+        color: _reviewColor(reviewStatus),
       ),
     );
   }
@@ -312,17 +318,18 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
             borderRadius: BorderRadius.circular(8),
             child: Image.network(
               url,
+              height: 240,
               fit: BoxFit.cover,
               loadingBuilder: (context, child, progress) {
                 if (progress == null) return child;
                 return const SizedBox(
-                  height: 180,
+                  height: 240,
                   child: Center(child: CircularProgressIndicator()),
                 );
               },
               errorBuilder: (context, error, stackTrace) {
                 return Container(
-                  height: 180,
+                  height: 220,
                   color: appPanelMuted,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.all(16),
@@ -335,8 +342,21 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
               },
             ),
           ),
-          const SizedBox(height: 10),
-          SelectableText(url, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            title: const Text('Ruta del espectrograma'),
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText(
+                  url,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -400,8 +420,21 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
-          const SizedBox(height: 10),
-          SelectableText(url, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            title: const Text('Ruta del archivo WAV'),
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText(
+                  url,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -418,39 +451,21 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
     };
 
     return AppDataPanel(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.zero,
+      child: ExpansionTile(
+        leading: const Icon(Icons.tune_outlined),
+        title: const Text('Detalles tecnicos'),
+        subtitle: const Text('Archivo, fecha, amplitud e identificadores'),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          Text(
-            'Datos tecnicos',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 10),
-          for (final entry in rows.entries)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      entry.key,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      entry.value,
-                      textAlign: TextAlign.end,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
+          for (final entry in rows.entries) ...[
+            AppDetailRow(
+              icon: Icons.chevron_right,
+              label: entry.key,
+              value: entry.value,
             ),
+            if (entry.key != rows.keys.last) const SizedBox(height: 8),
+          ],
         ],
       ),
     );
@@ -490,7 +505,7 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Estado de revision',
+                  'Revision del registro',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -597,17 +612,15 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
           _buildHero(),
           const AppSectionTitle(
             title: 'Evidencia acustica',
-            subtitle: 'Material disponible para revision humana.',
+            subtitle: 'Primero escucha y mira; despues decide la revision.',
           ),
           _buildSpectrogram(),
           _buildAudio(),
           const AppSectionTitle(
-            title: 'Revision humana',
-            subtitle:
-                'Valida la prediccion despues de contrastar la evidencia.',
+            title: 'Revision',
+            subtitle: 'Marca si es correcta, ruido o necesita correccion.',
           ),
           _buildReviewPanel(),
-          const AppSectionTitle(title: 'Metadatos'),
           _buildTechnicalData(),
         ],
       ),

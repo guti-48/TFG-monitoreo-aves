@@ -188,72 +188,129 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     }
   }
 
-  Widget _buildDetectionRow(
+  String _shortTime(String raw) {
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return formatTimestamp(raw);
+
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  String _evidenceText(Detection detection) {
+    final hasFile = detection.filename?.trim().isNotEmpty == true;
+    final device = detection.deviceId == null
+        ? 'Estacion sin asignar'
+        : 'Estacion #${detection.deviceId}';
+
+    if (!hasFile) return 'Evidencia pendiente - $device';
+    return 'WAV + espectrograma - $device';
+  }
+
+  Widget _buildDetectionCard(
     Detection detection,
     DetectionReviewStatus reviewStatus,
   ) {
     final confidenceText = formatConfidence(detection.confidence);
     final confidenceState = confidenceLabel(detection.confidence);
+    final isNoise = reviewStatus == DetectionReviewStatus.noise;
+    final leadingIcon = isNoise ? Icons.volume_off_outlined : Icons.pets;
 
-    return InkWell(
-      onTap: () => _openDetail(detection),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: appPanelMuted,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: appPanelBorder),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.all(10),
-                child: Icon(Icons.pets, size: 20),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+    return AppDataPanel(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _openDetail(detection),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    detection.displaySpecies,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  if (detection.reviewStatus == DetectionReviewStatus.corrected)
-                    Text(
-                      'Original BirdNET: ${detection.species}',
-                      style: Theme.of(context).textTheme.bodySmall,
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: isNoise ? appWarmSoft : appGreenSoft,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: appPanelBorder),
                     ),
-                  const SizedBox(height: 4),
-                  Text(
-                    formatTimestamp(detection.timestamp),
-                    style: Theme.of(context).textTheme.bodySmall,
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Icon(
+                        leadingIcon,
+                        color: _reviewColor(context, reviewStatus),
+                        size: 21,
+                      ),
+                    ),
                   ),
-                  Text(
-                    '$confidenceState - ${formatFilename(detection.filename)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          detection.displaySpecies,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_shortTime(detection.timestamp)} - $confidenceText - ${reviewStatus.label}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  AppStatusPill(
+                    text: confidenceState,
+                    icon: Icons.verified_outlined,
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                AppStatusPill(text: confidenceText, icon: Icons.verified),
-                const SizedBox(height: 6),
-                AppStatusPill(
-                  text: reviewStatus.label,
-                  icon: _reviewIcon(reviewStatus),
-                  color: _reviewColor(context, reviewStatus),
+              const SizedBox(height: 10),
+              Text(
+                _evidenceText(detection),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (detection.reviewStatus == DetectionReviewStatus.corrected)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Original BirdNET: ${detection.species}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
-              ],
-            ),
-          ],
+              if (isNoise)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Falso positivo - ${formatTimestamp(detection.timestamp)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppSoundBars(
+                      active: reviewStatus != DetectionReviewStatus.discarded,
+                      height: 28,
+                      color: _reviewColor(context, reviewStatus),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  AppStatusPill(
+                    text: reviewStatus.label,
+                    icon: _reviewIcon(reviewStatus),
+                    color: _reviewColor(context, reviewStatus),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -267,13 +324,96 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
       );
     }
 
+    return Column(
+      children: [
+        for (final detection in detections)
+          _buildDetectionCard(detection, detection.reviewStatus),
+      ],
+    );
+  }
+
+  Widget _buildActivityPanel(
+    List<Detection> detections,
+    List<Detection> filtered,
+    Detection? latest,
+    int pendingCount,
+  ) {
+    return AppFieldHero(
+      icon: Icons.list_alt,
+      eyebrow: 'Detecciones',
+      title: filtered.isEmpty
+          ? 'Sin registros para estos filtros'
+          : '${filtered.length} registros para revisar',
+      subtitle: latest == null
+          ? 'Aun no hay actividad registrada'
+          : 'Ultima actividad: ${latest.displaySpecies} - ${formatTimestamp(latest.timestamp)}',
+      status: AppStatusPill(
+        text: '$pendingCount pendientes',
+        icon: Icons.rate_review_outlined,
+        color: pendingCount == 0
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.secondary,
+      ),
+      child: AppSoundBars(active: detections.isNotEmpty, height: 38),
+    );
+  }
+
+  Widget _buildFilters(List<String> speciesOptions) {
     return AppDataPanel(
+      padding: const EdgeInsets.all(12),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var i = 0; i < detections.length; i++) ...[
-            if (i > 0) const Divider(height: 1),
-            _buildDetectionRow(detections[i], detections[i].reviewStatus),
-          ],
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildDateChip('Hoy', _DateFilter.today),
+              _buildDateChip('7 dias', _DateFilter.sevenDays),
+              _buildDateChip('Todas', _DateFilter.all),
+              FilterChip(
+                label: const Text('Confianza > 70%'),
+                selected: _highConfidenceOnly,
+                onSelected: (selected) {
+                  setState(() {
+                    _highConfidenceOnly = selected;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildReviewChip('Todo', _ReviewFilter.all),
+              _buildReviewChip('Pendiente', _ReviewFilter.pending),
+              _buildReviewChip('Validada', _ReviewFilter.validated),
+              _buildReviewChip('Corregida', _ReviewFilter.corrected),
+              _buildReviewChip('Ruido', _ReviewFilter.noise),
+              _buildReviewChip('Dudosa', _ReviewFilter.doubtful),
+              _buildReviewChip('Descartada', _ReviewFilter.discarded),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _speciesFilter,
+            decoration: const InputDecoration(
+              labelText: 'Especie',
+              prefixIcon: Icon(Icons.eco),
+            ),
+            items: [
+              for (final species in speciesOptions)
+                DropdownMenuItem(value: species, child: Text(species)),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _speciesFilter = value;
+              });
+            },
+          ),
         ],
       ),
     );
@@ -296,98 +436,12 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
 
     return AppPage(
       children: [
-        AppHeaderPanel(
-          icon: Icons.list_alt,
-          title: 'Historial de detecciones',
-          subtitle: 'Registros filtrables y revisables con evidencia acustica.',
-          trailing: AppStatusPill(
-            text: filtered.length.toString(),
-            icon: Icons.pets,
-          ),
+        _buildActivityPanel(detections, filtered, latest, pendingCount),
+        const AppSectionTitle(
+          title: 'Filtros',
+          subtitle: 'Afina la revision por fecha, confianza o estado.',
         ),
-        AppMetricGrid(
-          children: [
-            AppMetricCard(
-              icon: Icons.timeline,
-              label: 'Detecciones registradas',
-              value: detections.length.toString(),
-              detail: 'Limite actual de la API',
-            ),
-            AppMetricCard(
-              icon: Icons.eco,
-              label: 'Ultima deteccion',
-              value: latest?.displaySpecies ?? 'Sin datos',
-              detail: latest == null
-                  ? 'Sin actividad'
-                  : formatTimestamp(latest.timestamp),
-            ),
-            AppMetricCard(
-              icon: Icons.rate_review_outlined,
-              label: 'Sin revisar',
-              value: pendingCount.toString(),
-              detail: 'Trabajo pendiente',
-            ),
-          ],
-        ),
-        const AppSectionTitle(title: 'Filtros'),
-        AppDataPanel(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildDateChip('Hoy', _DateFilter.today),
-                  _buildDateChip('7 dias', _DateFilter.sevenDays),
-                  _buildDateChip('Todas', _DateFilter.all),
-                  FilterChip(
-                    label: const Text('Confianza > 70%'),
-                    selected: _highConfidenceOnly,
-                    onSelected: (selected) {
-                      setState(() {
-                        _highConfidenceOnly = selected;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildReviewChip('Todo', _ReviewFilter.all),
-                  _buildReviewChip('Sin revisar', _ReviewFilter.pending),
-                  _buildReviewChip('Validadas', _ReviewFilter.validated),
-                  _buildReviewChip('Corregidas', _ReviewFilter.corrected),
-                  _buildReviewChip('Ruido', _ReviewFilter.noise),
-                  _buildReviewChip('Dudosas', _ReviewFilter.doubtful),
-                  _buildReviewChip('Descartadas', _ReviewFilter.discarded),
-                ],
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _speciesFilter,
-                decoration: const InputDecoration(
-                  labelText: 'Especie',
-                  prefixIcon: Icon(Icons.eco),
-                ),
-                items: [
-                  for (final species in speciesOptions)
-                    DropdownMenuItem(value: species, child: Text(species)),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _speciesFilter = value;
-                  });
-                },
-              ),
-            ],
-          ),
-        ),
+        _buildFilters(speciesOptions),
         const AppSectionTitle(title: 'Registros'),
         _buildDetectionsPanel(filtered),
       ],

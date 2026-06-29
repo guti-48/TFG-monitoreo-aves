@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../widgets/app_ui.dart';
 import 'main_navigation_screen.dart';
 
 class ConnectionScreen extends StatefulWidget {
@@ -104,11 +105,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Icon(
-                  Icons.eco,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 28,
-                ),
+                child: BirdMonitorLogo(size: 34),
               ),
             ),
             const SizedBox(width: 14),

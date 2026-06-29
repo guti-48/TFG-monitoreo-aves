@@ -7,6 +7,7 @@ import 'live_stream_screen.dart';
 import 'nodes_screen.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
+import '../widgets/app_ui.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final String baseUrl;
@@ -44,6 +45,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       context: context,
       applicationName: 'BirdMonitor App',
       applicationVersion: '1.0.0',
+      applicationIcon: const BirdMonitorLogo(size: 42),
       children: const [
         Text(
           'Cliente movil para detecciones, escucha en directo y analisis bioacustico de campo.',
@@ -63,11 +65,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              Icons.eco,
-              color: Theme.of(context).colorScheme.primary,
-              size: 22,
-            ),
+            child: Center(child: BirdMonitorLogo(size: 25)),
           ),
         ),
         titleSpacing: 12,
