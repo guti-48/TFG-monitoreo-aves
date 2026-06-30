@@ -23,9 +23,22 @@ def conectar_db():
     conexion = sqlite3.connect(DB_PATH)
     # Leemos las detecciones y unimos con el nombre del dispositivo
     query = """
-    SELECT d.timestamp, d.species, d.confidence, dev.location as zona
+    SELECT
+        d.timestamp,
+        CASE
+            WHEN r.status = 'corrected'
+                 AND r.corrected_species IS NOT NULL
+                 AND TRIM(r.corrected_species) != ''
+                THEN r.corrected_species
+            WHEN r.status IN ('noise', 'discarded', 'doubtful')
+                THEN 'Noise_Revision Humana'
+            ELSE d.species
+        END AS species,
+        d.confidence,
+        dev.location as zona
     FROM detections d
     JOIN devices dev ON d.device_id = dev.id
+    LEFT JOIN detection_reviews r ON r.detection_id = d.id
     """
     res = pd.read_sql_query(query, conexion)
     conexion.close()

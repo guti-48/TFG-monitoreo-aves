@@ -291,6 +291,27 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
+              if (detection.hasLearningSuggestion)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      AppStatusPill(
+                        text:
+                            'Sugerencia: ${detection.learnedSuggestion!.displaySpecies}',
+                        icon: Icons.psychology_alt_outlined,
+                        color: Theme.of(context).colorScheme.secondary,
+                      ),
+                      Text(
+                        '${detection.learnedSuggestion!.supportCount} revisiones previas',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 10),
               Row(
                 children: [

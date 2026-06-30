@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
-from . import models, database, schemas
+from . import models, database, schemas, learning
 
 current_file = Path(__file__).resolve()
 backend_dir = current_file.parent.parent
@@ -87,6 +87,34 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "../../frontend")
 #carpeta montada en la ruta /spectograms
 app.mount("/spectrograms", StaticFiles(directory=SPECTOGRAM_DIR), name="spectrograms")
 app.mount("/records", StaticFiles(directory=SERVER_AUDIO_DIR), name="records")
+
+def serializar_review(review: models.DetectionReview | None) -> dict | None:
+    if review is None:
+        return None
+
+    return {
+        "id": review.id,
+        "detection_id": review.detection_id,
+        "status": review.status,
+        "corrected_species": review.corrected_species,
+        "note": review.note,
+        "reviewer": review.reviewer,
+        "reviewed_at": review.reviewed_at,
+        "updated_at": review.updated_at,
+    }
+
+def serializar_deteccion(detection: models.Detection, db: Session) -> dict:
+    return {
+        "id": detection.id,
+        "species": detection.species,
+        "confidence": detection.confidence,
+        "timestamp": detection.timestamp,
+        "filename": detection.filename,
+        "device_id": detection.device_id,
+        "amplitude": detection.amplitude,
+        "review": serializar_review(detection.review),
+        "learned_suggestion": learning.find_suggestion(db, detection),
+    }
 
 def normalizar_nombre_archivo(filename: str, extensiones_permitidas: set[str]) -> str:
     """
@@ -389,7 +417,7 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
     )
 
     if existing_detection:
-        return existing_detection
+        return serializar_deteccion(existing_detection, db)
 
     # guadaremos la deteccion
     new_detection = models.Detection(
@@ -404,13 +432,13 @@ def create_detection(detection: schemas.DetectionCreate, db: Session = Depends(d
     db.add(new_detection)
     db.commit()
     db.refresh(new_detection)
-    return new_detection
+    return serializar_deteccion(new_detection, db)
 
 ## TERCER ENDPOINT --> OBTENER DETECCIONES TODAS LAS DETECCIONES PARA PODER OBSERVARLAS
 @app.get("/detections/", response_model=list[schemas.DetectionResponse])
 def read_detections(skip: int = 0, limit: int = 500, db: Session = Depends(database.get_db)):
     detections = db.query(models.Detection).options(joinedload(models.Detection.review)).order_by(models.Detection.timestamp.desc()).offset(skip).limit(limit).all()
-    return detections
+    return [serializar_deteccion(detection, db) for detection in detections]
 
 ## ENDPOINTS relacionados con la revision humana de dettecines
 @app.patch("/detections/{detection_id}/review", response_model=schemas.DetectionReviewResponse)
@@ -465,6 +493,13 @@ def update_detection_review(
         review.reviewed_at = now
         review.updated_at = now
 
+    learning.sync_learning_from_review(
+        db,
+        detection,
+        review_data.status,
+        review_data.corrected_species,
+    )
+
     db.commit()
     db.refresh(review)
 
@@ -513,6 +548,28 @@ def get_species_options(db: Session = Depends(database.get_db)):
     )
 
     return [row[0] for row in species_rows if row[0]]
+
+@app.get("/learning/rules", response_model=list[schemas.LearningRuleResponse])
+def read_learning_rules(
+    active_only: bool = False,
+    db: Session = Depends(database.get_db)
+):
+    query = db.query(models.LearningRule).order_by(
+        models.LearningRule.active.desc(),
+        models.LearningRule.support_count.desc(),
+        models.LearningRule.updated_at.desc(),
+    )
+
+    if active_only:
+        query = query.filter(models.LearningRule.active.is_(True))
+
+    return query.all()
+
+@app.post("/learning/rebuild", response_model=schemas.LearningRebuildResponse)
+def rebuild_learning_rules(db: Session = Depends(database.get_db)):
+    result = learning.rebuild_learning(db)
+    db.commit()
+    return result
 
 ## ENDPOINTS --> relacionados ocn la metrica de escucha
 @app.post("/audio-metrics/", response_model=schemas.AudioMetricResponse)

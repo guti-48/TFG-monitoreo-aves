@@ -58,6 +58,10 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
 
   String get _filename => widget.detection.filename?.trim() ?? '';
 
+  bool get _showLearningSuggestion =>
+      reviewStatus == DetectionReviewStatus.unreviewed &&
+      widget.detection.learnedSuggestion != null;
+
   String get _displaySpecies {
     if (reviewStatus == DetectionReviewStatus.noise) {
       return 'Ruido ambiente';
@@ -182,6 +186,64 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+    }
+  }
+
+  Future<void> _applyLearningSuggestion() async {
+    final suggestion = widget.detection.learnedSuggestion;
+    if (suggestion == null) return;
+
+    final suggestedSpecies =
+        suggestion.correctedSpecies?.trim().isNotEmpty == true
+        ? suggestion.correctedSpecies!.trim()
+        : suggestion.effectiveSpecies?.trim();
+
+    if (suggestion.status == DetectionReviewStatus.corrected &&
+        (suggestedSpecies == null || suggestedSpecies.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La sugerencia no indica especie final')),
+      );
+      return;
+    }
+
+    setState(() {
+      savingReview = true;
+    });
+
+    try {
+      final review = await api.updateDetectionReview(
+        detectionId: widget.detection.id,
+        status: suggestion.status,
+        correctedSpecies: suggestion.status == DetectionReviewStatus.corrected
+            ? suggestedSpecies
+            : null,
+        note:
+            'Sugerencia aprendida aplicada desde la app. '
+            'Soporte: ${suggestion.supportCount} revisiones.',
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        reviewStatus = review.status;
+        _noteController.text = review.note ?? '';
+        _correctedSpeciesController.text = review.correctedSpecies ?? '';
+        savingReview = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sugerencia aplicada: ${review.status.label}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        savingReview = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo aplicar la sugerencia: $e')),
+      );
     }
   }
 
@@ -471,6 +533,113 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
     );
   }
 
+  Widget _buildLearningSuggestionPanel() {
+    final suggestion = widget.detection.learnedSuggestion;
+    if (!_showLearningSuggestion || suggestion == null) {
+      return const SizedBox.shrink();
+    }
+
+    final color = _reviewColor(suggestion.status);
+    final suggestedSpecies = suggestion.displaySpecies;
+    final original = widget.detection.species;
+
+    return AppDataPanel(
+      padding: const EdgeInsets.all(16),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: appBlueSoft,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: appPanelBorder),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.psychology_alt_outlined, color: color),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Sugerencia aprendida',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'El sistema ha visto este patron antes y propone: $suggestedSpecies.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'BirdNET propuso: $original',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AppStatusPill(
+                    text: suggestion.confidenceText,
+                    icon: Icons.auto_awesome_outlined,
+                    color: color,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  AppStatusPill(
+                    text: '${suggestion.supportCount} revisiones',
+                    icon: Icons.fact_check_outlined,
+                    color: color,
+                  ),
+                  AppStatusPill(
+                    text: suggestion.status.label,
+                    icon: _reviewIcon(suggestion.status),
+                    color: color,
+                  ),
+                  if (suggestion.autoApply)
+                    AppStatusPill(
+                      text: 'Regla fuerte',
+                      icon: Icons.bolt_outlined,
+                      color: color,
+                    ),
+                ],
+              ),
+              if (suggestion.reason.trim().isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  suggestion.reason,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: savingReview ? null : _applyLearningSuggestion,
+                icon: savingReview
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.done_all_outlined),
+                label: const Text('Aplicar sugerencia'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildReviewButton(DetectionReviewStatus status) {
     final selected = reviewStatus == status;
     final color = _reviewColor(status);
@@ -610,6 +779,14 @@ class _DetectionDetailScreenState extends State<DetectionDetailScreen> {
       body: AppPage(
         children: [
           _buildHero(),
+          if (_showLearningSuggestion) ...[
+            const AppSectionTitle(
+              title: 'Aprendizaje local',
+              subtitle:
+                  'Sugerencia generada por revisiones humanas anteriores.',
+            ),
+            _buildLearningSuggestionPanel(),
+          ],
           const AppSectionTitle(
             title: 'Evidencia acustica',
             subtitle: 'Primero escucha y mira; despues decide la revision.',

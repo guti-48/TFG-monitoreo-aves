@@ -9,6 +9,7 @@ class Detection {
   final double? amplitude;
   final int? deviceId;
   final DetectionReview? review;
+  final LearningSuggestion? learnedSuggestion;
 
   Detection({
     required this.id,
@@ -19,6 +20,7 @@ class Detection {
     this.amplitude,
     this.deviceId,
     this.review,
+    this.learnedSuggestion,
   });
 
   DetectionReviewStatus get reviewStatus =>
@@ -39,6 +41,10 @@ class Detection {
     return species;
   }
 
+  bool get hasLearningSuggestion =>
+      reviewStatus == DetectionReviewStatus.unreviewed &&
+      learnedSuggestion != null;
+
   factory Detection.fromJson(Map<String, dynamic> json) {
     return Detection(
       id: _toInt(json['id']),
@@ -52,6 +58,11 @@ class Detection {
       deviceId: json['device_id'] == null ? null : _toInt(json['device_id']),
       review: json['review'] is Map<String, dynamic>
           ? DetectionReview.fromJson(json['review'] as Map<String, dynamic>)
+          : null,
+      learnedSuggestion: json['learned_suggestion'] is Map<String, dynamic>
+          ? LearningSuggestion.fromJson(
+              json['learned_suggestion'] as Map<String, dynamic>,
+            )
           : null,
     );
   }
@@ -68,6 +79,58 @@ class Detection {
     if (value is int) return value.toDouble();
     if (value is String) return double.tryParse(value) ?? 0.0;
     return 0.0;
+  }
+}
+
+class LearningSuggestion {
+  final int ruleId;
+  final DetectionReviewStatus status;
+  final String? correctedSpecies;
+  final String? effectiveSpecies;
+  final double learningConfidence;
+  final int supportCount;
+  final bool autoApply;
+  final String reason;
+
+  LearningSuggestion({
+    required this.ruleId,
+    required this.status,
+    this.correctedSpecies,
+    this.effectiveSpecies,
+    required this.learningConfidence,
+    required this.supportCount,
+    required this.autoApply,
+    required this.reason,
+  });
+
+  String get displaySpecies {
+    final cleaned = effectiveSpecies?.trim();
+    if (cleaned != null && cleaned.isNotEmpty) {
+      if (status == DetectionReviewStatus.noise) return 'Ruido ambiente';
+      return cleaned;
+    }
+
+    if (status == DetectionReviewStatus.noise) return 'Ruido ambiente';
+    if (status == DetectionReviewStatus.discarded) return 'Descartar registro';
+    return status.label;
+  }
+
+  String get confidenceText =>
+      '${(learningConfidence * 100).toStringAsFixed(0)}%';
+
+  factory LearningSuggestion.fromJson(Map<String, dynamic> json) {
+    return LearningSuggestion(
+      ruleId: Detection._toInt(json['rule_id']),
+      status: DetectionReviewStatusLabel.fromStorage(
+        json['status']?.toString(),
+      ),
+      correctedSpecies: json['corrected_species']?.toString(),
+      effectiveSpecies: json['effective_species']?.toString(),
+      learningConfidence: Detection._toDouble(json['learning_confidence']),
+      supportCount: Detection._toInt(json['support_count']),
+      autoApply: json['auto_apply'] == true,
+      reason: json['reason']?.toString() ?? '',
+    );
   }
 }
 

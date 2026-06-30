@@ -37,6 +37,20 @@ let liveHls = null;
 let streamStatusTimer = null;
 let lastStreamData = null;
 let currentScienceReport = [];
+const detectionCache = new Map();
+
+function cacheDetections(detections) {
+    detections.forEach(detection => detectionCache.set(detection.id, detection));
+}
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
 // NAVEGACIÓ
 function switchView(viewName, nodeFilter = null) {
@@ -570,6 +584,57 @@ function getDisplaySpecies(detection) {
     return detection.species;
 }
 
+function getLearningSuggestion(detection) {
+    if (getReviewStatus(detection) !== "unreviewed") return null;
+    return detection.learned_suggestion || null;
+}
+
+function getLearningSuggestionLabel(suggestion) {
+    if (!suggestion) return "";
+    if (suggestion.status === "noise") return "Ruido ambiente";
+    if (suggestion.status === "discarded") return "Descartar registro";
+    return cleanName(suggestion.effective_species || suggestion.corrected_species || suggestion.status);
+}
+
+function buildLearningSuggestionBadge(detection) {
+    const suggestion = getLearningSuggestion(detection);
+    if (!suggestion) return "";
+
+    const label = getLearningSuggestionLabel(suggestion);
+    const confidence = Math.round((suggestion.learning_confidence || 0) * 100);
+
+    return `
+        <div class="learning-suggestion-badge mt-1">
+            <i class="bi bi-stars me-1"></i>
+            Sugerencia: ${label}
+            <span>${suggestion.support_count} revisiones - ${confidence}%</span>
+        </div>
+    `;
+}
+
+function buildLearningSuggestionPanel(detection) {
+    const suggestion = getLearningSuggestion(detection);
+    if (!suggestion) return "";
+
+    const label = getLearningSuggestionLabel(suggestion);
+
+    return `
+        <div class="learning-suggestion-panel">
+            <div>
+                <span class="learning-suggestion-title">
+                    <i class="bi bi-stars me-1"></i>Sugerencia aprendida
+                </span>
+                <p class="mb-0 small">
+                    El sistema propone <strong>${label}</strong> porque ya hay ${suggestion.support_count} revisiones humanas parecidas.
+                </p>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="applyLearnedSuggestion(${detection.id})">
+                Aplicar
+            </button>
+        </div>
+    `;
+}
+
 function buildReviewBadge(detection) {
     const status = getReviewStatus(detection);
     const meta = getReviewMeta(status);
@@ -587,7 +652,14 @@ function buildReviewBadge(detection) {
     `;
 }
 
-function buildReviewActions(detection) {
+function buildReviewActionsLegacy(detection) {
+    const suggestion = getLearningSuggestion(detection);
+    const suggestionAction = suggestion ? `
+            <button class="btn btn-outline-success review-action-suggestion" title="Aplicar sugerencia aprendida" onclick="applyLearnedSuggestion(${detection.id})">
+                <i class="bi bi-stars"></i>
+            </button>
+    ` : "";
+
     return `
         <div class="btn-group btn-group-sm review-actions" role="group" aria-label="Revisión detección ${detection.id}">
             <button class="btn btn-outline-success" title="Validar detección" onclick="quickReviewDetection(${detection.id}, 'validated')">
@@ -607,6 +679,66 @@ function buildReviewActions(detection) {
             </button>
         </div>
     `;
+}
+
+function buildReviewActions(detection) {
+    const suggestion = getLearningSuggestion(detection);
+    const suggestionAction = suggestion ? `
+            <button class="btn btn-outline-success review-action-suggestion" title="Aplicar sugerencia aprendida" onclick="applyLearnedSuggestion(${detection.id})">
+                <i class="bi bi-stars"></i>
+            </button>
+    ` : "";
+
+    return `
+        <div class="btn-group btn-group-sm review-actions" role="group" aria-label="Revision deteccion ${detection.id}">
+            ${suggestionAction}
+            <button class="btn btn-outline-success" title="Validar deteccion" onclick="quickReviewDetection(${detection.id}, 'validated')">
+                <i class="bi bi-check-lg"></i>
+            </button>
+            <button class="btn btn-outline-warning" title="Marcar como ruido" onclick="quickReviewDetection(${detection.id}, 'noise')">
+                <i class="bi bi-volume-mute"></i>
+            </button>
+            <button class="btn btn-outline-info" title="Corregir especie" onclick="correctDetectionSpecies(${detection.id})">
+                <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-outline-primary" title="Marcar como dudosa" onclick="quickReviewDetection(${detection.id}, 'doubtful')">
+                <i class="bi bi-question-lg"></i>
+            </button>
+            <button class="btn btn-outline-danger" title="Descartar deteccion" onclick="quickReviewDetection(${detection.id}, 'discarded')">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    `;
+}
+
+async function applyLearnedSuggestion(detectionId) {
+    const detection = detectionCache.get(detectionId);
+    const suggestion = detection ? getLearningSuggestion(detection) : null;
+
+    if (!suggestion) {
+        alert("No hay sugerencia aprendida disponible para esta deteccion.");
+        return;
+    }
+
+    const correctedSpecies = suggestion.corrected_species || suggestion.effective_species || null;
+
+    if (suggestion.status === "corrected" && !correctedSpecies) {
+        alert("La sugerencia no indica una especie corregida.");
+        return;
+    }
+
+    try {
+        await patchDetectionReview(detectionId, {
+            status: suggestion.status,
+            corrected_species: suggestion.status === "corrected" ? correctedSpecies : null,
+            note: `Sugerencia aprendida aplicada desde dashboard. Soporte: ${suggestion.support_count} revisiones.`,
+            reviewer: "dashboard"
+        });
+
+        await refreshCurrentDetectionView();
+    } catch (e) {
+        alert(`No se pudo aplicar la sugerencia: ${e.message}`);
+    }
 }
 
 async function patchDetectionReview(detectionId, payload) {
@@ -650,26 +782,144 @@ async function quickReviewDetection(detectionId, status) {
 }
 
 async function correctDetectionSpecies(detectionId) {
-    const correctedSpecies = prompt("Introduce la especie correcta:");
+    const detection = detectionCache.get(detectionId);
+    let speciesOptions = [];
 
-    if (!correctedSpecies || !correctedSpecies.trim()) {
-        return;
+    try {
+        const response = await fetch(SPECIES_OPTIONS_URL);
+        speciesOptions = response.ok ? await response.json() : [];
+    } catch (e) {
+        console.warn("No se pudieron cargar opciones de especies", e);
     }
 
-    const note = prompt("Nota opcional de revisión:") || "";
+    openCorrectionDialog(detectionId, detection, speciesOptions);
+}
+
+function openCorrectionDialog(detectionId, detection, speciesOptions = []) {
+    closeCorrectionDialog();
+
+    const suggestion = detection ? getLearningSuggestion(detection) : null;
+    const suggestionLabel = getLearningSuggestionLabel(suggestion);
+    const originalSpecies = detection?.species || "Deteccion seleccionada";
+    const safeOptions = [...new Set(speciesOptions)]
+        .filter(value => value && value !== originalSpecies)
+        .slice(0, 80);
+
+    const dialog = document.createElement("div");
+    dialog.id = "correction-dialog";
+    dialog.className = "correction-dialog-backdrop";
+    dialog.innerHTML = `
+        <div class="correction-dialog" role="dialog" aria-modal="true" aria-labelledby="correction-dialog-title">
+            <div class="correction-dialog-header">
+                <div>
+                    <p class="correction-dialog-eyebrow">Revision humana</p>
+                    <h3 id="correction-dialog-title">Corregir especie</h3>
+                </div>
+                <button type="button" class="correction-dialog-close" onclick="closeCorrectionDialog()" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <div class="correction-dialog-body">
+                <div class="correction-original">
+                    <span>BirdNET propuso</span>
+                    <strong>${escapeHtml(cleanName(originalSpecies))}</strong>
+                </div>
+
+                ${suggestion ? `
+                    <div class="learning-suggestion-panel correction-suggestion-panel">
+                        <div>
+                            <span class="learning-suggestion-title">
+                                <i class="bi bi-stars me-1"></i>Sugerencia aprendida
+                            </span>
+                            <p class="mb-0 small">
+                                Propuesta: <strong>${escapeHtml(suggestionLabel)}</strong> con ${suggestion.support_count} revisiones previas.
+                            </p>
+                        </div>
+                        <button class="btn btn-sm btn-success" onclick="applyLearnedSuggestion(${detectionId}); closeCorrectionDialog();">
+                            Aplicar
+                        </button>
+                    </div>
+                ` : `
+                    <div class="correction-empty-suggestion">
+                        No hay sugerencia aprendida para esta deteccion. Puedes corregirla manualmente.
+                    </div>
+                `}
+
+                <label class="correction-field">
+                    <span>Especie correcta</span>
+                    <input
+                        id="correction-species-input"
+                        type="text"
+                        list="correction-species-options"
+                        placeholder="Ejemplo: Common Kingfisher o Ruido ambiente"
+                        autocomplete="off"
+                    >
+                </label>
+
+                <datalist id="correction-species-options">
+                    ${safeOptions.map(option => `<option value="${escapeHtml(option)}"></option>`).join("")}
+                </datalist>
+
+                <label class="correction-field">
+                    <span>Nota opcional</span>
+                    <textarea
+                        id="correction-note-input"
+                        rows="3"
+                        placeholder="Ejemplo: falso positivo por ruido de agua, solape o canto lejano"
+                    ></textarea>
+                </label>
+
+                <p class="correction-helper">
+                    Esta correccion se guarda como revision humana y alimenta el aprendizaje local del sistema.
+                </p>
+            </div>
+
+            <div class="correction-dialog-actions">
+                <button type="button" class="btn btn-outline-secondary" onclick="closeCorrectionDialog()">Cancelar</button>
+                <button type="button" class="btn btn-success" onclick="submitCorrectionDialog(${detectionId})">
+                    Guardar correccion
+                </button>
+            </div>
+        </div>
+    `;
+
+    dialog.addEventListener("click", event => {
+        if (event.target === dialog) closeCorrectionDialog();
+    });
+
+    document.body.appendChild(dialog);
+    document.getElementById("correction-species-input")?.focus();
+}
+
+function closeCorrectionDialog() {
+    document.getElementById("correction-dialog")?.remove();
+}
+
+async function submitCorrectionDialog(detectionId) {
+    const speciesInput = document.getElementById("correction-species-input");
+    const noteInput = document.getElementById("correction-note-input");
+    const correctedSpecies = speciesInput?.value?.trim() || "";
+
+    if (!correctedSpecies) {
+        speciesInput?.focus();
+        speciesInput?.classList.add("is-invalid");
+        return;
+    }
 
     try {
         await patchDetectionReview(detectionId, {
             status: "corrected",
-            corrected_species: correctedSpecies.trim(),
-            note,
+            corrected_species: correctedSpecies,
+            note: noteInput?.value?.trim() || "",
             reviewer: "dashboard"
         });
 
+        closeCorrectionDialog();
         await refreshCurrentDetectionView();
 
     } catch (e) {
-        alert(`No se pudo corregir la detección: ${e.message}`);
+        alert(`No se pudo corregir la deteccion: ${e.message}`);
     }
 }
 
@@ -694,6 +944,7 @@ async function renderHistoryView(container) {
         const response = await fetch(`${API_URL}?limit=500`);
         const data = await response.json();
         const sortedData = data.reverse();
+        cacheDetections(sortedData);
         let rowsHtml = '';
         sortedData.forEach(d => {
             const timeDate = new Date(d.timestamp);
@@ -719,6 +970,7 @@ async function renderHistoryView(container) {
                             <div>
                                 <span class="fw-bold text-white">${clean}</span>
                                 ${d.review?.status === "corrected" ? `<div class="text-muted small">Original BirdNET: ${originalClean}</div>` : ""}
+                                ${buildLearningSuggestionBadge(d)}
                             </div>
                         </div>
                     </td>
@@ -784,6 +1036,7 @@ async function updateDashboard() {
         const response = await fetch(`${API_URL}?t=${new Date().getTime()}`, { cache: 'no-store' });
         let data = await response.json();
         if (!data || data.length === 0) { safeSetText('total-counter', '0'); return; }
+        cacheDetections(data);
 
         const sortedData = data;
         let totalAmp = 0;
@@ -804,18 +1057,22 @@ async function updateDashboard() {
             document.getElementById('noise-icon').className = `bi ${noiseIcon} fs-3`;
         }
 
-        const birdsOnly = sortedData.filter(d =>
-            !d.species.toLowerCase().includes("noise") &&
-            !d.species.toLowerCase().includes("ruido") &&
-            !d.species.toLowerCase().includes("ambiente")
-        );
+        const birdsOnly = sortedData.filter(d => {
+            const displayed = getDisplaySpecies(d).toLowerCase();
+            return !displayed.includes("noise") &&
+                !displayed.includes("ruido") &&
+                !displayed.includes("ambiente");
+        });
         safeSetText('total-counter', birdsOnly.length);
 
         if (birdsOnly.length > 0) {
             const latestBird = birdsOnly[0];
             safeSetText('last-activity', new Date(latestBird.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
             const counts = {};
-            birdsOnly.forEach(d => { counts[d.species] = (counts[d.species] || 0) + 1; });
+            birdsOnly.forEach(d => {
+                const species = getDisplaySpecies(d);
+                counts[species] = (counts[species] || 0) + 1;
+            });
             const topSpecies = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
             safeSetText('top-species', cleanName(topSpecies));
             if (typeof renderLiveFeedSplit === "function") await renderLiveFeedSplit(latestBird);
@@ -994,11 +1251,12 @@ async function getSpeciesImageUrl(speciesRawName) {
 async function renderLiveFeedSplit(d) {
     const container = document.getElementById('live-feed-container');
     if (!container) return;
-    const species = cleanName(d.species);
+    const displayedSpecies = getDisplaySpecies(d);
+    const species = cleanName(displayedSpecies);
     const percent = (d.confidence * 100).toFixed(0);
     const spectrogramUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
     const timeStr = new Date(d.timestamp).toLocaleTimeString();
-    const speciesPhotoUrl = await getSpeciesImageUrl(d.species);
+    const speciesPhotoUrl = await getSpeciesImageUrl(displayedSpecies);
 
     container.innerHTML = `
         <div class="main-detection-split enhanced-detection w-100">
@@ -1015,6 +1273,7 @@ async function renderLiveFeedSplit(d) {
                         <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" role="progressbar" style="width:${percent}%;"></div>
                     </div>
                 </div>
+                ${buildLearningSuggestionPanel(d)}
                 <div class="spectrogram-container mt-auto d-flex flex-column">
                     <img src="${spectrogramUrl}" class="spectrogram-img" onerror="this.style.opacity='0.3';">
                     <div class="bg-dark text-muted small px-3 py-2 d-flex justify-content-between align-items-center border-top border-secondary mt-auto">
@@ -1056,6 +1315,7 @@ function renderTable(data) {
                         <div>
                             <span class="fw-semibold text-white">${clean}</span>
                             ${d.review?.status === "corrected" ? `<div class="text-muted small">Original: ${originalClean}</div>` : ""}
+                            ${buildLearningSuggestionBadge(d)}
                         </div>
                     </div>
                 </td>

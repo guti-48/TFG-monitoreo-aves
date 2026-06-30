@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 from datetime import datetime, timezone
@@ -84,6 +84,75 @@ class DetectionReview(Base):
 Esta clase representa una muestra acústica agregada por ciclo de grabación.
 No equivale a una detección de ave: guarda métricas del paisaje sonoro aunque no haya detecciones.
 '''
+class LearningRule(Base):
+    __tablename__ = "learning_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    original_species = Column(String, nullable=False, index=True)
+    learned_status = Column(String, nullable=False, index=True)
+    corrected_species = Column(String, nullable=True, index=True)
+
+    min_confidence = Column(Float, nullable=False, default=0.0)
+    max_confidence = Column(Float, nullable=False, default=1.0)
+    min_amplitude = Column(Float, nullable=True)
+    max_amplitude = Column(Float, nullable=True)
+
+    support_count = Column(Integer, nullable=False, default=0)
+    active = Column(Boolean, nullable=False, default=False, index=True)
+    auto_apply = Column(Boolean, nullable=False, default=False, index=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    device = relationship("Device")
+    examples = relationship(
+        "LearningExample",
+        back_populates="rule",
+        cascade="all, delete-orphan"
+    )
+
+class LearningExample(Base):
+    __tablename__ = "learning_examples"
+    __table_args__ = (
+        UniqueConstraint("detection_id", name="uq_learning_example_detection_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    detection_id = Column(
+        Integer,
+        ForeignKey("detections.id"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+    rule_id = Column(Integer, ForeignKey("learning_rules.id"), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+
+    original_species = Column(String, nullable=False, index=True)
+    learned_status = Column(String, nullable=False, index=True)
+    corrected_species = Column(String, nullable=True, index=True)
+    confidence = Column(Float, nullable=False)
+    amplitude = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    detection = relationship("Detection")
+    device = relationship("Device")
+    rule = relationship("LearningRule", back_populates="examples")
+
 class AudioMetric(Base):
     __tablename__ = "audio_metrics"
     __table_args__ = (
