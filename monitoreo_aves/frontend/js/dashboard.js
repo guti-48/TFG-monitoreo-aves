@@ -12,16 +12,17 @@ const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 // Stream HLS servido por MediaMTX. Por defecto usa el mismo hostname del
 // dashboard, pero se puede sobrescribir con window.BIRDMONITOR_CONFIG.
 const BIRDMONITOR_CONFIG = window.BIRDMONITOR_CONFIG || {};
-const STREAM_NAME = BIRDMONITOR_CONFIG.streamName || "birdmonitor-audio";
+const DEFAULT_STREAM_NODE_NAME = BIRDMONITOR_CONFIG.streamNodeName || "birdmonitor";
+const DEFAULT_STREAM_PATH = BIRDMONITOR_CONFIG.streamName || `${DEFAULT_STREAM_NODE_NAME}-audio`;
 const MEDIAMTX_HLS_PORT = BIRDMONITOR_CONFIG.mediaMtxHlsPort || 8888;
 const LIVE_STREAM_BASE_URL = (
     BIRDMONITOR_CONFIG.liveStreamBaseUrl ||
     `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}`
 ).replace(/\/$/, "");
-const LIVE_STREAM_URL = `${LIVE_STREAM_BASE_URL}/${STREAM_NAME}/index.m3u8`;
-const LIVE_STREAM_PAGE_URL = `${LIVE_STREAM_BASE_URL}/${STREAM_NAME}/`;
 const STREAM_CONTROL_URL = "/stream/control";
-const STREAM_NODE_NAME = BIRDMONITOR_CONFIG.streamNodeName || "birdmonitor";
+let selectedStreamNodeName = DEFAULT_STREAM_NODE_NAME;
+let selectedStreamPath = DEFAULT_STREAM_PATH;
+let selectedStreamPathIsCustom = false;
 
 
 let hlsInstance = null;
@@ -41,6 +42,59 @@ let streamStatusTimer = null;
 let lastStreamData = null;
 let currentScienceReport = [];
 const detectionCache = new Map();
+
+function slugifyStreamValue(value) {
+    const clean = String(value || '').trim().replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+    return clean || 'birdmonitor';
+}
+
+function normalizeStreamPath(value) {
+    const clean = String(value || '').trim().replace(/^\/+|\/+$/g, '').replace(/[^A-Za-z0-9_./-]+/g, '-').replace(/\/+$/g, '');
+    return clean || 'birdmonitor-audio';
+}
+
+function streamPathForNode(nodeName) {
+    if (BIRDMONITOR_CONFIG.streamName && nodeName === DEFAULT_STREAM_NODE_NAME) {
+        return normalizeStreamPath(BIRDMONITOR_CONFIG.streamName);
+    }
+
+    return `${slugifyStreamValue(nodeName)}-audio`;
+}
+
+function getLiveStreamPageUrl() {
+    return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/`;
+}
+
+function getCurrentHlsUrl() {
+    if (!selectedStreamPathIsCustom && lastStreamData && lastStreamData.node_name === selectedStreamNodeName && lastStreamData.hls_url) {
+        return lastStreamData.hls_url;
+    }
+
+    return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/index.m3u8`;
+}
+
+async function fetchDevices() {
+    const response = await fetch(`/devices/?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+}
+
+function updateLiveStreamLabels(data = null) {
+    const streamPath = normalizeStreamPath((data && data.stream_path) || selectedStreamPath);
+    const hlsUrl = (data && data.hls_url) || getCurrentHlsUrl();
+
+    const title = document.getElementById('live-stream-title');
+    const hlsLabel = document.getElementById('live-hls-url');
+    const pathInput = document.getElementById('live-stream-path-input');
+    const nodeSelect = document.getElementById('live-node-select');
+
+    if (title) title.textContent = streamPath;
+    if (hlsLabel) hlsLabel.textContent = hlsUrl;
+    if (pathInput && pathInput.value !== streamPath) pathInput.value = streamPath;
+    if (nodeSelect && nodeSelect.value !== selectedStreamNodeName) nodeSelect.value = selectedStreamNodeName;
+}
 
 function cacheDetections(detections) {
     detections.forEach(detection => detectionCache.set(detection.id, detection));
@@ -122,15 +176,28 @@ function renderLiveStreamView(container) {
                                 </div>
                                 <div class="min-w-0">
                                     <p class="text-muted small text-uppercase fw-bold mb-1">Escucha en directo</p>
-                                    <h4 class="fw-bold text-white mb-1">${STREAM_NAME}</h4>
+                                    <h4 class="fw-bold text-white mb-1"><span id="live-stream-title">${escapeHtml(selectedStreamPath)}</span></h4>
                                     <p class="text-muted mb-0 small">
-                                        <span id="live-hls-url" class="font-monospace">${LIVE_STREAM_URL}</span>
+                                        <span id="live-hls-url" class="font-monospace">${escapeHtml(getCurrentHlsUrl())}</span>
                                     </p>
                                 </div>
                             </div>
                             <span id="live-stream-status" class="badge bg-secondary px-3 py-2">
                                 <i class="bi bi-circle-fill me-1"></i>Consultando...
                             </span>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label for="live-node-select" class="form-label text-muted small mb-1">Nodo</label>
+                                <select id="live-node-select" class="form-select bg-dark text-white border-secondary" onchange="handleLiveNodeChange(this.value)">
+                                    <option value="${escapeHtml(selectedStreamNodeName)}">${escapeHtml(selectedStreamNodeName)}</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="live-stream-path-input" class="form-label text-muted small mb-1">Path MediaMTX</label>
+                                <input id="live-stream-path-input" class="form-control bg-dark text-white border-secondary" value="${escapeHtml(selectedStreamPath)}" onchange="handleLiveStreamPathChange(this.value)">
+                            </div>
                         </div>
 
                         <div class="live-player-shell">
@@ -171,7 +238,7 @@ function renderLiveStreamView(container) {
             </div>
         </div>`;
 
-    refreshLiveStreamControlStatus();
+    populateLiveNodeSelector().finally(() => refreshLiveStreamControlStatus());
 
     streamStatusTimer = setInterval(() => {
         if (currentView === 'live') {
@@ -209,9 +276,55 @@ function setLiveStreamMessage(text, isError = false) {
     message.textContent = text;
 }
 
+async function populateLiveNodeSelector() {
+    const select = document.getElementById('live-node-select');
+    if (!select) return;
+
+    try {
+        const devices = await fetchDevices();
+        const names = devices
+            .map(device => String(device.name || '').trim())
+            .filter(Boolean);
+
+        if (!BIRDMONITOR_CONFIG.streamNodeName && names.length > 0 && !names.includes(selectedStreamNodeName)) {
+            selectedStreamNodeName = names[0];
+            selectedStreamPath = streamPathForNode(selectedStreamNodeName);
+            selectedStreamPathIsCustom = false;
+            lastStreamData = null;
+        }
+
+        const options = [...new Set([selectedStreamNodeName, ...names])];
+        select.innerHTML = options
+            .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+            .join('');
+        select.value = selectedStreamNodeName;
+        updateLiveStreamLabels();
+    } catch (e) {
+        setLiveStreamMessage(`No se pudieron cargar los nodos registrados: ${e.message}`, true);
+    }
+}
+
+function handleLiveNodeChange(nodeName) {
+    selectedStreamNodeName = String(nodeName || DEFAULT_STREAM_NODE_NAME).trim() || DEFAULT_STREAM_NODE_NAME;
+    selectedStreamPath = streamPathForNode(selectedStreamNodeName);
+    selectedStreamPathIsCustom = false;
+    lastStreamData = null;
+    stopLiveStreamPlayer();
+    updateLiveStreamLabels();
+    refreshLiveStreamControlStatus();
+}
+
+function handleLiveStreamPathChange(streamPath) {
+    selectedStreamPath = normalizeStreamPath(streamPath);
+    selectedStreamPathIsCustom = true;
+    lastStreamData = null;
+    stopLiveStreamPlayer();
+    updateLiveStreamLabels();
+}
+
 async function fetchLiveStreamControlStatus() {
     const response = await fetch(
-        `${STREAM_CONTROL_URL}?node_name=${encodeURIComponent(STREAM_NODE_NAME)}&t=${Date.now()}`,
+        `${STREAM_CONTROL_URL}?node_name=${encodeURIComponent(selectedStreamNodeName)}&t=${Date.now()}`,
         { cache: 'no-store' }
     );
 
@@ -227,8 +340,14 @@ async function refreshLiveStreamControlStatus() {
         const data = await fetchLiveStreamControlStatus();
         lastStreamData = data;
 
-        const hlsUrl = LIVE_STREAM_URL;
-        const pageUrl = data.page_url || LIVE_STREAM_PAGE_URL;
+        if (data.node_name) selectedStreamNodeName = data.node_name;
+        if (data.stream_path && !selectedStreamPathIsCustom) {
+            selectedStreamPath = normalizeStreamPath(data.stream_path);
+        }
+
+        const hlsUrl = selectedStreamPathIsCustom ? getCurrentHlsUrl() : (data.hls_url || getCurrentHlsUrl());
+        const pageUrl = selectedStreamPathIsCustom ? getLiveStreamPageUrl() : (data.page_url || getLiveStreamPageUrl());
+        updateLiveStreamLabels(selectedStreamPathIsCustom ? null : data);
 
         const hlsLabel = document.getElementById('live-hls-url');
         const directLink = document.getElementById('live-stream-page-link');
@@ -286,8 +405,9 @@ async function setLiveStreamEnabled(enabled) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                node_name: STREAM_NODE_NAME,
-                stream_enabled: enabled
+                node_name: selectedStreamNodeName,
+                stream_enabled: enabled,
+                stream_path: selectedStreamPath
             })
         });
 
@@ -296,6 +416,7 @@ async function setLiveStreamEnabled(enabled) {
         }
 
         lastStreamData = await response.json();
+        selectedStreamPathIsCustom = false;
         await refreshLiveStreamControlStatus();
 
         if (enabled) {
@@ -313,10 +434,6 @@ async function setLiveStreamEnabled(enabled) {
         setLiveStreamStatus('offline', 'Error');
         setLiveStreamMessage(`No se pudo cambiar el estado del streaming: ${e.message}`, true);
     }
-}
-
-function getCurrentHlsUrl() {
-    return LIVE_STREAM_URL;
 }
 
 function initLiveStreamPlayer(autoplay = false) {

@@ -4,6 +4,37 @@ import subprocess
 import requests
 from datetime import datetime
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_ENV_FILE = os.path.join(CURRENT_DIR, "birdmonitor.env")
+
+
+def cargarEnvLocal(path):
+    """Carga variables KEY=VALUE desde un archivo local sin pisar el entorno real."""
+    if not os.path.isfile(path):
+        return
+
+    try:
+        with open(path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+
+                if key:
+                    os.environ.setdefault(key, value)
+    except Exception as e:
+        print(f"No se pudo cargar configuracion local {path}: {e}")
+
+cargarEnvLocal(LOCAL_ENV_FILE)
+
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
 SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
 

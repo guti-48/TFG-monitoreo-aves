@@ -7,8 +7,13 @@ import '../widgets/app_ui.dart';
 
 class LiveStreamScreen extends StatefulWidget {
   final String baseUrl;
+  final String nodeName;
 
-  const LiveStreamScreen({super.key, required this.baseUrl});
+  const LiveStreamScreen({
+    super.key,
+    required this.baseUrl,
+    this.nodeName = 'birdmonitor',
+  });
 
   @override
   State<LiveStreamScreen> createState() => _LiveStreamScreenState();
@@ -33,7 +38,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
   void initState() {
     super.initState();
     api = ApiService(widget.baseUrl);
-    hlsUrl = api.getHlsUrl();
+    hlsUrl = api.getHlsUrl(streamPath: _streamPathForNode(widget.nodeName));
     _loadStatus();
   }
 
@@ -50,7 +55,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     });
 
     try {
-      final status = await api.getStreamStatus();
+      final status = await api.getStreamStatus(nodeName: widget.nodeName);
 
       final backendHlsUrl = status['hls_url']?.toString();
       final backendPageUrl = status['page_url']?.toString();
@@ -87,7 +92,11 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
     });
 
     try {
-      await api.setStreamEnabled(enabled);
+      await api.setStreamEnabled(
+        enabled,
+        nodeName: widget.nodeName,
+        streamPath: _streamPathForNode(widget.nodeName),
+      );
       await _loadStatus();
     } catch (e) {
       if (!mounted) return;
@@ -146,6 +155,15 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         playerDetails = e.toString();
       });
     }
+  }
+
+  String _streamPathForNode(String nodeName) {
+    final cleanName = nodeName
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9_.-]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+
+    return '${cleanName.isEmpty ? 'birdmonitor' : cleanName}-audio';
   }
 
   String _readValue(List<String> keys) {
@@ -498,7 +516,7 @@ class _LiveStreamScreenState extends State<LiveStreamScreen> {
         AppHeaderPanel(
           icon: Icons.headphones,
           title: 'Escucha en directo',
-          subtitle: 'Control simple del stream de la estacion.',
+          subtitle: 'Nodo: ${widget.nodeName}',
           trailing: IconButton(
             tooltip: 'Actualizar estado',
             onPressed: _loadStatus,

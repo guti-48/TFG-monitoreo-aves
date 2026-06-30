@@ -18,3 +18,9 @@ hardware/raspberry_pi/spectrograms/
 hardware/raspberry_pi/birdmonitor.env
 hardware/raspberry_pi/birdweather_token
 hardware/raspberry_pi/birdweather_token.txt
+tools/mediamtx/macos/mediamtx
+tools/mediamtx/mediamtx.exe
+tools/mediamtx/auto.crt
+tools/mediamtx/auto.key
+tools/mediamtx/mediamtx.log
+tools/mediamtx/*.tar.gz

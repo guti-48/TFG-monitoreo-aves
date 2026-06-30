@@ -4,11 +4,61 @@ Este proyecto consiste en el diseño, desarrollo e implementación de un sistema
 
 El sistema utiliza nodos de computación en el borde (Edge Computing) basados en Raspberry Pi para procesar audio en tiempo real, implementando una arquitectura híbrida que permite el almacenamiento local de datos científicos (incluyendo análisis de contaminación acústica) y la contribución simultánea a redes de ciencia ciudadana (BirdWeather).
 
-## Arranque rapido multiplataforma
+## Guia de instalacion y configuracion
 
-El servidor central puede ejecutarse en Windows, macOS o Linux. El nodo Raspberry debe apuntar a la URL real de ese servidor central mediante IP LAN o Tailscale.
+El proyecto queda preparado para clonarse y ejecutarse con un servidor central en Windows o macOS. La Raspberry Pi actua como nodo Edge y debe apuntar a la IP real del servidor central, normalmente una IP LAN o una IP/hostname de Tailscale.
 
-### Instalacion base
+### Arquitectura de despliegue
+
+```text
+Raspberry Pi / nodos Edge  --->  Servidor central Windows o macOS  --->  Dashboard web / app movil
+        mainNode.py                  FastAPI :8000                         http://IP_SERVIDOR:8000
+        supervisor.py                MediaMTX :8888                        HLS :8888
+        birdstream.service
+```
+
+Reglas importantes de red:
+
+* `127.0.0.1` y `localhost` solo sirven desde la misma maquina.
+* El servidor escucha en `0.0.0.0`; normalmente no tienes que escribir su propia IP en el backend.
+* Desde la Raspberry, la app movil u otro ordenador, usa la IP LAN o Tailscale del servidor.
+* Si cambias el servidor de Windows a Mac, cambia la IP en la Raspberry y en la app movil, no en todos los archivos del backend.
+* Varios clientes pueden abrir el mismo dashboard a la vez: Mac, Windows, movil o tablet solo necesitan entrar a `http://IP_DEL_SERVIDOR:8000`.
+
+### Servidor central y clientes
+
+La Raspberry no necesita saber desde que ordenador vas a mirar el dashboard. La Raspberry solo envia datos y consulta ordenes en el **servidor central** configurado en `BIRDMONITOR_SERVER_URL`.
+
+Ejemplos:
+
+```text
+Raspberry -> http://100.80.10.25:8000      # servidor central por Tailscale
+Mac       -> http://100.80.10.25:8000      # cliente viendo el dashboard
+Windows   -> http://100.80.10.25:8000      # otro cliente viendo el mismo dashboard
+Movil     -> http://100.80.10.25:8000      # app o navegador
+```
+
+Si el servidor central es el Mac, Windows tambien puede entrar al dashboard del Mac. Si el servidor central es Windows, el Mac puede entrar al dashboard de Windows. Lo importante es que todos apunten al mismo backend si quieres ver la misma base de datos y controlar la misma Raspberry.
+
+No hace falta cambiar el codigo visual para esto. La URL se introduce en el navegador o en la pantalla de conexion de la app movil.
+
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/guti-48/TFG-monitoreo-aves.git
+cd TFG-monitoreo-aves/monitoreo_aves
+```
+
+En macOS se recomienda clonar o mover el repositorio fuera de `Desktop`, `Documents` o `Downloads`, porque los `LaunchAgent` pueden no tener permiso para leer esas carpetas. Una ruta recomendada es:
+
+```bash
+mkdir -p ~/Projects
+cd ~/Projects
+git clone https://github.com/guti-48/TFG-monitoreo-aves.git
+cd TFG-monitoreo-aves/monitoreo_aves
+```
+
+### 2. Crear entorno virtual e instalar dependencias
 
 Windows PowerShell:
 
@@ -16,7 +66,6 @@ Windows PowerShell:
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 macOS o Linux:
@@ -25,61 +74,287 @@ macOS o Linux:
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-El dashboard queda en `http://localhost:8000`. Desde otro ordenador o movil se debe usar `http://IP_DEL_SERVIDOR:8000`.
+### 3. Colocar MediaMTX
 
-### HLS y MediaMTX
-
-BirdMonitor espera MediaMTX en el puerto `8888` y el stream HLS en:
+MediaMTX no debe subirse a Git como binario. Cada persona debe descargar el binario de su sistema y colocarlo en la ruta esperada:
 
 ```text
-http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+monitoreo_aves/
+└── tools/
+    └── mediamtx/
+        ├── mediamtx.yml
+        ├── mediamtx.exe              # Windows
+        └── macos/
+            └── mediamtx              # macOS darwin
 ```
 
-El dashboard web construye esa URL de forma dinamica con el mismo hostname desde el que se abre. Si entras desde un Mac a `http://192.168.1.50:8000`, el reproductor intentara usar `http://192.168.1.50:8888/birdmonitor-audio/index.m3u8`.
+El archivo `tools/mediamtx/mediamtx.yml` sí forma parte de la configuracion del proyecto. Los binarios, logs y claves generadas quedan ignorados por `.gitignore`.
 
-En macOS, con `mediamtx` disponible en el `PATH` o en `tools/mediamtx/mediamtx`, puedes arrancar backend y MediaMTX juntos con:
+Si macOS bloquea el binario descargado, se puede quitar la cuarentena localmente:
 
 ```bash
-bash scripts/macos/start_birdmonitor_macos.sh
+xattr -dr com.apple.quarantine tools/mediamtx/macos/mediamtx
+chmod +x tools/mediamtx/macos/mediamtx
 ```
 
-Si el `mediamtx.yml` esta en otra ruta:
+### 4. Donde cambiar IPs, nodos y rutas
 
-```bash
-MEDIAMTX_CONFIG=/ruta/a/mediamtx.yml bash scripts/macos/start_birdmonitor_macos.sh
-```
+La IP que normalmente hay que cambiar es la del servidor central vista desde cada cliente o nodo.
 
-### Variables que debe revisar cada persona
-
-| Variable | Donde se usa | Valor de ejemplo |
+| Caso | Donde se configura | Que poner |
 | --- | --- | --- |
-| `BIRDMONITOR_SERVER_URL` | Raspberry (`mainNode.py` y `supervisor.py`) | `http://IP_DEL_SERVIDOR:8000` |
-| `BIRDMONITOR_STREAM_BASE_URL` | Backend, si MediaMTX no usa el mismo host que el dashboard | `http://IP_DEL_SERVIDOR:8888` |
-| `BIRDMONITOR_STREAM_PATH` | Backend/dashboard HLS | `birdmonitor-audio` |
-| `BIRDMONITOR_CORS_ORIGINS` | Backend, si una app web se sirve desde otro origen | `http://IP_DEL_SERVIDOR:8000,http://localhost:8000` |
-| `BIRDMONITOR_NODE_NAME` | Raspberry y control de escucha | `birdmonitor` |
-| `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Ubicacion real del nodo | `Sevilla`, `37.3891`, `-5.9845` |
+| Raspberry envia detecciones al servidor | Variable `BIRDMONITOR_SERVER_URL`, usada por `hardware/raspberry_pi/mainNode.py` y `hardware/raspberry_pi/supervisor.py` | `http://IP_DEL_SERVIDOR:8000` |
+| Nombre de cada Raspberry/nodo | `BIRDMONITOR_NODE_NAME` | Un nombre unico por nodo, por ejemplo `birdmonitor-norte`, `birdmonitor-sur` |
+| Ubicacion del nodo | `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Lugar y coordenadas reales del nodo |
+| Microfono en Raspberry | `BIRDMONITOR_MIC_DEVICE` | Indice del dispositivo de entrada si no quieres usar el predeterminado |
+| Servicio de streaming de la Raspberry | Archivo o servicio `birdstream.service` que publique audio hacia MediaMTX | Debe apuntar a la IP del servidor y al path HLS/MediaMTX elegido, normalmente `birdmonitor-audio` |
+| Dashboard web | Normalmente no se edita: `frontend/js/dashboard.js` carga `/devices/` y permite seleccionar nodo y path MediaMTX desde la vista de directo | Si entras en `http://IP_SERVIDOR:8000`, usara `http://IP_SERVIDOR:8888` |
+| Dashboard con MediaMTX en otro host/puerto | `frontend/index.html`, antes de cargar `frontend/js/dashboard.js`, definiendo `window.BIRDMONITOR_CONFIG` | `liveStreamBaseUrl`, `streamName`, `streamNodeName` |
+| Backend si MediaMTX no esta en el mismo host | Variables de entorno usadas por `backend/app/main.py` | `BIRDMONITOR_STREAM_BASE_URL`, `BIRDMONITOR_STREAM_PATH` |
+| App movil | Pantalla de conexion de la app | `http://IP_DEL_SERVIDOR:8000`; no usar `127.0.0.1` en un movil real |
 
-Regla rapida:
+Ejemplo para una Raspberry que apunta a un Mac por Tailscale:
 
-* `127.0.0.1` o `localhost` solo valen para la misma maquina.
-* Desde un Mac hacia un servidor Windows, usa `http://IP_DEL_WINDOWS:8000`.
-* Desde un movil real, usa IP LAN o Tailscale; nunca `127.0.0.1`.
-* Desde la Raspberry, `BIRDMONITOR_SERVER_URL` debe apuntar al servidor central, no a la propia Raspberry.
+```bash
+export BIRDMONITOR_SERVER_URL="http://100.80.10.25:8000"
+export BIRDMONITOR_NODE_NAME="birdmonitor-maceta-01"
+export BIRDMONITOR_NODE_LOCATION="Sevilla"
+export BIRDMONITOR_NODE_LAT="37.3891"
+export BIRDMONITOR_NODE_LON="-5.9845"
+```
 
-Si MediaMTX vive en otro host o puerto, define `BIRDMONITOR_STREAM_BASE_URL` en el entorno del backend. En casos especiales del dashboard tambien puedes exponer antes de `dashboard.js`:
+Si usas varios dispositivos, repite la misma URL del servidor y cambia al menos `BIRDMONITOR_NODE_NAME` y la ubicacion de cada Raspberry. El backend guarda los dispositivos por nombre, separa detecciones por nodo y mantiene el estado de streaming por `node_name`.
+
+Puedes tener Windows y macOS encendidos a la vez, pero conviene elegir uno como servidor central para que la base de datos, el dashboard y MediaMTX sean los mismos. Si arrancas dos servidores centrales independientes, cada uno tendra su propia base de datos y las Raspberry tendran que apuntar a uno u otro mediante `BIRDMONITOR_SERVER_URL`.
+
+Para el directo HLS de varios nodos, cada stream debe tener un path distinto en MediaMTX. El backend genera por defecto `{node_name}-audio`, por ejemplo:
+
+```text
+birdmonitor-audio-norte
+birdmonitor-audio-sur
+```
+
+La vista web carga los nodos registrados y permite seleccionar el nodo y el path de MediaMTX desde la pantalla de escucha en directo. Si quieres fijar un valor por defecto sin tocar `dashboard.js`, puedes definir antes de cargar el script:
 
 ```html
 <script>
 window.BIRDMONITOR_CONFIG = {
   liveStreamBaseUrl: "http://IP_DEL_SERVIDOR:8888",
-  streamName: "birdmonitor-audio",
-  streamNodeName: "birdmonitor"
+  streamName: "birdmonitor-audio-norte",
+  streamNodeName: "birdmonitor-norte"
 };
 </script>
+```
+
+### 5. Instalacion automatica en Windows
+
+Requisitos:
+
+* PowerShell abierto como administrador.
+* Entorno virtual creado en `monitoreo_aves/venv`.
+* Dependencias instaladas con `pip install -r requirements.txt`.
+* `tools/mediamtx/mediamtx.exe` y `tools/mediamtx/mediamtx.yml` disponibles.
+
+Instalar y arrancar servicios:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\install_birdmonitor_windows.ps1
+```
+
+El instalador:
+
+* Detecta la ruta del proyecto.
+* Busca `mediamtx.exe` y `mediamtx.yml`.
+* Crea scripts internos en `%LOCALAPPDATA%\BirdMonitor`.
+* Crea las tareas programadas `BirdMonitor MediaMTX` y `BirdMonitor Backend`.
+* Arranca MediaMTX en `8888` y FastAPI en `8000`.
+
+Comprobar estado:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
+```
+
+Desinstalar automatizacion:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\uninstall_birdmonitor_windows.ps1
+```
+
+Esto elimina las tareas programadas y detiene procesos, pero no borra el repositorio ni la base de datos.
+
+### 6. Instalacion automatica en macOS
+
+Requisitos:
+
+* Repositorio fuera de `Desktop`, `Documents` y `Downloads`, por ejemplo en `~/Projects`.
+* Entorno virtual creado en `monitoreo_aves/venv`.
+* Dependencias instaladas con `pip install -r requirements.txt`.
+* `tools/mediamtx/macos/mediamtx` y `tools/mediamtx/mediamtx.yml` disponibles.
+
+Instalar y arrancar servicios:
+
+```bash
+bash scripts/macos/install_birdmonitor_macos.sh
+```
+
+El instalador crea este `LaunchAgent` de usuario:
+
+```text
+~/Library/LaunchAgents/com.birdmonitor.services.plist
+```
+
+Tambien deja logs en:
+
+```text
+~/Library/Application Support/BirdMonitor
+```
+
+Comprobar estado:
+
+```bash
+bash scripts/macos/check_birdmonitor_macos.sh
+```
+
+Desinstalar automatizacion:
+
+```bash
+bash scripts/macos/uninstall_birdmonitor_macos.sh
+```
+
+Esto elimina el `LaunchAgent` y detiene procesos, pero no borra el repositorio, MediaMTX ni los logs.
+
+### 7. Arranque manual para desarrollo
+
+Si no quieres instalar automatizacion, puedes arrancar el backend y MediaMTX manualmente.
+
+macOS:
+
+```bash
+bash scripts/macos/start_birdmonitor_macos.sh
+```
+
+Windows o cualquier sistema con el entorno activo:
+
+```bash
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+En manual, si MediaMTX no esta arrancado, el dashboard abrira pero el directo HLS no estara disponible.
+
+### 8. Acceso al dashboard y al stream
+
+Desde el propio servidor:
+
+```text
+http://127.0.0.1:8000
+```
+
+Desde otro ordenador, movil o Raspberry en LAN/Tailscale:
+
+```text
+http://IP_DEL_SERVIDOR:8000
+```
+
+Stream HLS esperado:
+
+```text
+http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+```
+
+En la app movil, introduce la URL del backend en la pantalla de conexion. Ejemplo:
+
+```text
+http://100.80.10.25:8000
+```
+
+### 9. Raspberry Pi y varios nodos
+
+Para pruebas manuales en Raspberry:
+
+```bash
+cd ~/birdmonitor/monitoreo_aves/hardware/raspberry_pi
+source ~/birdmonitor/birdnet-env/bin/activate
+export BIRDMONITOR_SERVER_URL="http://IP_DEL_SERVIDOR:8000"
+export BIRDMONITOR_NODE_NAME="birdmonitor-01"
+python mainNode.py
+```
+
+El supervisor del directo usa las mismas variables:
+
+```bash
+export BIRDMONITOR_SERVER_URL="http://IP_DEL_SERVIDOR:8000"
+export BIRDMONITOR_NODE_NAME="birdmonitor-01"
+python supervisor.py
+```
+
+En despliegue real, estas variables pueden quedar en el servicio `systemd` mediante `Environment=` o `EnvironmentFile=`. Ademas, `mainNode.py` y `supervisor.py` cargan automaticamente un archivo local llamado `hardware/raspberry_pi/birdmonitor.env` si existe.
+
+Ese archivo esta ignorado por Git para que cada Raspberry pueda tener su propia configuracion sin tocar codigo. Hay una plantilla versionada en:
+
+```text
+hardware/raspberry_pi/birdmonitor.env.example
+```
+
+Para configurar una Raspberry:
+
+```bash
+cd hardware/raspberry_pi
+cp birdmonitor.env.example birdmonitor.env
+nano birdmonitor.env
+```
+
+Ejemplo de variables para `birdmonitor.env`:
+
+```bash
+BIRDMONITOR_SERVER_URL=http://IP_DEL_SERVIDOR:8000
+BIRDMONITOR_NODE_NAME=birdmonitor-01
+BIRDMONITOR_NODE_LOCATION=Sevilla
+BIRDMONITOR_NODE_LAT=37.3891
+BIRDMONITOR_NODE_LON=-5.9845
+BIRDMONITOR_MIC_DEVICE=1
+```
+
+Comandos utiles con `systemd`:
+
+```bash
+sudo systemctl start birdmonitor.service
+sudo systemctl status birdmonitor.service
+journalctl -u birdmonitor.service -f
+
+sudo systemctl start birdstream.service
+sudo systemctl status birdstream.service
+journalctl -u birdstream.service -f
+```
+
+### 10. Comprobaciones rapidas
+
+Windows:
+
+```powershell
+netstat -ano | findstr :8000
+netstat -ano | findstr :8888
+```
+
+macOS:
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+lsof -nP -iTCP:8888 -sTCP:LISTEN
+```
+
+Backend:
+
+```text
+http://127.0.0.1:8000/devices/
+```
+
+HLS:
+
+```text
+http://127.0.0.1:8888/birdmonitor-audio/index.m3u8
 ```
 
 ## Estado del Proyecto
@@ -144,243 +419,6 @@ Interfaz gráfica para la visualización de telemetría y gestión de histórico
 * **Estilado:** Bootstrap 5.
 * **Visualización de Datos:** Chart.js.
 
-## Guia de Despliegue
-
-El sistema se despliega con una arquitectura unificada: el backend FastAPI sirve tanto la API REST como el dashboard web mediante archivos estáticos. Por tanto, no es necesario levantar un servidor independiente para el frontend.
-
-El servidor central puede ejecutarse en Windows, macOS o Linux. El nodo Edge se ejecuta en Raspberry Pi OS Lite y debe apuntar a la URL real del servidor central, normalmente una IP LAN o una IP/hostname de Tailscale.
-
-1. Crear y activar el entorno virtual dentro de la carpeta `monitoreo_aves`.
-
-Para Windows PowerShell:
-
-```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-```
-
-Para macOS o Linux:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-2. Para instalar las dependencias deberemos ejecutar:
-
-```bash
-    pip install -r requirements.txt
-```
-
-3. Ejecutar el servidor central desde la carpeta `monitoreo_aves`:
-
-```bash
-    uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-El dashboard queda disponible en:
-
-```text
-http://localhost:8000
-```
-
-Y desde otro dispositivo, mediante la IP LAN o Tailscale del servidor:
-
-```text
-http://XXX.XXX.XXX:8000
-```
-
-4. La base de datos SQLite se genera automáticamente si no existe. Solo debe eliminarse manualmente en caso de querer reiniciar completamente los datos históricos durante pruebas de desarrollo.
-
-### Despliegue Automático en Windows
-
-Para facilitar el uso del sistema sin depender de terminales abiertas, el proyecto incluye scripts de automatización para Windows. Estos scripts permiten configurar el arranque automático de los servicios necesarios en el servidor central:
-
-* Backend FastAPI en el puerto `8000`.
-* MediaMTX en el puerto `8888`, encargado de servir el stream HLS de audio en directo.
-
-De esta forma, una vez configurado, el usuario solo necesita encender el ordenador servidor y abrir la app móvil o el dashboard web. No es necesario lanzar manualmente `uvicorn` ni `mediamtx` desde terminal.
-
-#### Requisitos Previos
-
-Antes de ejecutar los scripts, deben cumplirse estas condiciones:
-
-* Tener Python instalado.
-* Tener creado el entorno virtual del proyecto.
-* Tener instaladas las dependencias con:
-
-```bash
-pip install -r requirements.txt
-```
-
-* Tener disponible `mediamtx.exe`.
-* Tener disponible el archivo de configuración `mediamtx.yml`.
-
-Se recomienda colocar MediaMTX dentro del repositorio en la siguiente ruta:
-
-```text
-monitoreo_aves/
-└── tools/
-    └── mediamtx/
-        ├── mediamtx.exe
-        └── mediamtx.yml
-```
-
-Si MediaMTX no se encuentra en esa ubicación, el script de instalación solicitará manualmente la ruta completa de `mediamtx.exe` y `mediamtx.yml`.
-
-#### Scripts Disponibles
-
-Los scripts se encuentran en:
-
-```text
-scripts/windows/
-```
-
-Estructura:
-
-```text
-scripts/
-└── windows/
-    ├── install_birdmonitor_windows.ps1
-    ├── check_birdmonitor_windows.ps1
-    └── uninstall_birdmonitor_windows.ps1
-```
-
-#### Instalación Automática
-
-Para configurar el arranque automático, abrir **PowerShell como administrador** desde la raíz del repositorio y ejecutar:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\install_birdmonitor_windows.ps1
-```
-
-Este script realiza las siguientes acciones:
-
-* Detecta automáticamente la ruta del repositorio.
-* Comprueba que existe `backend/app/main.py`.
-* Busca `mediamtx.exe` y `mediamtx.yml`.
-* Crea scripts internos de arranque en:
-
-```text
-%LOCALAPPDATA%\BirdMonitor
-```
-
-* Crea una tarea programada para MediaMTX:
-
-```text
-BirdMonitor MediaMTX
-```
-
-* Crea una tarea programada para el backend FastAPI:
-
-```text
-BirdMonitor Backend
-```
-
-* Arranca ambos servicios.
-* Comprueba que los puertos `8000` y `8888` están activos.
-
-Una vez instalado, los servicios se iniciarán automáticamente al iniciar sesión en Windows.
-
-#### Comprobación del Estado
-
-Para comprobar que el sistema está funcionando correctamente:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
-```
-
-Este script comprueba:
-
-* Si MediaMTX está en ejecución.
-* Si el puerto `8888` está escuchando.
-* Si el backend está escuchando en el puerto `8000`.
-* El estado de las tareas programadas.
-* Si el endpoint `/devices/` responde correctamente.
-
-También muestra la ubicación de los logs generados:
-
-```text
-%LOCALAPPDATA%\BirdMonitor
-```
-
-#### Desinstalación de las Tareas Automáticas
-
-Para eliminar las tareas programadas y detener MediaMTX:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\uninstall_birdmonitor_windows.ps1
-```
-
-Este script elimina:
-
-```text
-BirdMonitor MediaMTX
-BirdMonitor Backend
-```
-
-y detiene el proceso `mediamtx.exe` si está activo.
-
-No elimina el repositorio, la base de datos ni los archivos de configuración.
-
-#### Comprobación Manual de Puertos
-
-También se puede comprobar manualmente desde PowerShell:
-
-```powershell
-netstat -ano | findstr :8000
-netstat -ano | findstr :8888
-```
-
-Resultado esperado:
-
-```text
-0.0.0.0:8000   LISTENING
-0.0.0.0:8888   LISTENING
-```
-
-#### Acceso al Sistema
-
-Una vez activos los servicios, el dashboard web queda disponible en:
-
-```text
-http://localhost:8000
-```
-
-Desde otro dispositivo en la misma red o mediante Tailscale:
-
-```text
-http://IP_DEL_SERVIDOR:8000
-```
-
-El stream HLS queda disponible en:
-
-```text
-http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
-```
-
-La app móvil debe configurarse con la IP LAN o Tailscale del servidor. No debe usarse `127.0.0.1` desde un móvil real, ya que esa dirección apunta al propio dispositivo móvil.
-
-### Ejecución del Nodo Edge en Raspberry Pi
-
-En la Raspberry Pi, el nodo puede ejecutarse manualmente para pruebas:
-
-```bash
-cd ~/birdmonitor/monitoreo_aves/hardware/raspberry_pi
-source ~/birdmonitor/birdnet-env/bin/activate
-python mainNode.py
-```
-
-En despliegue real, el nodo se ejecuta como servicio `systemd`:
-
-```bash
-sudo systemctl start birdmonitor.service
-sudo systemctl status birdmonitor.service
-journalctl -u birdmonitor.service -f
-```
-
-El nodo envía las detecciones al servidor central definido en `SERVER_URL`, actualmente configurado con la IP de Tailscale del servidor Windows.
-
 ## Acceso Remoto al Nodo Edge (vía SSH)
 
 En un entorno de producción, la Raspberry Pi operará de forma autónoma (Headless) en la naturaleza o en ubicaciones de difícil acceso. Para gestionar el código, revisar los logs en tiempo real o reiniciar servicios sin necesidad de conectar periféricos físicos, se utiliza el protocolo SSH.
@@ -390,6 +428,16 @@ En un entorno de producción, la Raspberry Pi operará de forma autónoma (Headl
 1. **Abre una terminal** en tu equipo principal (Windows, Mac o Linux).
 2. **Asegúrate de que tu equipo principal está en la misma red** que la Raspberry Pi (ya sea en la misma red WiFi local o a través de una red virtual privada/VPN como Tailscale).
 3. **Ejecuta el comando de conexión SSH** utilizando el nombre de usuario de la Raspberry y su dirección IP asignada:
+
+```bash
+ssh pi@IP_DE_LA_RASPBERRY
+```
+
+Si usas Tailscale, puedes utilizar la IP de Tailscale o el hostname MagicDNS de la Raspberry:
+
+```bash
+ssh pi@NOMBRE_RASPBERRY
+```
 
 ## Estructura del Repositorio
 
@@ -417,4 +465,5 @@ monitoreo_aves/
 │   ├── analyzer.py                 # Abstracción para el modelo IA
 │   └── mainNode.py                 # Orquestador del nodo y gestor Offline
 │
-└── requirements.txt                # Dependencias (FastAPI, scikit-maad...)```
+└── requirements.txt                # Dependencias (FastAPI, scikit-maad...)
+```
