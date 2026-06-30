@@ -13,7 +13,7 @@ from analyzer import BirdAnalyzer
 #### CONFIGURACION DEL NODO ####
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
-SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://100.98.248.58:8000").rstrip("/")
+SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
 
 # Ubicación manual opcional
 NODE_LOCATION = os.getenv("BIRDMONITOR_NODE_LOCATION", "").strip()

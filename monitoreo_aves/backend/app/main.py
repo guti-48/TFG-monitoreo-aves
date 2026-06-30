@@ -64,7 +64,6 @@ else:
     cors_origins = [
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "http://100.98.248.58:8000",
         "http://localhost",
         "http://127.0.0.1",
     ]

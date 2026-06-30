@@ -5,7 +5,7 @@ import requests
 from datetime import datetime
 
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
-SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://100.98.248.58:8000").rstrip("/")
+SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
 
 SERVICE_NAME = os.getenv("BIRDMONITOR_STREAM_SERVICE", "birdstream.service")
 POLL_INTERVAL = int(os.getenv("BIRDMONITOR_STREAM_POLL_INTERVAL", "5"))

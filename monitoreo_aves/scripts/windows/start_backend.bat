@@ -1,5 +1,6 @@
 @echo off
-cd /d C:\Users\cguti\Desktop\TFG\monitoreo_aves
+set SCRIPT_DIR=%~dp0
+cd /d "%SCRIPT_DIR%\..\.."
 
 netstat -ano | findstr /R /C:":8000 .*LISTENING" >nul
 if %ERRORLEVEL%==0 (

@@ -9,16 +9,19 @@ const NOISE_MAP = {
 };
 const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 
-// Stream HLS servido por MediaMTX.
-// El dashboard se sirve en el puerto 8000 y MediaMTX en el 8888.
-// Se usa el mismo hostname para que funcione tanto con 127.0.0.1 como con la IP Tailscale.
-const STREAM_NAME = "birdmonitor-audio";
-const MEDIAMTX_HLS_PORT = 8888;
-const LIVE_STREAM_BASE_URL = `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}`;
+// Stream HLS servido por MediaMTX. Por defecto usa el mismo hostname del
+// dashboard, pero se puede sobrescribir con window.BIRDMONITOR_CONFIG.
+const BIRDMONITOR_CONFIG = window.BIRDMONITOR_CONFIG || {};
+const STREAM_NAME = BIRDMONITOR_CONFIG.streamName || "birdmonitor-audio";
+const MEDIAMTX_HLS_PORT = BIRDMONITOR_CONFIG.mediaMtxHlsPort || 8888;
+const LIVE_STREAM_BASE_URL = (
+    BIRDMONITOR_CONFIG.liveStreamBaseUrl ||
+    `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}`
+).replace(/\/$/, "");
 const LIVE_STREAM_URL = `${LIVE_STREAM_BASE_URL}/${STREAM_NAME}/index.m3u8`;
 const LIVE_STREAM_PAGE_URL = `${LIVE_STREAM_BASE_URL}/${STREAM_NAME}/`;
 const STREAM_CONTROL_URL = "/stream/control";
-const STREAM_NODE_NAME = "birdmonitor";
+const STREAM_NODE_NAME = BIRDMONITOR_CONFIG.streamNodeName || "birdmonitor";
 
 
 let hlsInstance = null;
@@ -1461,7 +1464,7 @@ async function renderScienceView(container) {
             <span class="ms-3 text-white">Procesando datos del nodo...</span>
         </div>`;
     try {
-        const response = await fetch("http://100.98.248.58:8000/analytics/biodiversity");
+        const response = await fetch("/analytics/biodiversity");
         const report = await response.json();
         currentScienceReport = report || [];
         if (!report || report.length === 0) {
@@ -1779,7 +1782,7 @@ async function renderScienceView(container) {
         }
 
         //Mapa Leaflet
-        fetch("http://100.98.248.58:8000/analytics/map")
+        fetch("/analytics/map")
             .then(res => res.json())
             .then(mapData => {
                 if (mapData.error) return;
@@ -1951,7 +1954,7 @@ async function renderDailyView(container) {
 
 async function loadDailyData(dateStr) {
     try {
-        const res = await fetch(`http://100.98.248.58:8000/analytics/daily-activity?date=${dateStr}`);
+        const res = await fetch(`/analytics/daily-activity?date=${dateStr}`);
         const data = await res.json();
         currentDailyData = data;
 

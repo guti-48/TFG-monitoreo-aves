@@ -4,6 +4,84 @@ Este proyecto consiste en el diseño, desarrollo e implementación de un sistema
 
 El sistema utiliza nodos de computación en el borde (Edge Computing) basados en Raspberry Pi para procesar audio en tiempo real, implementando una arquitectura híbrida que permite el almacenamiento local de datos científicos (incluyendo análisis de contaminación acústica) y la contribución simultánea a redes de ciencia ciudadana (BirdWeather).
 
+## Arranque rapido multiplataforma
+
+El servidor central puede ejecutarse en Windows, macOS o Linux. El nodo Raspberry debe apuntar a la URL real de ese servidor central mediante IP LAN o Tailscale.
+
+### Instalacion base
+
+Windows PowerShell:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+macOS o Linux:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+El dashboard queda en `http://localhost:8000`. Desde otro ordenador o movil se debe usar `http://IP_DEL_SERVIDOR:8000`.
+
+### HLS y MediaMTX
+
+BirdMonitor espera MediaMTX en el puerto `8888` y el stream HLS en:
+
+```text
+http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+```
+
+El dashboard web construye esa URL de forma dinamica con el mismo hostname desde el que se abre. Si entras desde un Mac a `http://192.168.1.50:8000`, el reproductor intentara usar `http://192.168.1.50:8888/birdmonitor-audio/index.m3u8`.
+
+En macOS, con `mediamtx` disponible en el `PATH` o en `tools/mediamtx/mediamtx`, puedes arrancar backend y MediaMTX juntos con:
+
+```bash
+bash scripts/macos/start_birdmonitor_macos.sh
+```
+
+Si el `mediamtx.yml` esta en otra ruta:
+
+```bash
+MEDIAMTX_CONFIG=/ruta/a/mediamtx.yml bash scripts/macos/start_birdmonitor_macos.sh
+```
+
+### Variables que debe revisar cada persona
+
+| Variable | Donde se usa | Valor de ejemplo |
+| --- | --- | --- |
+| `BIRDMONITOR_SERVER_URL` | Raspberry (`mainNode.py` y `supervisor.py`) | `http://IP_DEL_SERVIDOR:8000` |
+| `BIRDMONITOR_STREAM_BASE_URL` | Backend, si MediaMTX no usa el mismo host que el dashboard | `http://IP_DEL_SERVIDOR:8888` |
+| `BIRDMONITOR_STREAM_PATH` | Backend/dashboard HLS | `birdmonitor-audio` |
+| `BIRDMONITOR_CORS_ORIGINS` | Backend, si una app web se sirve desde otro origen | `http://IP_DEL_SERVIDOR:8000,http://localhost:8000` |
+| `BIRDMONITOR_NODE_NAME` | Raspberry y control de escucha | `birdmonitor` |
+| `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Ubicacion real del nodo | `Sevilla`, `37.3891`, `-5.9845` |
+
+Regla rapida:
+
+* `127.0.0.1` o `localhost` solo valen para la misma maquina.
+* Desde un Mac hacia un servidor Windows, usa `http://IP_DEL_WINDOWS:8000`.
+* Desde un movil real, usa IP LAN o Tailscale; nunca `127.0.0.1`.
+* Desde la Raspberry, `BIRDMONITOR_SERVER_URL` debe apuntar al servidor central, no a la propia Raspberry.
+
+Si MediaMTX vive en otro host o puerto, define `BIRDMONITOR_STREAM_BASE_URL` en el entorno del backend. En casos especiales del dashboard tambien puedes exponer antes de `dashboard.js`:
+
+```html
+<script>
+window.BIRDMONITOR_CONFIG = {
+  liveStreamBaseUrl: "http://IP_DEL_SERVIDOR:8888",
+  streamName: "birdmonitor-audio",
+  streamNodeName: "birdmonitor"
+};
+</script>
+```
+
 ## Estado del Proyecto
 
 El sistema se encuentra en fase de validación técnica con funcionalidad completa "End-to-End".
@@ -70,15 +148,22 @@ Interfaz gráfica para la visualización de telemetría y gestión de histórico
 
 El sistema se despliega con una arquitectura unificada: el backend FastAPI sirve tanto la API REST como el dashboard web mediante archivos estáticos. Por tanto, no es necesario levantar un servidor independiente para el frontend.
 
-El servidor central se ejecuta en Windows 11 y el nodo Edge se ejecuta en Raspberry Pi OS Lite. Ambos dispositivos se comunican mediante Tailscale.
+El servidor central puede ejecutarse en Windows, macOS o Linux. El nodo Edge se ejecuta en Raspberry Pi OS Lite y debe apuntar a la URL real del servidor central, normalmente una IP LAN o una IP/hostname de Tailscale.
 
 1. Crear y activar el entorno virtual dentro de la carpeta `monitoreo_aves`.
 
 Para Windows PowerShell:
 
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+Para macOS o Linux:
+
 ```bash
-    python -m venv venv
-    source ./venv/Scripts/activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 2. Para instalar las dependencias deberemos ejecutar:
@@ -87,7 +172,7 @@ Para Windows PowerShell:
     pip install -r requirements.txt
 ```
 
-3. Ejecutar el servidor central desde la carpeta 'monitoreo de aves':
+3. Ejecutar el servidor central desde la carpeta `monitoreo_aves`:
 
 ```bash
     uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
@@ -99,7 +184,7 @@ El dashboard queda disponible en:
 http://localhost:8000
 ```
 
-Y desde la Raspberry Pi, mediante la IP de Tailscale del servidor Windows:
+Y desde otro dispositivo, mediante la IP LAN o Tailscale del servidor:
 
 ```text
 http://XXX.XXX.XXX:8000
