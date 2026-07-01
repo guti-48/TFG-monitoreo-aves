@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'daily_report_screen.dart';
 import 'detections_screen.dart';
@@ -20,15 +21,33 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+  final List<int> _refreshTokens = [0, 0, 0, 0];
 
-  late final List<Widget> _screens = [
-    SummaryScreen(baseUrl: widget.baseUrl),
-    DetectionsScreen(baseUrl: widget.baseUrl),
-    LiveStreamScreen(baseUrl: widget.baseUrl),
-    EcologyScreen(baseUrl: widget.baseUrl),
+  static const List<String> _titles = [
+    'Inicio',
+    'Detecciones',
+    'Escucha',
+    'Analisis',
   ];
 
-  final List<String> _titles = ['Inicio', 'Detecciones', 'Escucha', 'Analisis'];
+  List<Widget> get _screens => [
+    SummaryScreen(
+      key: ValueKey('summary-${_refreshTokens[0]}'),
+      baseUrl: widget.baseUrl,
+    ),
+    DetectionsScreen(
+      key: ValueKey('detections-${_refreshTokens[1]}'),
+      baseUrl: widget.baseUrl,
+    ),
+    LiveStreamScreen(
+      key: ValueKey('stream-${_refreshTokens[2]}'),
+      baseUrl: widget.baseUrl,
+    ),
+    EcologyScreen(
+      key: ValueKey('ecology-${_refreshTokens[3]}'),
+      baseUrl: widget.baseUrl,
+    ),
+  ];
 
   void _onItemTapped(int index) {
     setState(() {
@@ -36,8 +55,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
+  void _openSecondaryScreen(String title, Widget screen) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AppSecondaryScaffold(title: title, child: screen),
+      ),
+    );
+  }
+
   void _openScreen(Widget screen) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+
+  void _refreshCurrentTab() {
+    setState(() {
+      _refreshTokens[_selectedIndex]++;
+    });
   }
 
   void _showAbout() {
@@ -58,77 +92,87 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16, top: 10, bottom: 10),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(8),
+        toolbarHeight: 72,
+        centerTitle: true,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        shape: const Border(bottom: BorderSide(color: Color(0xFF22543A))),
+        leadingWidth: 72,
+        leading: PopupMenuButton<String>(
+          tooltip: 'Opciones',
+          icon: const Icon(Icons.settings_outlined, color: Colors.white),
+          onSelected: (value) {
+            switch (value) {
+              case 'daily':
+                _openSecondaryScreen(
+                  'Informe diario',
+                  DailyReportScreen(baseUrl: widget.baseUrl),
+                );
+                break;
+              case 'stations':
+                _openSecondaryScreen(
+                  'Estaciones',
+                  NodesScreen(baseUrl: widget.baseUrl),
+                );
+                break;
+              case 'settings':
+                _openScreen(SettingsScreen(baseUrl: widget.baseUrl));
+                break;
+              case 'about':
+                _showAbout();
+                break;
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'daily',
+              child: ListTile(
+                leading: Icon(Icons.today_outlined),
+                title: Text('Informe diario'),
+              ),
             ),
-            child: Center(child: BirdMonitorLogo(size: 25)),
-          ),
-        ),
-        titleSpacing: 12,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('BirdMonitor'),
-            Text(
-              _titles[_selectedIndex],
-              style: Theme.of(context).textTheme.bodySmall,
+            PopupMenuItem(
+              value: 'stations',
+              child: ListTile(
+                leading: Icon(Icons.place_outlined),
+                title: Text('Estaciones'),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'settings',
+              child: ListTile(
+                leading: Icon(Icons.settings_outlined),
+                title: Text('Configuracion'),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'about',
+              child: ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('Acerca de'),
+              ),
             ),
           ],
         ),
+        title: _selectedIndex == 0
+            ? const BirdMonitorLogo(size: 48)
+            : Text(
+                _titles[_selectedIndex],
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
         actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Menu',
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              switch (value) {
-                case 'daily':
-                  _openScreen(DailyReportScreen(baseUrl: widget.baseUrl));
-                  break;
-                case 'stations':
-                  _openScreen(NodesScreen(baseUrl: widget.baseUrl));
-                  break;
-                case 'settings':
-                  _openScreen(SettingsScreen(baseUrl: widget.baseUrl));
-                  break;
-                case 'about':
-                  _showAbout();
-                  break;
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'daily',
-                child: ListTile(
-                  leading: Icon(Icons.today_outlined),
-                  title: Text('Informe diario'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'stations',
-                child: ListTile(
-                  leading: Icon(Icons.place_outlined),
-                  title: Text('Estaciones'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Configuracion'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'about',
-                child: ListTile(
-                  leading: Icon(Icons.info_outline),
-                  title: Text('Acerca de'),
-                ),
-              ),
-            ],
+          SizedBox(
+            width: 72,
+            child: IconButton(
+              tooltip: 'Actualizar',
+              onPressed: _refreshCurrentTab,
+              icon: const Icon(Icons.refresh, color: Colors.white),
+            ),
           ),
         ],
       ),

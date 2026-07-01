@@ -7,10 +7,7 @@ import 'connection_screen.dart';
 class SettingsScreen extends StatefulWidget {
   final String baseUrl;
 
-  const SettingsScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const SettingsScreen({super.key, required this.baseUrl});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -54,9 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (_) => const ConnectionScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const ConnectionScreen()),
       (route) => false,
     );
   }
@@ -80,16 +75,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final hlsUrl = api.getHlsUrl();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Configuración'),
-      ),
+      appBar: AppBar(centerTitle: true, title: const Text('Configuración')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            'Conexión',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Conexión', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
           _buildInfoCard(
@@ -125,10 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          Text(
-            'Servidor',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Servidor', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
           Card(
@@ -153,10 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          Text(
-            'Aplicación',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Aplicación', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
           const Card(

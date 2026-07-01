@@ -80,7 +80,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
 
       switch (_reviewFilter) {
         case _ReviewFilter.pending:
-          if (reviewStatus != DetectionReviewStatus.unreviewed) return false;
+          if (!detection.needsBirdReview) return false;
           break;
         case _ReviewFilter.validated:
           if (reviewStatus != DetectionReviewStatus.validated) return false;
@@ -89,7 +89,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
           if (reviewStatus != DetectionReviewStatus.corrected) return false;
           break;
         case _ReviewFilter.noise:
-          if (reviewStatus != DetectionReviewStatus.noise) return false;
+          if (!detection.isAmbientNoise) return false;
           break;
         case _ReviewFilter.doubtful:
           if (reviewStatus != DetectionReviewStatus.doubtful) return false;
@@ -113,6 +113,14 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     return ['Todas', ...species.toList()..sort()];
   }
 
+  Detection? _latestBirdDetection(List<Detection> detections) {
+    for (final detection in detections) {
+      if (!detection.isAmbientNoise) return detection;
+    }
+
+    return null;
+  }
+
   Future<void> _openDetail(Detection detection) async {
     await Navigator.push(
       context,
@@ -130,28 +138,34 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
     });
   }
 
-  Widget _buildDateChip(String label, _DateFilter value) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: _dateFilter == value,
-      onSelected: (_) {
-        setState(() {
-          _dateFilter = value;
-        });
-      },
-    );
+  String _dateFilterLabel(_DateFilter value) {
+    switch (value) {
+      case _DateFilter.today:
+        return 'Hoy';
+      case _DateFilter.sevenDays:
+        return '7 dias';
+      case _DateFilter.all:
+        return 'Todas';
+    }
   }
 
-  Widget _buildReviewChip(String label, _ReviewFilter value) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: _reviewFilter == value,
-      onSelected: (_) {
-        setState(() {
-          _reviewFilter = value;
-        });
-      },
-    );
+  String _reviewFilterLabel(_ReviewFilter value) {
+    switch (value) {
+      case _ReviewFilter.all:
+        return 'Todo';
+      case _ReviewFilter.pending:
+        return 'Pendiente';
+      case _ReviewFilter.validated:
+        return 'Validada';
+      case _ReviewFilter.corrected:
+        return 'Corregida';
+      case _ReviewFilter.noise:
+        return 'Ruido';
+      case _ReviewFilter.doubtful:
+        return 'Dudosa';
+      case _ReviewFilter.discarded:
+        return 'Descartada';
+    }
   }
 
   IconData _reviewIcon(DetectionReviewStatus status) {
@@ -213,7 +227,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
   ) {
     final confidenceText = formatConfidence(detection.confidence);
     final confidenceState = confidenceLabel(detection.confidence);
-    final isNoise = reviewStatus == DetectionReviewStatus.noise;
+    final isNoise = detection.isAmbientNoise;
     final leadingIcon = isNoise ? Icons.volume_off_outlined : Icons.pets;
 
     return AppDataPanel(
@@ -355,27 +369,36 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
 
   Widget _buildActivityPanel(
     List<Detection> detections,
-    List<Detection> filtered,
-    Detection? latest,
-    int pendingCount,
+    Detection? latestBird,
+    int pendingBirdCount,
   ) {
+    final title = pendingBirdCount == 0
+        ? 'Sin aves pendientes'
+        : pendingBirdCount == 1
+        ? '1 ave por validar'
+        : '$pendingBirdCount aves por validar';
+    final pendingText = pendingBirdCount == 1
+        ? '1 ave pendiente'
+        : '$pendingBirdCount aves pendientes';
+
     return AppFieldHero(
-      icon: Icons.list_alt,
-      eyebrow: 'Detecciones',
-      title: filtered.isEmpty
-          ? 'Sin registros para estos filtros'
-          : '${filtered.length} registros para revisar',
-      subtitle: latest == null
-          ? 'Aun no hay actividad registrada'
-          : 'Ultima actividad: ${latest.displaySpecies} - ${formatTimestamp(latest.timestamp)}',
+      icon: Icons.eco_outlined,
+      eyebrow: 'Aves escuchadas',
+      title: title,
+      subtitle: latestBird == null
+          ? 'Aun no hay aves escuchadas para revisar'
+          : 'Ultima ave: ${latestBird.displaySpecies} - ${formatTimestamp(latestBird.timestamp)}',
       status: AppStatusPill(
-        text: '$pendingCount pendientes',
+        text: pendingText,
         icon: Icons.rate_review_outlined,
-        color: pendingCount == 0
+        color: pendingBirdCount == 0
             ? Theme.of(context).colorScheme.primary
             : Theme.of(context).colorScheme.secondary,
       ),
-      child: AppSoundBars(active: detections.isNotEmpty, height: 38),
+      child: AppSoundBars(
+        active: detections.any((detection) => !detection.isAmbientNoise),
+        height: 38,
+      ),
     );
   }
 
@@ -385,39 +408,72 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildDateChip('Hoy', _DateFilter.today),
-              _buildDateChip('7 dias', _DateFilter.sevenDays),
-              _buildDateChip('Todas', _DateFilter.all),
-              FilterChip(
-                label: const Text('Confianza > 70%'),
-                selected: _highConfidenceOnly,
-                onSelected: (selected) {
-                  setState(() {
-                    _highConfidenceOnly = selected;
-                  });
-                },
-              ),
+          DropdownButtonFormField<_DateFilter>(
+            initialValue: _dateFilter,
+            decoration: const InputDecoration(
+              labelText: 'Fecha',
+              prefixIcon: Icon(Icons.calendar_today_outlined),
+            ),
+            items: [
+              for (final value in _DateFilter.values)
+                DropdownMenuItem(
+                  value: value,
+                  child: Text(_dateFilterLabel(value)),
+                ),
             ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _dateFilter = value;
+              });
+            },
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildReviewChip('Todo', _ReviewFilter.all),
-              _buildReviewChip('Pendiente', _ReviewFilter.pending),
-              _buildReviewChip('Validada', _ReviewFilter.validated),
-              _buildReviewChip('Corregida', _ReviewFilter.corrected),
-              _buildReviewChip('Ruido', _ReviewFilter.noise),
-              _buildReviewChip('Dudosa', _ReviewFilter.doubtful),
-              _buildReviewChip('Descartada', _ReviewFilter.discarded),
+          DropdownButtonFormField<_ReviewFilter>(
+            initialValue: _reviewFilter,
+            decoration: const InputDecoration(
+              labelText: 'Estado',
+              prefixIcon: Icon(Icons.rate_review_outlined),
+            ),
+            items: [
+              for (final value in _ReviewFilter.values)
+                DropdownMenuItem(
+                  value: value,
+                  child: Text(_reviewFilterLabel(value)),
+                ),
             ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _reviewFilter = value;
+              });
+            },
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<bool>(
+            initialValue: _highConfidenceOnly,
+            decoration: const InputDecoration(
+              labelText: 'Confianza',
+              prefixIcon: Icon(Icons.verified_outlined),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: false,
+                child: Text('Todas las confianzas'),
+              ),
+              DropdownMenuItem(
+                value: true,
+                child: Text('Solo confianza > 70%'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _highConfidenceOnly = value;
+              });
+            },
+          ),
+          const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             initialValue: _speciesFilter,
             decoration: const InputDecoration(
@@ -442,13 +498,10 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
 
   Widget _buildContent(List<Detection> detections) {
     final filtered = _filteredDetections(detections);
-    final latest = detections.isNotEmpty ? detections.first : null;
+    final latestBird = _latestBirdDetection(detections);
     final speciesOptions = _speciesOptions(detections);
-    final pendingCount = detections
-        .where(
-          (detection) =>
-              detection.reviewStatus == DetectionReviewStatus.unreviewed,
-        )
+    final pendingBirdCount = detections
+        .where((detection) => detection.needsBirdReview)
         .length;
 
     if (!speciesOptions.contains(_speciesFilter)) {
@@ -457,7 +510,7 @@ class _DetectionsScreenState extends State<DetectionsScreen> {
 
     return AppPage(
       children: [
-        _buildActivityPanel(detections, filtered, latest, pendingCount),
+        _buildActivityPanel(detections, latestBird, pendingBirdCount),
         const AppSectionTitle(
           title: 'Filtros',
           subtitle: 'Afina la revision por fecha, confianza o estado.',

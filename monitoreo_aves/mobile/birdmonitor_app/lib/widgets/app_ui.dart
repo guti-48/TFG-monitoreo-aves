@@ -65,6 +65,36 @@ class AppPage extends StatelessWidget {
   }
 }
 
+class AppSecondaryScaffold extends StatelessWidget {
+  final String title;
+  final Widget child;
+  final List<Widget>? actions;
+
+  const AppSecondaryScaffold({
+    super.key,
+    required this.title,
+    required this.child,
+    this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        leading: IconButton(
+          tooltip: 'Volver',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.maybePop(context),
+        ),
+        title: Text(title),
+        actions: actions,
+      ),
+      body: child,
+    );
+  }
+}
+
 class AppHeaderPanel extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -104,7 +134,7 @@ class AppHeaderPanel extends StatelessWidget {
                     ),
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,9 +196,9 @@ class AppMetricGrid extends StatelessWidget {
         final width = constraints.maxWidth;
         final columns = width >= 900
             ? 4
-            : width >= 620
+            : width >= 680
             ? 3
-            : width >= 420
+            : width >= 520
             ? 2
             : 1;
         final gap = 10.0;
@@ -304,7 +334,7 @@ class AppFieldHero extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -318,11 +348,11 @@ class AppFieldHero extends StatelessWidget {
                       border: Border.all(color: appPanelBorder),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Icon(icon, color: colorScheme.primary, size: 28),
+                      padding: const EdgeInsets.all(10),
+                      child: Icon(icon, color: colorScheme.primary, size: 24),
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,11 +365,17 @@ class AppFieldHero extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           title,
-                          style: Theme.of(context).textTheme.titleLarge,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleLarge?.copyWith(fontSize: 18),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         Text(
                           subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -348,7 +384,7 @@ class AppFieldHero extends StatelessWidget {
                   if (status != null) ...[const SizedBox(width: 12), status!],
                 ],
               ),
-              if (child != null) ...[const SizedBox(height: 16), child!],
+              if (child != null) ...[const SizedBox(height: 10), child!],
             ],
           ),
         ),

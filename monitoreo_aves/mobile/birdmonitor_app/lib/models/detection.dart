@@ -26,17 +26,35 @@ class Detection {
   DetectionReviewStatus get reviewStatus =>
       review?.status ?? DetectionReviewStatus.unreviewed;
 
-  String get displaySpecies {
-    if (reviewStatus == DetectionReviewStatus.noise) {
-      return 'Ruido ambiente';
+  bool get isAmbientNoise {
+    final correctedSpecies = review?.correctedSpecies?.trim();
+    if (reviewStatus == DetectionReviewStatus.corrected &&
+        correctedSpecies != null &&
+        correctedSpecies.isNotEmpty) {
+      return false;
     }
 
+    if (reviewStatus == DetectionReviewStatus.noise) return true;
+
+    final normalized = species.trim().toLowerCase();
+    return normalized == 'noise' ||
+        normalized == 'ruido ambiente' ||
+        normalized == 'noise_ruido ambiente' ||
+        normalized.startsWith('noise_');
+  }
+
+  bool get needsBirdReview =>
+      reviewStatus == DetectionReviewStatus.unreviewed && !isAmbientNoise;
+
+  String get displaySpecies {
     final correctedSpecies = review?.correctedSpecies?.trim();
     if (reviewStatus == DetectionReviewStatus.corrected &&
         correctedSpecies != null &&
         correctedSpecies.isNotEmpty) {
       return correctedSpecies;
     }
+
+    if (isAmbientNoise) return 'Ruido ambiente';
 
     return species;
   }
