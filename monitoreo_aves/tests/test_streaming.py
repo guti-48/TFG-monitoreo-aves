@@ -1,8 +1,8 @@
 def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path, monkeypatch):
-    from backend.app import main
+    from backend.app import streaming
 
     stream_control_file = tmp_path / "stream_control.json"
-    monkeypatch.setattr(main, "STREAM_CONTROL_FILE", stream_control_file)
+    monkeypatch.setattr(streaming, "STREAM_CONTROL_FILE", stream_control_file)
 
     default_response = client.get(
         "/stream/control",
