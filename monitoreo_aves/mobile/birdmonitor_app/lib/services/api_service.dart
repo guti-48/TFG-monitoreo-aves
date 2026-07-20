@@ -8,9 +8,13 @@ import '../models/audio_metrics.dart';
 import '../models/review_status.dart';
 
 class ApiService {
-  final String baseUrl;
+  static const defaultStreamNodeName = 'birdmonitor';
 
-  ApiService(String url) : baseUrl = _normalizeBaseUrl(url);
+  final String baseUrl;
+  final String streamNodeName;
+
+  ApiService(String url, {this.streamNodeName = defaultStreamNodeName})
+    : baseUrl = _normalizeBaseUrl(url);
 
   static String _normalizeBaseUrl(String url) {
     var cleanUrl = url.trim();
@@ -137,7 +141,11 @@ class ApiService {
 
   Future<Map<String, dynamic>> getStreamStatus() async {
     final response = await http
-        .get(Uri.parse('$baseUrl/stream/control?node_name=birdmonitor'))
+        .get(
+          Uri.parse(
+            '$baseUrl/stream/control',
+          ).replace(queryParameters: {'node_name': streamNodeName}),
+        )
         .timeout(const Duration(seconds: 5));
 
     if (response.statusCode != 200) {
@@ -159,7 +167,7 @@ class ApiService {
           Uri.parse('$baseUrl/stream/control'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
-            'node_name': 'birdmonitor',
+            'node_name': streamNodeName,
             'stream_enabled': enabled,
           }),
         )
@@ -189,6 +197,21 @@ class ApiService {
       port: 8888,
       path: '/birdmonitor-audio/index.m3u8',
     ).toString();
+  }
+
+  Future<String> getConfiguredHlsUrl() async {
+    try {
+      final status = await getStreamStatus();
+      final backendHlsUrl = status['hls_url']?.toString().trim();
+
+      if (backendHlsUrl != null && backendHlsUrl.isNotEmpty) {
+        return backendHlsUrl;
+      }
+    } catch (_) {
+      // Keep the app usable offline or while the stream endpoint is starting.
+    }
+
+    return getHlsUrl();
   }
 
   Future<List<Device>> getDevices() async {

@@ -5,9 +5,14 @@ Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
 
 $RuntimeDir = Join-Path $env:LOCALAPPDATA "BirdMonitor"
-$StreamName = "birdmonitor-audio"
-$HlsUrl = "http://127.0.0.1:8888/$StreamName/index.m3u8"
-$StreamControlUrl = "http://127.0.0.1:8000/stream/control?node_name=birdmonitor"
+$StreamName = if ($env:BIRDMONITOR_STREAM_PATH) { $env:BIRDMONITOR_STREAM_PATH } else { "birdmonitor-audio" }
+$StreamNodeName = if ($env:BIRDMONITOR_NODE_NAME) { $env:BIRDMONITOR_NODE_NAME } else { "birdmonitor" }
+$BackendPort = if ($env:BIRDMONITOR_BACKEND_PORT) { $env:BIRDMONITOR_BACKEND_PORT } else { "8000" }
+$MediaMtxHlsPort = if ($env:BIRDMONITOR_MEDIAMTX_HLS_PORT) { $env:BIRDMONITOR_MEDIAMTX_HLS_PORT } else { "8888" }
+$BackendBaseUrl = if ($env:BIRDMONITOR_LOCAL_BACKEND_URL) { $env:BIRDMONITOR_LOCAL_BACKEND_URL.TrimEnd("/") } else { "http://127.0.0.1:$BackendPort" }
+$HlsBaseUrl = if ($env:BIRDMONITOR_STREAM_BASE_URL) { $env:BIRDMONITOR_STREAM_BASE_URL.TrimEnd("/") } else { "http://127.0.0.1:$MediaMtxHlsPort" }
+$HlsUrl = "$HlsBaseUrl/$StreamName/index.m3u8"
+$StreamControlUrl = "$BackendBaseUrl/stream/control?node_name=$StreamNodeName"
 $streamState = $null
 $mediaMtxIsRunning = $false
 $mediaMtxPortOpen = $false
@@ -22,13 +27,13 @@ if ($mediaMtxProcess) {
 }
 
 Write-Host ""
-Write-Host "Puerto 8888 MediaMTX:" -ForegroundColor Yellow
-netstat -ano | findstr ":8888"
-$mediaMtxPortOpen = $null -ne (Get-NetTCPConnection -LocalPort 8888 -State Listen -ErrorAction SilentlyContinue)
+Write-Host "Puerto $MediaMtxHlsPort MediaMTX:" -ForegroundColor Yellow
+netstat -ano | findstr ":$MediaMtxHlsPort"
+$mediaMtxPortOpen = $null -ne (Get-NetTCPConnection -LocalPort $MediaMtxHlsPort -State Listen -ErrorAction SilentlyContinue)
 
 Write-Host ""
-Write-Host "Puerto 8000 Backend:" -ForegroundColor Yellow
-netstat -ano | findstr ":8000"
+Write-Host "Puerto $BackendPort Backend:" -ForegroundColor Yellow
+netstat -ano | findstr ":$BackendPort"
 
 Write-Host ""
 Write-Host "Tarea MediaMTX:" -ForegroundColor Yellow
@@ -58,7 +63,7 @@ Write-Host ""
 Write-Host "Prueba backend /devices/:" -ForegroundColor Yellow
 
 try {
-    $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/devices/" -UseBasicParsing -TimeoutSec 5
+    $response = Invoke-WebRequest -Uri "$BackendBaseUrl/devices/" -UseBasicParsing -TimeoutSec 5
     Write-Host "Backend responde correctamente. Codigo: $($response.StatusCode)" -ForegroundColor Green
 } catch {
     Write-Host "No se pudo conectar con el backend." -ForegroundColor Red
@@ -85,7 +90,7 @@ try {
     Write-Host "Manifest HLS disponible. Codigo: $($response.StatusCode)" -ForegroundColor Green
 } catch {
     if (-not $mediaMtxIsRunning -or -not $mediaMtxPortOpen) {
-        Write-Host "MediaMTX no esta disponible en el puerto 8888. Revisa la tarea BirdMonitor MediaMTX o ejecuta Start-ScheduledTask -TaskName `"BirdMonitor MediaMTX`"." -ForegroundColor Red
+        Write-Host "MediaMTX no esta disponible en el puerto $MediaMtxHlsPort. Revisa la tarea BirdMonitor MediaMTX o ejecuta Start-ScheduledTask -TaskName `"BirdMonitor MediaMTX`"." -ForegroundColor Red
     } elseif ($streamState -and $streamState.actual_running) {
         Write-Host "MediaMTX esta levantado, pero el manifest HLS no esta disponible." -ForegroundColor Yellow
         Write-Host "El backend cree que birdstream.service esta activo, asi que revisa en la Raspberry que ese servicio este publicando hacia MediaMTX con el path '$StreamName'." -ForegroundColor Yellow

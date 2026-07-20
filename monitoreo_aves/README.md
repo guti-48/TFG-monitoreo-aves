@@ -62,6 +62,13 @@ MEDIAMTX_CONFIG=/ruta/a/mediamtx.yml bash scripts/macos/start_birdmonitor_macos.
 | `BIRDMONITOR_CORS_ORIGINS` | Backend, si una app web se sirve desde otro origen | `http://IP_DEL_SERVIDOR:8000,http://localhost:8000` |
 | `BIRDMONITOR_NODE_NAME` | Raspberry y control de escucha | `birdmonitor` |
 | `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Ubicacion real del nodo | `Sevilla`, `37.3891`, `-5.9845` |
+| `BIRDMONITOR_BACKEND_HOST`, `BIRDMONITOR_BACKEND_PORT` | Arranque del backend | `0.0.0.0`, `8000` |
+| `BIRDMONITOR_RECORD_SECONDS`, `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | Ciclo de grabacion de la Raspberry | `60`, `300` |
+| `BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD` | Umbral minimo para aves | `0.65` |
+| `BIRDMONITOR_HUMAN_CONFIDENCE_THRESHOLD`, `BIRDMONITOR_MOTOR_CONFIDENCE_THRESHOLD` | Umbrales para ruido humano/motor | `0.35`, `0.40` |
+| `BIRDMONITOR_HIGH_NOISE_RMS_THRESHOLD` | RMS para marcar ruido ambiente | `0.02` |
+| `BIRDMONITOR_MIC_DEVICE` | Microfono de entrada de la Raspberry | `1` |
+| `BIRDWEATHER_TOKEN_FILE` | Archivo secreto local del token BirdWeather | `/etc/birdmonitor/birdweather_token` |
 
 Regla rapida:
 

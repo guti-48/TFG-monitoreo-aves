@@ -7,10 +7,7 @@ import 'connection_screen.dart';
 class SettingsScreen extends StatefulWidget {
   final String baseUrl;
 
-  const SettingsScreen({
-    super.key,
-    required this.baseUrl,
-  });
+  const SettingsScreen({super.key, required this.baseUrl});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -18,6 +15,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final ApiService api;
+  late final Future<String> hlsUrlFuture;
 
   bool checkingConnection = false;
   String? connectionMessage;
@@ -26,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     api = ApiService(widget.baseUrl);
+    hlsUrlFuture = api.getConfiguredHlsUrl();
   }
 
   Future<void> _testConnection() async {
@@ -54,9 +53,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(
-        builder: (_) => const ConnectionScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const ConnectionScreen()),
       (route) => false,
     );
   }
@@ -77,19 +74,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hlsUrl = api.getHlsUrl();
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Configuración'),
-      ),
+      appBar: AppBar(title: const Text('Configuración')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            'Conexión',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Conexión', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
           _buildInfoCard(
@@ -98,10 +88,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: widget.baseUrl,
           ),
 
-          _buildInfoCard(
-            icon: Icons.graphic_eq,
-            title: 'URL HLS',
-            value: hlsUrl,
+          FutureBuilder<String>(
+            future: hlsUrlFuture,
+            builder: (context, snapshot) => _buildInfoCard(
+              icon: Icons.graphic_eq,
+              title: 'URL HLS',
+              value: snapshot.data ?? api.getHlsUrl(),
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -125,10 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          Text(
-            'Servidor',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Servidor', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
           Card(
@@ -153,10 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          Text(
-            'Aplicación',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Aplicación', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
           const Card(

@@ -172,15 +172,18 @@ if (Test-Path $VenvActivate) {
 @echo off
 cd /d "$ProjectDir"
 
-netstat -ano | findstr /R /C:":8000 .*LISTENING" >nul
+if not defined BIRDMONITOR_BACKEND_HOST set "BIRDMONITOR_BACKEND_HOST=0.0.0.0"
+if not defined BIRDMONITOR_BACKEND_PORT set "BIRDMONITOR_BACKEND_PORT=8000"
+
+netstat -ano | findstr /R /C:":%BIRDMONITOR_BACKEND_PORT% .*LISTENING" >nul
 if %ERRORLEVEL%==0 (
-    echo Backend ya esta escuchando en el puerto 8000. >> "$BackendLog"
+    echo Backend ya esta escuchando en el puerto %BIRDMONITOR_BACKEND_PORT%. >> "$BackendLog"
     exit /b 0
 )
 
 $ActivateLine
 
-python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 >> "$BackendLog" 2>&1
+python -m uvicorn backend.app.main:app --host %BIRDMONITOR_BACKEND_HOST% --port %BIRDMONITOR_BACKEND_PORT% >> "$BackendLog" 2>&1
 "@ | Set-Content -Path $BackendStartScript -Encoding ASCII
 
 # =========================

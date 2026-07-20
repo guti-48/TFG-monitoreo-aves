@@ -62,16 +62,33 @@ try:
 except ValueError:
     RETENTION_DAYS = 9
 
+def leerEnteroEntorno(nombre, valor_por_defecto, minimo=None):
+    try:
+        valor = int(os.getenv(nombre, str(valor_por_defecto)))
+    except ValueError:
+        return valor_por_defecto
+
+    if minimo is not None:
+        return max(minimo, valor)
+
+    return valor
+
+def leerFloatEntorno(nombre, valor_por_defecto):
+    try:
+        return float(os.getenv(nombre, str(valor_por_defecto)))
+    except ValueError:
+        return valor_por_defecto
+
 #### CONFIGURACION AUDIO ####
 SAMPLE_RATE = 48000  # Frecuencia que suele usar birdNet
-DURATION    = 60      
-INTERVALO   = 300    
+DURATION    = leerEnteroEntorno("BIRDMONITOR_RECORD_SECONDS", 60, minimo=5)
+INTERVALO   = leerEnteroEntorno("BIRDMONITOR_RECORD_INTERVAL_SECONDS", 300, minimo=DURATION)
 
 ### UMBRALES CONFIANZA
-UMBRAL_AVES       = 0.65   
-UMBRAL_HUMANOS    = 0.35   
-UMBRAL_MOTORES    = 0.40   
-UMBRAL_RUIDO_ALTO = 0.02   
+UMBRAL_AVES       = leerFloatEntorno("BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD", 0.65)
+UMBRAL_HUMANOS    = leerFloatEntorno("BIRDMONITOR_HUMAN_CONFIDENCE_THRESHOLD", 0.35)
+UMBRAL_MOTORES    = leerFloatEntorno("BIRDMONITOR_MOTOR_CONFIDENCE_THRESHOLD", 0.40)
+UMBRAL_RUIDO_ALTO = leerFloatEntorno("BIRDMONITOR_HIGH_NOISE_RMS_THRESHOLD", 0.02)
 
 #### RUTAS
 BASER_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -831,7 +848,7 @@ def esperarSiguienteCiclo(inicio_ciclo):
 ### Flujo de trabajo principal ###
 if __name__ == "__main__":
 
-    brain = BirdAnalyzer()
+    brain = get_brain()
     listarDispositivosAudio()
     device_index = resolverDispositivoEntrada()
     ubicacion_nodo = obtenerUbicacionNodo()
