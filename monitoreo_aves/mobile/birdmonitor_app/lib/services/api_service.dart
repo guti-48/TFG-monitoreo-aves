@@ -8,9 +8,13 @@ import '../models/audio_metrics.dart';
 import '../models/review_status.dart';
 
 class ApiService {
-  final String baseUrl;
+  static const defaultStreamNodeName = 'birdmonitor';
 
-  ApiService(String url) : baseUrl = _normalizeBaseUrl(url);
+  final String baseUrl;
+  final String streamNodeName;
+
+  ApiService(String url, {this.streamNodeName = defaultStreamNodeName})
+    : baseUrl = _normalizeBaseUrl(url);
 
   static String _normalizeBaseUrl(String url) {
     var cleanUrl = url.trim();
@@ -20,6 +24,13 @@ class ApiService {
     }
 
     return cleanUrl;
+  }
+
+  String _resolveStreamNodeName(String? nodeName) {
+    final cleanNodeName = nodeName?.trim();
+    return cleanNodeName == null || cleanNodeName.isEmpty
+        ? streamNodeName
+        : cleanNodeName;
   }
 
   Future<bool> testConnection() async {
@@ -135,14 +146,13 @@ class ApiService {
     return '$baseUrl/spectrograms/${Uri.encodeComponent('$baseName.png')}';
   }
 
-  Future<Map<String, dynamic>> getStreamStatus({
-    String nodeName = 'birdmonitor',
-  }) async {
+  Future<Map<String, dynamic>> getStreamStatus({String? nodeName}) async {
+    final effectiveNodeName = _resolveStreamNodeName(nodeName);
     final response = await http
         .get(
           Uri.parse(
-            '$baseUrl/stream/control?node_name=${Uri.encodeQueryComponent(nodeName)}',
-          ),
+            '$baseUrl/stream/control',
+          ).replace(queryParameters: {'node_name': effectiveNodeName}),
         )
         .timeout(const Duration(seconds: 5));
 
@@ -161,11 +171,12 @@ class ApiService {
 
   Future<Map<String, dynamic>> setStreamEnabled(
     bool enabled, {
-    String nodeName = 'birdmonitor',
+    String? nodeName,
     String? streamPath,
   }) async {
+    final effectiveNodeName = _resolveStreamNodeName(nodeName);
     final body = <String, dynamic>{
-      'node_name': nodeName,
+      'node_name': effectiveNodeName,
       'stream_enabled': enabled,
     };
 
@@ -204,8 +215,24 @@ class ApiService {
       scheme: uri.scheme,
       host: uri.host,
       port: 8888,
-      path: '/${cleanPath.isEmpty ? 'birdmonitor-audio' : cleanPath}/index.m3u8',
+      path:
+          '/${cleanPath.isEmpty ? 'birdmonitor-audio' : cleanPath}/index.m3u8',
     ).toString();
+  }
+
+  Future<String> getConfiguredHlsUrl() async {
+    try {
+      final status = await getStreamStatus();
+      final backendHlsUrl = status['hls_url']?.toString().trim();
+
+      if (backendHlsUrl != null && backendHlsUrl.isNotEmpty) {
+        return backendHlsUrl;
+      }
+    } catch (_) {
+      // Keep the app usable offline or while the stream endpoint is starting.
+    }
+
+    return getHlsUrl();
   }
 
   Future<List<Device>> getDevices() async {

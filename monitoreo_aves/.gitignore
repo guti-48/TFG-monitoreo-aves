@@ -2,6 +2,9 @@
 .env
 .env.local
 .env.production
+.DS_Store
+.pytest_cache/
+.tmp/
 *.secret
 secrets/
 *.wav
@@ -13,8 +16,10 @@ secrets/
 *.sqlite3
 venv/
 __pycache__/
+backend/app/stream_control.json
 hardware/raspberry_pi/records/
 hardware/raspberry_pi/spectrograms/
+hardware/raspberry_pi/backup_data.csv
 hardware/raspberry_pi/birdmonitor.env
 hardware/raspberry_pi/birdweather_token
 hardware/raspberry_pi/birdweather_token.txt

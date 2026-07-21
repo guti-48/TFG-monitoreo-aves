@@ -17,6 +17,7 @@ class BirdAnalyzer:
     def __init__(self):
         # Cargamos el model TFLite que nos permite filtros de ubicacion y fecha
         print("Motor de BirdNet Cargando...")
+        self.analyzer = None
         try: 
             self.analyzer = Analyzer()
             print("El modelo BirdNet se ha cargado correctamente.")

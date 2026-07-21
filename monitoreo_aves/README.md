@@ -109,10 +109,17 @@ La IP que normalmente hay que cambiar es la del servidor central vista desde cad
 | Nombre de cada Raspberry/nodo | `BIRDMONITOR_NODE_NAME` | Un nombre unico por nodo, por ejemplo `birdmonitor-norte`, `birdmonitor-sur` |
 | Ubicacion del nodo | `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Lugar y coordenadas reales del nodo |
 | Microfono en Raspberry | `BIRDMONITOR_MIC_DEVICE` | Indice del dispositivo de entrada si no quieres usar el predeterminado |
+| Ciclo de grabacion | `BIRDMONITOR_RECORD_SECONDS`, `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | Duracion e intervalo en segundos, por ejemplo `60`, `300` |
+| Umbrales de deteccion | `BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD`, `BIRDMONITOR_HUMAN_CONFIDENCE_THRESHOLD`, `BIRDMONITOR_MOTOR_CONFIDENCE_THRESHOLD` | Por ejemplo `0.65`, `0.35`, `0.40` |
+| Umbral de ruido ambiente | `BIRDMONITOR_HIGH_NOISE_RMS_THRESHOLD` | Por ejemplo `0.02` |
+| BirdWeather | `BIRDWEATHER_TOKEN_FILE` | Ruta local del token, por ejemplo `/etc/birdmonitor/birdweather_token` |
 | Servicio de streaming de la Raspberry | Archivo o servicio `birdstream.service` que publique audio hacia MediaMTX | Debe apuntar a la IP del servidor y al path HLS/MediaMTX elegido, normalmente `birdmonitor-audio` |
 | Dashboard web | Normalmente no se edita: `frontend/js/dashboard.js` carga `/devices/` y permite seleccionar nodo y path MediaMTX desde la vista de directo | Si entras en `http://IP_SERVIDOR:8000`, usara `http://IP_SERVIDOR:8888` |
 | Dashboard con MediaMTX en otro host/puerto | `frontend/index.html`, antes de cargar `frontend/js/dashboard.js`, definiendo `window.BIRDMONITOR_CONFIG` | `liveStreamBaseUrl`, `streamName`, `streamNodeName` |
-| Backend si MediaMTX no esta en el mismo host | Variables de entorno usadas por `backend/app/main.py` | `BIRDMONITOR_STREAM_BASE_URL`, `BIRDMONITOR_STREAM_PATH` |
+| Rutas HLS por nodo | `BIRDMONITOR_STREAM_PATH` o `BIRDMONITOR_STREAM_PATH_TEMPLATE`, leidas por `backend/app/config.py` | Ruta fija o plantilla, por ejemplo `{node_name}-audio` |
+| Backend si MediaMTX no esta en el mismo host | `BIRDMONITOR_STREAM_BASE_URL` | `http://IP_DEL_SERVIDOR:8888` |
+| Origenes web externos | `BIRDMONITOR_CORS_ORIGINS` | Lista separada por comas |
+| Arranque del backend | `BIRDMONITOR_BACKEND_HOST`, `BIRDMONITOR_BACKEND_PORT` | `0.0.0.0`, `8000` |
 | App movil | Pantalla de conexion de la app | `http://IP_DEL_SERVIDOR:8000`; no usar `127.0.0.1` en un movil real |
 
 Ejemplo para una Raspberry que apunta a un Mac por Tailscale:
@@ -132,8 +139,8 @@ Puedes tener Windows y macOS encendidos a la vez, pero conviene elegir uno como 
 Para el directo HLS de varios nodos, cada stream debe tener un path distinto en MediaMTX. El backend genera por defecto `{node_name}-audio`, por ejemplo:
 
 ```text
-birdmonitor-audio-norte
-birdmonitor-audio-sur
+birdmonitor-norte-audio
+birdmonitor-sur-audio
 ```
 
 La vista web carga los nodos registrados y permite seleccionar el nodo y el path de MediaMTX desde la pantalla de escucha en directo. Si quieres fijar un valor por defecto sin tocar `dashboard.js`, puedes definir antes de cargar el script:
@@ -142,7 +149,7 @@ La vista web carga los nodos registrados y permite seleccionar el nodo y el path
 <script>
 window.BIRDMONITOR_CONFIG = {
   liveStreamBaseUrl: "http://IP_DEL_SERVIDOR:8888",
-  streamName: "birdmonitor-audio-norte",
+  streamName: "birdmonitor-norte-audio",
   streamNodeName: "birdmonitor-norte"
 };
 </script>

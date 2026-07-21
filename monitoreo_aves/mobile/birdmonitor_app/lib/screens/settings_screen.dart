@@ -15,6 +15,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final ApiService api;
+  late final Future<String> hlsUrlFuture;
 
   bool checkingConnection = false;
   String? connectionMessage;
@@ -23,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     api = ApiService(widget.baseUrl);
+    hlsUrlFuture = api.getConfiguredHlsUrl();
   }
 
   Future<void> _testConnection() async {
@@ -72,8 +74,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hlsUrl = api.getHlsUrl();
-
     return Scaffold(
       appBar: AppBar(centerTitle: true, title: const Text('Configuración')),
       body: ListView(
@@ -88,10 +88,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: widget.baseUrl,
           ),
 
-          _buildInfoCard(
-            icon: Icons.graphic_eq,
-            title: 'URL HLS',
-            value: hlsUrl,
+          FutureBuilder<String>(
+            future: hlsUrlFuture,
+            builder: (context, snapshot) => _buildInfoCard(
+              icon: Icons.graphic_eq,
+              title: 'URL HLS',
+              value: snapshot.data ?? api.getHlsUrl(),
+            ),
           ),
 
           const SizedBox(height: 16),
