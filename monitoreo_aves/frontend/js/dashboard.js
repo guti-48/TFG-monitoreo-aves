@@ -41,6 +41,9 @@ let streamStatusTimer = null;
 let lastStreamData = null;
 let currentScienceReport = [];
 const detectionCache = new Map();
+const speciesPreviewCache = new Map();
+let activeSpeciesPreviewTrigger = null;
+let speciesPreviewHideTimer = null;
 
 function cacheDetections(detections) {
     detections.forEach(detection => detectionCache.set(detection.id, detection));
@@ -55,8 +58,52 @@ function escapeHtml(value) {
         .replace(/'/g, "&#039;");
 }
 
+function renderSpeciesPreviewTrigger(speciesRawName, label) {
+    const safeLabel = escapeHtml(label);
+
+    if (!isSpeciesPreviewCandidate(speciesRawName, label)) {
+        return `<span class="species-name-static">${safeLabel}</span>`;
+    }
+
+    const safeSpecies = escapeHtml(speciesRawName || label);
+
+    return `
+        <button
+            type="button"
+            class="species-preview-trigger"
+            data-species="${safeSpecies}"
+            onmouseenter="showSpeciesPreview(this)"
+            onfocus="showSpeciesPreview(this)"
+            onmouseleave="hideSpeciesPreview(this)"
+            onblur="hideSpeciesPreview(this)"
+            onclick="toggleSpeciesPreview(event, this)"
+            aria-label="Ver vista previa de ${safeLabel}"
+            aria-controls="species-preview-card"
+            aria-expanded="false"
+        >
+            <span>${safeLabel}</span>
+        </button>
+    `;
+}
+
+function isSpeciesPreviewCandidate(speciesRawName, label) {
+    const clean = cleanName(speciesRawName || label).trim();
+    const normalized = clean.toLowerCase();
+    const excludedNames = new Set(["desconocido", "unknown", "human vocal", "motor", "noise", "ruido"]);
+
+    return Boolean(clean)
+        && !NOISE_MAP[clean]
+        && !excludedNames.has(normalized)
+        && !normalized.includes("human")
+        && !normalized.includes("motor")
+        && !normalized.includes("noise")
+        && !normalized.includes("ruido");
+}
+
 // NAVEGACIÓ
 function switchView(viewName, nodeFilter = null) {
+    closeSpeciesPreview();
+
     if (currentView === 'live' && viewName !== 'live') {
         cleanupLiveStream();
     }
@@ -971,7 +1018,7 @@ async function renderHistoryView(container) {
                         <div class="d-flex align-items-center">
                             <div class="me-2">${icon}</div>
                             <div>
-                                <span class="fw-bold text-white">${clean}</span>
+                                ${renderSpeciesPreviewTrigger(displayedSpecies, clean)}
                                 ${d.review?.status === "corrected" ? `<div class="text-muted small">Original BirdNET: ${originalClean}</div>` : ""}
                                 ${buildLearningSuggestionBadge(d)}
                             </div>
@@ -1229,19 +1276,23 @@ async function downloadCSV() {
     } catch (e) { alert("Error exportando"); }
 }
 
-async function getSpeciesImageUrl(speciesRawName) {
+function getSpeciesWikiTitle(speciesRawName) {
     let clean = speciesRawName;
     if (speciesRawName.includes('_')) clean = speciesRawName.split('_')[1];
     clean = clean.replace(/_/g, ' ').trim();
+    const exactPages = { 'Merlin': 'Merlin (bird)', 'Kite': 'Kite (bird)' };
+    return exactPages[clean] || clean;
+}
+
+async function getSpeciesImageUrl(speciesRawName) {
+    const clean = getSpeciesWikiTitle(speciesRawName);
     if (NOISE_MAP[clean] || clean.includes("Human") || clean.includes("Motor") || clean.includes("Noise")) {
         if (clean.includes("Human")) return ASSETS_PATH + 'human.png';
         if (clean.includes("Motor") || clean.includes("Ruido") || clean.includes("Noise")) return ASSETS_PATH + 'ruido_amb.png';
         return PLACEHOLDER_IMG;
     }
-    const WIKI_EXACT_PAGES = { 'Merlin': 'Merlin (bird)', 'Kite': 'Kite (bird)' };
-    let searchTitle = WIKI_EXACT_PAGES[clean] || clean;
     try {
-        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTitle)}&prop=pageimages&format=json&pithumbsize=600&redirects=1&origin=*`;
+        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(clean)}&prop=pageimages&format=json&pithumbsize=600&redirects=1&origin=*`;
         const res = await fetch(wikiUrl);
         const data = await res.json();
         const pages = data.query.pages;
@@ -1250,6 +1301,164 @@ async function getSpeciesImageUrl(speciesRawName) {
     } catch (e) { console.error("Error Wiki", e); }
     return PLACEHOLDER_IMG;
 }
+
+async function getSpeciesPreviewData(speciesRawName) {
+    const searchTitle = getSpeciesWikiTitle(speciesRawName);
+    const fallback = {
+        title: cleanName(speciesRawName),
+        extract: "Sin resumen disponible.",
+        imageUrl: PLACEHOLDER_IMG,
+    };
+
+    try {
+        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTitle)}&prop=pageimages%7Cextracts&format=json&formatversion=2&pithumbsize=240&redirects=1&origin=*&exintro=1&explaintext=1&exsentences=2`;
+        const response = await fetch(wikiUrl);
+        if (!response.ok) return fallback;
+
+        const data = await response.json();
+        const page = data?.query?.pages?.[0];
+        if (!page || page.missing) return fallback;
+
+        return {
+            title: page.title || fallback.title,
+            extract: page.extract || fallback.extract,
+            imageUrl: page.thumbnail?.source || fallback.imageUrl,
+        };
+    } catch (error) {
+        console.error("Error cargando la vista previa de Wikipedia", error);
+        return fallback;
+    }
+}
+
+function ensureSpeciesPreviewCard() {
+    let card = document.getElementById('species-preview-card');
+
+    if (!card) {
+        card = document.createElement('aside');
+        card.id = 'species-preview-card';
+        card.className = 'species-preview-card';
+        card.setAttribute('role', 'tooltip');
+        card.setAttribute('aria-live', 'polite');
+        card.hidden = true;
+        document.body.appendChild(card);
+    }
+
+    return card;
+}
+
+function positionSpeciesPreview(trigger, card) {
+    const margin = 12;
+    const gap = 8;
+    const triggerRect = trigger.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const maxLeft = Math.max(margin, window.innerWidth - cardRect.width - margin);
+    const left = Math.min(Math.max(triggerRect.left, margin), maxLeft);
+    const fitsBelow = triggerRect.bottom + gap + cardRect.height <= window.innerHeight - margin;
+    const preferredTop = fitsBelow
+        ? triggerRect.bottom + gap
+        : triggerRect.top - cardRect.height - gap;
+
+    card.style.left = `${left}px`;
+    card.style.top = `${Math.max(margin, preferredTop)}px`;
+}
+
+async function loadSpeciesPreview(trigger, card) {
+    const speciesRawName = trigger?.dataset?.species;
+
+    if (!speciesRawName) return;
+
+    if (!speciesPreviewCache.has(speciesRawName)) {
+        speciesPreviewCache.set(speciesRawName, getSpeciesPreviewData(speciesRawName));
+    }
+
+    const preview = await speciesPreviewCache.get(speciesRawName);
+    if (activeSpeciesPreviewTrigger !== trigger) return;
+
+    const safeTitle = escapeHtml(preview.title);
+    const safeExtract = escapeHtml(preview.extract);
+    const safeImageUrl = escapeHtml(preview.imageUrl);
+
+    card.innerHTML = `
+        <span class="species-preview-copy">
+            <span class="species-preview-source">Wikipedia</span>
+            <strong class="species-preview-title">${safeTitle}</strong>
+            <span class="species-preview-extract">${safeExtract}</span>
+        </span>
+        <img src="${safeImageUrl}" alt="${safeTitle}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'">
+    `;
+    positionSpeciesPreview(trigger, card);
+}
+
+function showSpeciesPreview(trigger) {
+    clearTimeout(speciesPreviewHideTimer);
+
+    if (activeSpeciesPreviewTrigger && activeSpeciesPreviewTrigger !== trigger) {
+        activeSpeciesPreviewTrigger.dataset.pinned = "false";
+        activeSpeciesPreviewTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    activeSpeciesPreviewTrigger = trigger;
+    trigger.setAttribute('aria-expanded', 'true');
+
+    const card = ensureSpeciesPreviewCard();
+    card.innerHTML = '<span class="species-preview-loading">Cargando vista previa...</span>';
+    card.hidden = false;
+    card.classList.add('is-preview-open');
+    positionSpeciesPreview(trigger, card);
+    loadSpeciesPreview(trigger, card);
+}
+
+function hideSpeciesPreview(trigger) {
+    if (trigger.dataset.pinned === "true") return;
+
+    clearTimeout(speciesPreviewHideTimer);
+    speciesPreviewHideTimer = setTimeout(() => {
+        if (activeSpeciesPreviewTrigger === trigger && trigger.dataset.pinned !== "true") {
+            closeSpeciesPreview();
+        }
+    }, 80);
+}
+
+function toggleSpeciesPreview(event, trigger) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (activeSpeciesPreviewTrigger === trigger && trigger.dataset.pinned === "true") {
+        closeSpeciesPreview();
+        return;
+    }
+
+    trigger.dataset.pinned = "true";
+    showSpeciesPreview(trigger);
+}
+
+function closeSpeciesPreview() {
+    clearTimeout(speciesPreviewHideTimer);
+
+    if (activeSpeciesPreviewTrigger) {
+        activeSpeciesPreviewTrigger.dataset.pinned = "false";
+        activeSpeciesPreviewTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    const card = document.getElementById('species-preview-card');
+    if (card) {
+        card.classList.remove('is-preview-open');
+        card.hidden = true;
+    }
+
+    activeSpeciesPreviewTrigger = null;
+}
+
+document.addEventListener('click', closeSpeciesPreview);
+document.addEventListener('keydown', event => {
+    if (event.key === "Escape") closeSpeciesPreview();
+});
+window.addEventListener('resize', () => {
+    const card = document.getElementById('species-preview-card');
+    if (activeSpeciesPreviewTrigger && card && !card.hidden) {
+        positionSpeciesPreview(activeSpeciesPreviewTrigger, card);
+    }
+});
 
 async function renderLiveFeedSplit(d) {
     const container = document.getElementById('live-feed-container');
@@ -1264,7 +1473,7 @@ async function renderLiveFeedSplit(d) {
     container.innerHTML = `
         <div class="main-detection-split enhanced-detection w-100">
             <div class="split-photo">
-                <img src="${speciesPhotoUrl}" class="bird-photo" onerror="this.src='${PLACEHOLDER_IMG}'">
+                <img src="${speciesPhotoUrl}" class="bird-photo" alt="Imagen de referencia de ${escapeHtml(species)}" onerror="this.src='${PLACEHOLDER_IMG}'">
                 <div class="photo-overlay-label"><i class="bi bi-camera-fill me-2"></i>Imagen de Referencia</div>
             </div>
             <div class="split-info">
@@ -1316,7 +1525,7 @@ function renderTable(data) {
                     <div class="d-flex align-items-center">
                         ${icon}
                         <div>
-                            <span class="fw-semibold text-white">${clean}</span>
+                            ${renderSpeciesPreviewTrigger(displayedSpecies, clean)}
                             ${d.review?.status === "corrected" ? `<div class="text-muted small">Original: ${originalClean}</div>` : ""}
                             ${buildLearningSuggestionBadge(d)}
                         </div>

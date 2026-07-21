@@ -468,6 +468,9 @@ code {
   width: 38%;
   min-width: 240px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
   overflow: hidden;
   background: var(--bg-muted);
@@ -477,7 +480,9 @@ code {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
+  background: var(--bg-muted);
 }
 
 .photo-overlay-label {
@@ -608,6 +613,109 @@ code {
   object-fit: cover;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+}
+
+.species-name-static,
+.species-preview-trigger {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.species-preview-trigger {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.species-preview-trigger:hover,
+.species-preview-trigger:focus-visible {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.species-preview-card {
+  position: fixed;
+  z-index: 1080;
+  width: min(280px, calc(100vw - 24px));
+  min-height: 100px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 12px;
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  box-shadow: 0 14px 30px rgba(31, 41, 35, 0.18);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.species-preview-card.is-preview-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.species-preview-card img {
+  width: 88px;
+  height: 88px;
+  display: block;
+  object-fit: contain;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: var(--bg-muted);
+}
+
+.species-preview-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.species-preview-source {
+  margin-bottom: 3px;
+  color: var(--green);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.species-preview-title {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.species-preview-extract {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.species-preview-loading {
+  grid-column: 1 / -1;
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-align: center;
 }
 
 .history-card-container {
