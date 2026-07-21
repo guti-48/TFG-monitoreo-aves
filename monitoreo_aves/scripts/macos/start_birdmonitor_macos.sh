@@ -14,10 +14,12 @@ if [[ -d "venv" ]]; then
   source "venv/bin/activate"
 fi
 
-if command -v mediamtx >/dev/null 2>&1; then
+if [[ -n "${MEDIAMTX_BIN:-}" ]]; then
+  :
+elif [[ -x "$PROJECT_DIR/tools/mediamtx/macos/mediamtx" ]]; then
+  MEDIAMTX_BIN="${MEDIAMTX_BIN:-$PROJECT_DIR/tools/mediamtx/macos/mediamtx}"
+elif command -v mediamtx >/dev/null 2>&1; then
   MEDIAMTX_BIN="${MEDIAMTX_BIN:-mediamtx}"
-elif [[ -x "$PROJECT_DIR/tools/mediamtx/mediamtx" ]]; then
-  MEDIAMTX_BIN="${MEDIAMTX_BIN:-$PROJECT_DIR/tools/mediamtx/mediamtx}"
 else
   echo "No se ha encontrado MediaMTX. Instala mediamtx o define MEDIAMTX_BIN."
   exit 1
@@ -27,9 +29,16 @@ if [[ ! -f "$STREAM_CONFIG" ]]; then
   echo "No se ha encontrado mediamtx.yml. Define MEDIAMTX_CONFIG o colocalo en tools/mediamtx/mediamtx.yml."
   exit 1
 fi
+STREAM_CONFIG_DIR="$(cd "$(dirname "$STREAM_CONFIG")" && pwd)"
 
-if ! command -v python >/dev/null 2>&1; then
-  echo "No se ha encontrado python en PATH."
+if [[ -x "$PROJECT_DIR/venv/bin/python" ]]; then
+  PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python)"
+else
+  echo "No se ha encontrado python. Crea el venv o instala Python 3."
   exit 1
 fi
 
@@ -41,8 +50,8 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Arrancando MediaMTX en puerto 8888..."
-"$MEDIAMTX_BIN" "$STREAM_CONFIG" &
+(cd "$STREAM_CONFIG_DIR" && exec "$MEDIAMTX_BIN" "$STREAM_CONFIG") &
 MEDIAMTX_PID=$!
 
 echo "Arrancando backend en http://$BACKEND_HOST:$BACKEND_PORT"
-python -m uvicorn backend.app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"
+"$PYTHON_BIN" -m uvicorn backend.app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"

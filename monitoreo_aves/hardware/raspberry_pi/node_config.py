@@ -2,6 +2,36 @@ import os
 
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_ENV_FILE = os.path.join(CURRENT_DIR, "birdmonitor.env")
+
+
+def cargar_env_local(path=LOCAL_ENV_FILE):
+    """Carga KEY=VALUE locales sin sobrescribir variables ya definidas."""
+    if not os.path.isfile(path):
+        return
+
+    try:
+        with open(path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+
+                if line.startswith("export "):
+                    line = line[len("export "):].strip()
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+
+                if key:
+                    os.environ.setdefault(key, value)
+    except OSError as exc:
+        print(f"No se pudo cargar la configuracion local {path}: {exc}")
+
+
+cargar_env_local()
 
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
 SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")

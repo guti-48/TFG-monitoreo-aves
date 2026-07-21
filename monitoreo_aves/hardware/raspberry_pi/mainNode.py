@@ -11,7 +11,6 @@ from audio_processing import (
     resolverDispositivoEntrada,
 )
 from analyzer import BirdAnalyzer
-from birdweather_client import enviarDatosBirdWeather
 from node_config import (
     DURATION,
     INTERVALO,
@@ -23,6 +22,7 @@ from node_config import (
     UMBRAL_MOTORES,
     UMBRAL_RUIDO_ALTO,
 )
+from birdweather_client import enviarDatosBirdWeather
 from node_location import obtenerUbicacionNodo
 from node_sync import (
     enviarDatosServidor,

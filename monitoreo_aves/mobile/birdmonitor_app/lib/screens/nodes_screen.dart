@@ -111,11 +111,14 @@ class _NodesScreenState extends State<NodesScreen> {
     return detections.isNotEmpty ? detections.first : null;
   }
 
-  void _openStream() {
+  void _openStream(Device device) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LiveStreamScreen(baseUrl: widget.baseUrl),
+        builder: (_) => LiveStreamScreen(
+          baseUrl: widget.baseUrl,
+          nodeName: device.name,
+        ),
       ),
     );
   }
@@ -196,7 +199,7 @@ class _NodesScreenState extends State<NodesScreen> {
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: _openStream,
+            onPressed: () => _openStream(device),
             icon: const Icon(Icons.headphones),
             label: const Text('Abrir escucha'),
           ),

@@ -27,9 +27,10 @@ ALLOWED_AUDIO_EXTENSIONS = {".wav"}
 ALLOWED_IMAGE_EXTENSIONS = {".png"}
 
 CONFIGURED_STREAM_BASE_URL = os.getenv("BIRDMONITOR_STREAM_BASE_URL")
-DEFAULT_STREAM_PATH = os.getenv(
-    "BIRDMONITOR_STREAM_PATH",
-    "birdmonitor-audio",
+DEFAULT_STREAM_PATH = os.getenv("BIRDMONITOR_STREAM_PATH", "").strip("/")
+STREAM_PATH_TEMPLATE = os.getenv(
+    "BIRDMONITOR_STREAM_PATH_TEMPLATE",
+    "{node_name}-audio",
 ).strip("/")
 
 

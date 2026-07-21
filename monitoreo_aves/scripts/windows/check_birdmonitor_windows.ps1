@@ -5,8 +5,8 @@ Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
 
 $RuntimeDir = Join-Path $env:LOCALAPPDATA "BirdMonitor"
-$StreamName = if ($env:BIRDMONITOR_STREAM_PATH) { $env:BIRDMONITOR_STREAM_PATH } else { "birdmonitor-audio" }
 $StreamNodeName = if ($env:BIRDMONITOR_NODE_NAME) { $env:BIRDMONITOR_NODE_NAME } else { "birdmonitor" }
+$StreamName = if ($env:BIRDMONITOR_STREAM_PATH) { $env:BIRDMONITOR_STREAM_PATH } elseif ($env:BIRDMONITOR_STREAM_NAME) { $env:BIRDMONITOR_STREAM_NAME } else { "$StreamNodeName-audio" }
 $BackendPort = if ($env:BIRDMONITOR_BACKEND_PORT) { $env:BIRDMONITOR_BACKEND_PORT } else { "8000" }
 $MediaMtxHlsPort = if ($env:BIRDMONITOR_MEDIAMTX_HLS_PORT) { $env:BIRDMONITOR_MEDIAMTX_HLS_PORT } else { "8888" }
 $BackendBaseUrl = if ($env:BIRDMONITOR_LOCAL_BACKEND_URL) { $env:BIRDMONITOR_LOCAL_BACKEND_URL.TrimEnd("/") } else { "http://127.0.0.1:$BackendPort" }
@@ -70,7 +70,7 @@ try {
 }
 
 Write-Host ""
-Write-Host "Prueba backend /stream/control:" -ForegroundColor Yellow
+Write-Host "Prueba backend /stream/control para nodo '$StreamNodeName':" -ForegroundColor Yellow
 
 try {
     $response = Invoke-WebRequest -Uri $StreamControlUrl -UseBasicParsing -TimeoutSec 5

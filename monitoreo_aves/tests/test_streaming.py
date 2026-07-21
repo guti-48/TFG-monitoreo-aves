@@ -3,6 +3,8 @@ def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path,
 
     stream_control_file = tmp_path / "stream_control.json"
     monkeypatch.setattr(streaming, "STREAM_CONTROL_FILE", stream_control_file)
+    monkeypatch.setattr(streaming, "DEFAULT_STREAM_PATH", "")
+    monkeypatch.setattr(streaming, "STREAM_PATH_TEMPLATE", "{node_name}-audio")
 
     default_response = client.get(
         "/stream/control",
@@ -12,17 +14,20 @@ def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path,
     assert default_response.status_code == 200
     assert default_response.json()["stream_enabled"] is False
     assert default_response.json()["actual_running"] is False
+    assert default_response.json()["stream_path"] == "raspberry-test-stream-audio"
 
     control_response = client.post(
         "/stream/control",
         json={
             "node_name": "raspberry-test-stream",
             "stream_enabled": True,
+            "stream_path": "directo-principal",
         },
     )
 
     assert control_response.status_code == 200
     assert control_response.json()["stream_enabled"] is True
+    assert control_response.json()["stream_path"] == "directo-principal"
 
     status_response = client.post(
         "/stream/status",
@@ -46,4 +51,5 @@ def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path,
     assert persisted_response.status_code == 200
     assert persisted_response.json()["stream_enabled"] is True
     assert persisted_response.json()["actual_running"] is True
+    assert persisted_response.json()["stream_path"] == "directo-principal"
     assert stream_control_file.exists()

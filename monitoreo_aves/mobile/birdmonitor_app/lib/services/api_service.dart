@@ -26,6 +26,13 @@ class ApiService {
     return cleanUrl;
   }
 
+  String _resolveStreamNodeName(String? nodeName) {
+    final cleanNodeName = nodeName?.trim();
+    return cleanNodeName == null || cleanNodeName.isEmpty
+        ? streamNodeName
+        : cleanNodeName;
+  }
+
   Future<bool> testConnection() async {
     try {
       final response = await http
@@ -139,12 +146,13 @@ class ApiService {
     return '$baseUrl/spectrograms/${Uri.encodeComponent('$baseName.png')}';
   }
 
-  Future<Map<String, dynamic>> getStreamStatus() async {
+  Future<Map<String, dynamic>> getStreamStatus({String? nodeName}) async {
+    final effectiveNodeName = _resolveStreamNodeName(nodeName);
     final response = await http
         .get(
           Uri.parse(
             '$baseUrl/stream/control',
-          ).replace(queryParameters: {'node_name': streamNodeName}),
+          ).replace(queryParameters: {'node_name': effectiveNodeName}),
         )
         .timeout(const Duration(seconds: 5));
 
@@ -161,15 +169,26 @@ class ApiService {
     return decoded;
   }
 
-  Future<Map<String, dynamic>> setStreamEnabled(bool enabled) async {
+  Future<Map<String, dynamic>> setStreamEnabled(
+    bool enabled, {
+    String? nodeName,
+    String? streamPath,
+  }) async {
+    final effectiveNodeName = _resolveStreamNodeName(nodeName);
+    final body = <String, dynamic>{
+      'node_name': effectiveNodeName,
+      'stream_enabled': enabled,
+    };
+
+    if (streamPath != null && streamPath.trim().isNotEmpty) {
+      body['stream_path'] = streamPath.trim();
+    }
+
     final response = await http
         .post(
           Uri.parse('$baseUrl/stream/control'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'node_name': streamNodeName,
-            'stream_enabled': enabled,
-          }),
+          body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 5));
 
@@ -188,14 +207,16 @@ class ApiService {
     return decoded;
   }
 
-  String getHlsUrl() {
+  String getHlsUrl({String streamPath = 'birdmonitor-audio'}) {
     final uri = Uri.parse(baseUrl);
+    final cleanPath = streamPath.trim().replaceAll(RegExp(r'^/+|/+$'), '');
 
     return Uri(
       scheme: uri.scheme,
       host: uri.host,
       port: 8888,
-      path: '/birdmonitor-audio/index.m3u8',
+      path:
+          '/${cleanPath.isEmpty ? 'birdmonitor-audio' : cleanPath}/index.m3u8',
     ).toString();
   }
 

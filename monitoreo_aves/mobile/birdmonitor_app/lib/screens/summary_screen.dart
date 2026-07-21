@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/audio_metrics.dart';
 import '../models/detection.dart';
@@ -23,7 +24,13 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
+  static const _stationNamePrefix = 'station_display_name.';
+  static const _stationLocationPrefix = 'station_display_location.';
+
   late final ApiService api;
+
+  final Map<String, String> _stationNameOverrides = {};
+  final Map<String, String> _stationLocationOverrides = {};
 
   late Future<List<Detection>> _detectionsFuture;
   late Future<List<Device>> _devicesFuture;
@@ -35,6 +42,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     super.initState();
     api = ApiService(widget.baseUrl);
     _loadData();
+    _loadStationDisplayPreferences();
   }
 
   void _loadData() {
@@ -74,6 +82,157 @@ class _SummaryScreenState extends State<SummaryScreen> {
     } catch (e) {
       return {'error': e.toString()};
     }
+  }
+
+  Future<void> _loadStationDisplayPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final names = <String, String>{};
+    final locations = <String, String>{};
+
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith(_stationNamePrefix)) {
+        final stationKey = key.substring(_stationNamePrefix.length);
+        final value = prefs.getString(key)?.trim();
+        if (value != null && value.isNotEmpty) names[stationKey] = value;
+      }
+
+      if (key.startsWith(_stationLocationPrefix)) {
+        final stationKey = key.substring(_stationLocationPrefix.length);
+        final value = prefs.getString(key)?.trim();
+        if (value != null && value.isNotEmpty) locations[stationKey] = value;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _stationNameOverrides
+        ..clear()
+        ..addAll(names);
+      _stationLocationOverrides
+        ..clear()
+        ..addAll(locations);
+    });
+  }
+
+  String _stationStorageKey(Device? station) {
+    if (station == null) return 'default';
+    if (station.id != 0) return station.id.toString();
+    final cleanName = station.name.trim();
+    return cleanName.isEmpty ? 'default' : cleanName;
+  }
+
+  String _stationDisplayName(Device? station) {
+    final key = _stationStorageKey(station);
+    final localName = _stationNameOverrides[key]?.trim();
+    if (localName != null && localName.isNotEmpty) return localName;
+
+    final backendName = station?.name.trim();
+    if (backendName != null && backendName.isNotEmpty) return backendName;
+
+    return 'Estacion BirdMonitor';
+  }
+
+  String _stationDisplayLocation(Device? station) {
+    final key = _stationStorageKey(station);
+    final localLocation = _stationLocationOverrides[key]?.trim();
+    if (localLocation != null && localLocation.isNotEmpty) {
+      return localLocation;
+    }
+
+    final backendLocation = station?.location?.trim();
+    if (backendLocation != null && backendLocation.isNotEmpty) {
+      return backendLocation;
+    }
+
+    return 'Ubicacion sin definir';
+  }
+
+  Future<void> _editStationDisplay(Device? station) async {
+    final key = _stationStorageKey(station);
+    final originalName = station?.name.trim() ?? '';
+    final originalLocation = station?.location?.trim() ?? '';
+    final nameController = TextEditingController(
+      text: _stationDisplayName(station),
+    );
+    final locationController = TextEditingController(
+      text: _stationDisplayLocation(station) == 'Ubicacion sin definir'
+          ? ''
+          : _stationDisplayLocation(station),
+    );
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Editar estacion'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre visible',
+                  prefixIcon: Icon(Icons.sensors),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: locationController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Ubicacion',
+                  prefixIcon: Icon(Icons.place_outlined),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context, {
+                  'name': nameController.text.trim(),
+                  'location': locationController.text.trim(),
+                });
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    nameController.dispose();
+    locationController.dispose();
+
+    if (result == null) return;
+
+    final newName = result['name']?.trim() ?? '';
+    final newLocation = result['location']?.trim() ?? '';
+    final prefs = await SharedPreferences.getInstance();
+
+    if (newName.isEmpty || newName == originalName) {
+      await prefs.remove('$_stationNamePrefix$key');
+      _stationNameOverrides.remove(key);
+    } else {
+      await prefs.setString('$_stationNamePrefix$key', newName);
+      _stationNameOverrides[key] = newName;
+    }
+
+    if (newLocation.isEmpty || newLocation == originalLocation) {
+      await prefs.remove('$_stationLocationPrefix$key');
+      _stationLocationOverrides.remove(key);
+    } else {
+      await prefs.setString('$_stationLocationPrefix$key', newLocation);
+      _stationLocationOverrides[key] = newLocation;
+    }
+
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _refresh() async {
@@ -178,6 +337,170 @@ class _SummaryScreenState extends State<SummaryScreen> {
     return 'Estado sin confirmar';
   }
 
+  double? _boundedProgress(double? value) {
+    if (value == null) return null;
+    final absolute = value.abs();
+    if (absolute == 0) return 0;
+    return (absolute / (absolute + 1)).clamp(0, 1).toDouble();
+  }
+
+  double? _ndsiProgress(double? ndsi) {
+    if (ndsi == null) return null;
+    return ((ndsi + 1) / 2).clamp(0, 1).toDouble();
+  }
+
+  String _bioacousticLevel(AudioMetric? metric) {
+    final ndsi = metric?.ndsi;
+    if (metric == null || ndsi == null) return 'Sin nivel bioacustico';
+    if (ndsi >= 0.35) return 'Biofonia dominante';
+    if (ndsi >= 0.08) return 'Biofonia presente';
+    if (ndsi > -0.20) return 'Paisaje sonoro mixto';
+    return 'Ruido dominante';
+  }
+
+  String _bioacousticDetail(AudioMetric? metric) {
+    if (metric == null) {
+      return 'Aun no hay muestras acusticas para interpretar el paisaje sonoro.';
+    }
+
+    final ndsi = metric.ndsi;
+    final when = _relativeTime(metric.timestamp).toLowerCase();
+    if (ndsi == null) return 'Ultima muestra $when, sin NDSI calculado.';
+    if (ndsi >= 0.35) {
+      return 'Ultima muestra $when: predominan sonidos biologicos frente al ruido.';
+    }
+    if (ndsi >= 0.08) {
+      return 'Ultima muestra $when: hay actividad biologica reconocible en el audio.';
+    }
+    if (ndsi > -0.20) {
+      return 'Ultima muestra $when: mezcla entre biofonia, ambiente y posible ruido.';
+    }
+    return 'Ultima muestra $when: el ruido pesa mas que la biofonia registrada.';
+  }
+
+  Color _bioacousticColor(BuildContext context, AudioMetric? metric) {
+    final ndsi = metric?.ndsi;
+    if (ndsi == null) return Theme.of(context).colorScheme.secondary;
+    if (ndsi >= 0.08) return Theme.of(context).colorScheme.primary;
+    if (ndsi > -0.20) return const Color(0xFF9A6A1E);
+    return Theme.of(context).colorScheme.error;
+  }
+
+  Widget _buildBioMetricLine({
+    required String label,
+    required String value,
+    required String detail,
+    double? progress,
+    String? leftLabel,
+    String? rightLabel,
+  }) {
+    final color = Theme.of(context).colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(value, style: Theme.of(context).textTheme.titleMedium),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (progress != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: appGreenSoft,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+            if (leftLabel != null || rightLabel != null) ...[
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      leftLabel ?? '',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  Text(
+                    rightLabel ?? '',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 2),
+          ],
+          Text(
+            detail,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBioacousticSummary(AudioMetric? metric) {
+    return AppFieldHero(
+      icon: Icons.graphic_eq,
+      eyebrow: 'Nivel bioacustico',
+      title: _bioacousticLevel(metric),
+      subtitle: _bioacousticDetail(metric),
+      status: AppStatusPill(
+        text: metric?.ndsi == null
+            ? 'Sin NDSI'
+            : 'NDSI ${formatValue(metric!.ndsi)}',
+        icon: Icons.eco_outlined,
+        color: _bioacousticColor(context, metric),
+      ),
+      child: metric == null
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildBioMetricLine(
+                  label: 'Balance biofonia / ruido',
+                  value: formatValue(metric.ndsi),
+                  detail:
+                      'El NDSI resume si pesan mas los sonidos biologicos o el ruido de fondo.',
+                  progress: _ndsiProgress(metric.ndsi),
+                  leftLabel: 'Ruido',
+                  rightLabel: 'Biofonia',
+                ),
+                _buildBioMetricLine(
+                  label: 'Actividad biologica',
+                  value: formatValue(metric.bio),
+                  detail:
+                      'BIO estima la energia acustica asociada a actividad biologica.',
+                  progress: _boundedProgress(metric.bio),
+                ),
+                _buildBioMetricLine(
+                  label: 'Complejidad acustica',
+                  value: formatValue(metric.aci),
+                  detail:
+                      'ACI aumenta cuando el audio tiene variaciones y eventos sonoros.',
+                  progress: _boundedProgress(metric.aci),
+                ),
+              ],
+            ),
+    );
+  }
+
   Future<void> _openDetail(Detection detection) async {
     await Navigator.push(
       context,
@@ -193,38 +516,35 @@ class _SummaryScreenState extends State<SummaryScreen> {
     setState(_loadData);
   }
 
-  void _openStream() {
+  void _openSecondaryScreen(String title, Widget screen) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LiveStreamScreen(baseUrl: widget.baseUrl),
+        builder: (_) => AppSecondaryScaffold(title: title, child: screen),
       ),
     );
   }
 
+  void _openStream() {
+    _openSecondaryScreen('Escucha', LiveStreamScreen(baseUrl: widget.baseUrl));
+  }
+
   void _openDetections() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DetectionsScreen(baseUrl: widget.baseUrl),
-      ),
+    _openSecondaryScreen(
+      'Detecciones',
+      DetectionsScreen(baseUrl: widget.baseUrl),
     );
   }
 
   void _openDailyReport() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DailyReportScreen(baseUrl: widget.baseUrl),
-      ),
+    _openSecondaryScreen(
+      'Informe diario',
+      DailyReportScreen(baseUrl: widget.baseUrl),
     );
   }
 
   void _openStations() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => NodesScreen(baseUrl: widget.baseUrl)),
-    );
+    _openSecondaryScreen('Estaciones', NodesScreen(baseUrl: widget.baseUrl));
   }
 
   Widget _buildStationPanel(List<Device> devices, Map<String, dynamic> stream) {
@@ -242,11 +562,14 @@ class _SummaryScreenState extends State<SummaryScreen> {
     ]);
     final hasStreamError = stream['error'] != null;
 
+    final displayName = _stationDisplayName(station);
+    final displayLocation = _stationDisplayLocation(station);
+
     return AppFieldHero(
       icon: Icons.sensors,
       eyebrow: 'Estacion activa',
-      title: station?.name ?? 'Estacion BirdMonitor',
-      subtitle: station?.location ?? widget.baseUrl,
+      title: displayName,
+      subtitle: displayLocation,
       status: AppStatusPill(
         text: _stationState(desired, running, hasStreamError),
         icon: running == true ? Icons.graphic_eq : Icons.sensors_off_outlined,
@@ -257,11 +580,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppSoundBars(active: running == true, height: 46),
-          const SizedBox(height: 12),
+          AppSoundBars(active: running == true, height: 28),
+          const SizedBox(height: 8),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               AppStatusPill(
                 text: 'Escucha: ${_statusLabel(desired)}',
@@ -279,6 +603,16 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   icon: Icons.warning_amber_outlined,
                   color: Theme.of(context).colorScheme.error,
                 ),
+              OutlinedButton.icon(
+                onPressed: () => _editStationDisplay(station),
+                icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
+                label: const Text('Editar'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ],
           ),
         ],
@@ -403,33 +737,19 @@ class _SummaryScreenState extends State<SummaryScreen> {
     final latest = detections.isNotEmpty ? detections.first : null;
     final todayDetections = detections.where(_isToday).toList();
     final todaySpecies = todayDetections
-        .map((detection) => detection.species)
+        .where((detection) => !detection.isAmbientNoise)
+        .map((detection) => detection.displaySpecies)
         .where((species) => species.trim().isNotEmpty)
         .toSet();
     final pendingReviews = detections
-        .where(
-          (detection) =>
-              detection.reviewStatus == DetectionReviewStatus.unreviewed,
-        )
+        .where((detection) => detection.needsBirdReview)
         .length;
     final latestMetric = metrics.isNotEmpty ? metrics.first : null;
 
     return AppPage(
       children: [
-        AppHeaderPanel(
-          icon: Icons.eco,
-          leading: const BirdMonitorLogo(size: 40),
-          title: 'BirdMonitor',
-          subtitle: latest == null
-              ? 'Sin actividad reciente. La estacion esta lista para registrar.'
-              : 'Ultima escucha ${_relativeTime(latest.timestamp).toLowerCase()}.',
-          trailing: IconButton(
-            tooltip: 'Actualizar',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh),
-          ),
-        ),
         _buildStationPanel(devices, stream),
+        _buildBioacousticSummary(latestMetric),
         const AppSectionTitle(
           title: 'Ultima evidencia',
           subtitle: 'La pieza mas reciente para escuchar y revisar.',
@@ -457,17 +777,17 @@ class _SummaryScreenState extends State<SummaryScreen> {
             ),
             AppMetricCard(
               icon: Icons.rate_review_outlined,
-              label: 'Pendientes',
+              label: 'Aves pendientes',
               value: pendingReviews.toString(),
-              detail: 'Detecciones sin revisar',
+              detail: 'Aves escuchadas sin validar',
             ),
             AppMetricCard(
               icon: Icons.graphic_eq,
-              label: 'NDSI reciente',
-              value: latestMetric?.ndsi == null
-                  ? 'Sin datos'
-                  : latestMetric!.ndsi!.toStringAsFixed(3),
-              detail: 'Paisaje sonoro',
+              label: 'Muestras acusticas',
+              value: metrics.length.toString(),
+              detail: latestMetric == null
+                  ? 'Sin muestras registradas'
+                  : 'Ultima ${_relativeTime(latestMetric.timestamp).toLowerCase()}',
             ),
           ],
         ),
