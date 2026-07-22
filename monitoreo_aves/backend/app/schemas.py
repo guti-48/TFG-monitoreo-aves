@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Literal
 
@@ -11,6 +11,8 @@ class DetectionCreate(BaseModel):
     filename: str
     device_name: str
     amplitude: float
+    audio_start_seconds: Optional[float] = Field(default=None, ge=0)
+    audio_end_seconds: Optional[float] = Field(default=None, ge=0)
 
 
 class Detection(DetectionCreate):
@@ -99,11 +101,25 @@ class DetectionResponse(BaseModel):
     filename: str
     device_id: int
     amplitude: float
+    audio_start_seconds: Optional[float] = None
+    audio_end_seconds: Optional[float] = None
     review: Optional[DetectionReviewResponse] = None
     learned_suggestion: Optional[LearningSuggestionResponse] = None
 
     class Config:
         from_attributes = True
+
+
+class DetectionReviewMediaResponse(BaseModel):
+    audio_url: str
+    spectrogram_url: str
+    audio_duration_seconds: float
+    review_start_seconds: float
+    review_end_seconds: float
+    review_duration_seconds: float
+    audio_start_seconds: Optional[float] = None
+    audio_end_seconds: Optional[float] = None
+    timing_available: bool
 
 #Esquemas para métricas acústicas por ciclo
 class AudioMetricCreate(BaseModel):

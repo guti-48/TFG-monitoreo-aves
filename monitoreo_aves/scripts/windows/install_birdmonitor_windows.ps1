@@ -80,9 +80,9 @@ $MediaMtxDir = Split-Path -Parent $MediaMtxExe
 # =========================
 
 $PossibleMediaMtxConfig = @(
-    (Join-Path $MediaMtxDir "mediamtx.yml"),
-    (Join-Path $ProjectDir "mediamtx.yml"),
     (Join-Path $ProjectDir "tools\mediamtx\mediamtx.yml"),
+    (Join-Path $ProjectDir "mediamtx.yml"),
+    (Join-Path $MediaMtxDir "mediamtx.yml"),
     "C:\mediamtx.yml"
 )
 
@@ -139,7 +139,8 @@ Write-Host "Creando script de arranque de MediaMTX..." -ForegroundColor Cyan
 `$existing = Get-Process mediamtx -ErrorAction SilentlyContinue
 
 if (`$existing) {
-    exit 0
+    Wait-Process -Id `$existing.Id
+    exit 1
 }
 
 `$startArgs = @{
@@ -151,7 +152,8 @@ if (`$existing) {
     RedirectStandardError = "$MediaMtxErrLog"
 }
 
-Start-Process @startArgs
+`$process = Start-Process @startArgs -PassThru -Wait
+exit `$process.ExitCode
 "@ | Set-Content -Path $MediaMtxStartScript -Encoding UTF8
 
 # =========================
@@ -160,12 +162,18 @@ Start-Process @startArgs
 
 Write-Host "Creando script de arranque del backend FastAPI..." -ForegroundColor Cyan
 
-$VenvActivate = Join-Path $ProjectDir "venv\Scripts\activate.bat"
+$VenvPython = Join-Path $ProjectDir "venv\Scripts\python.exe"
 
-if (Test-Path $VenvActivate) {
-    $ActivateLine = "call `"$VenvActivate`""
+if (Test-Path $VenvPython) {
+    $PythonExe = (Resolve-Path $VenvPython).Path
 } else {
-    $ActivateLine = "REM No se ha encontrado venv. Se usara python del sistema."
+    $PythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
+
+    if ($null -eq $PythonCommand) {
+        throw "No se ha encontrado venv\Scripts\python.exe ni python.exe en PATH."
+    }
+
+    $PythonExe = $PythonCommand.Source
 }
 
 @"
@@ -181,9 +189,7 @@ if %ERRORLEVEL%==0 (
     exit /b 0
 )
 
-$ActivateLine
-
-python -m uvicorn backend.app.main:app --host %BIRDMONITOR_BACKEND_HOST% --port %BIRDMONITOR_BACKEND_PORT% >> "$BackendLog" 2>&1
+"$PythonExe" -m uvicorn backend.app.main:app --host %BIRDMONITOR_BACKEND_HOST% --port %BIRDMONITOR_BACKEND_PORT% >> "$BackendLog" 2>&1
 "@ | Set-Content -Path $BackendStartScript -Encoding ASCII
 
 # =========================
@@ -199,7 +205,21 @@ Unregister-ScheduledTask -TaskName $BackendTaskName -Confirm:$false -ErrorAction
 # CREAR TAREAS PROGRAMADAS
 # =========================
 
-$Trigger = New-ScheduledTaskTrigger -AtLogOn
+$TaskUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+$Principal = New-ScheduledTaskPrincipal `
+    -UserId $TaskUser `
+    -LogonType S4U `
+    -RunLevel Highest
+$Settings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
+    -MultipleInstances IgnoreNew
+
+Write-Host "Las tareas arrancaran con Windows como $TaskUser." -ForegroundColor Yellow
+Write-Host ""
 
 Write-Host "Creando tarea programada para MediaMTX..." -ForegroundColor Cyan
 
@@ -212,8 +232,9 @@ Register-ScheduledTask `
     -TaskName $MediaMtxTaskName `
     -Action $MediaMtxAction `
     -Trigger $Trigger `
+    -Principal $Principal `
+    -Settings $Settings `
     -Description "Arranca MediaMTX para BirdMonitor" `
-    -RunLevel Highest `
     -Force
 
 Write-Host "Creando tarea programada para Backend FastAPI..." -ForegroundColor Cyan
@@ -227,9 +248,18 @@ Register-ScheduledTask `
     -TaskName $BackendTaskName `
     -Action $BackendAction `
     -Trigger $Trigger `
+    -Principal $Principal `
+    -Settings $Settings `
     -Description "Arranca el backend FastAPI de BirdMonitor" `
-    -RunLevel Highest `
     -Force
+
+if ($null -eq (Get-ScheduledTask -TaskName $MediaMtxTaskName -ErrorAction SilentlyContinue)) {
+    throw "No se pudo registrar la tarea $MediaMtxTaskName."
+}
+
+if ($null -eq (Get-ScheduledTask -TaskName $BackendTaskName -ErrorAction SilentlyContinue)) {
+    throw "No se pudo registrar la tarea $BackendTaskName."
+}
 
 # =========================
 # ARRANCAR

@@ -174,14 +174,18 @@ if __name__ == "__main__":
                             filename=filename,          
                             timestamp_str=timestampDB,
                             amplitude=rms_amplitude,
+                            audio_start_seconds=datos.get('time_start'),
+                            audio_end_seconds=datos.get('time_end'),
                         )
 
                         nombre_especie = datos['species']
                         if "Human" not in nombre_especie and "Motor" not in nombre_especie and "Noise" not in nombre_especie:
                             enviarDatosBirdWeather(
                                 species=nombre_especie,
+                                scientific_name=datos.get('scientific_name'),
                                 confidence=datos['confidence'],
                                 timestamp=timestampDB,
+                                audio_start_seconds=datos.get('time_start'),
                                 lat=ubicacion_nodo["lat"] if ubicacion_nodo["lat"] is not None else brain.lat,
                                 lon=ubicacion_nodo["lon"] if ubicacion_nodo["lon"] is not None else brain.lon,
                             )

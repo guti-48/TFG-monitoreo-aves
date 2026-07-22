@@ -162,7 +162,8 @@ Requisitos:
 * PowerShell abierto como administrador.
 * Entorno virtual creado en `monitoreo_aves/venv`.
 * Dependencias instaladas con `pip install -r requirements.txt`.
-* `tools/mediamtx/mediamtx.exe` y `tools/mediamtx/mediamtx.yml` disponibles.
+* `mediamtx.exe` disponible en `tools/mediamtx/`, en la raiz del proyecto o en `C:\`.
+* `tools/mediamtx/mediamtx.yml` disponible como configuracion versionada del proyecto.
 
 Instalar y arrancar servicios:
 
@@ -176,7 +177,12 @@ El instalador:
 * Busca `mediamtx.exe` y `mediamtx.yml`.
 * Crea scripts internos en `%LOCALAPPDATA%\BirdMonitor`.
 * Crea las tareas programadas `BirdMonitor MediaMTX` y `BirdMonitor Backend`.
+* Sustituye automaticamente tareas anteriores con esos mismos nombres; no es necesario borrarlas a mano.
+* Programa ambas tareas para arrancar con Windows, aunque todavia no se haya abierto sesion.
+* Reintenta el arranque si uno de los procesos termina con error.
 * Arranca MediaMTX en `8888` y FastAPI en `8000`.
+
+Hay que ejecutar el instalador una vez en cada ordenador servidor y volver a ejecutarlo si cambia la ruta del repositorio, del entorno virtual o de MediaMTX. Actualizar el codigo con Git no registra por si solo las tareas de Windows.
 
 Comprobar estado:
 
@@ -322,7 +328,13 @@ BIRDMONITOR_NODE_LOCATION=Sevilla
 BIRDMONITOR_NODE_LAT=37.3891
 BIRDMONITOR_NODE_LON=-5.9845
 BIRDMONITOR_MIC_DEVICE=1
+BIRDMONITOR_STREAM_SERVICE=birdstream.service
+BIRDMONITOR_STREAM_POLL_INTERVAL=5
+BIRDMONITOR_STREAM_FAILURE_LIMIT=3
+BIRDMONITOR_STREAM_HEALTH_TIMEOUT=5
 ```
+
+El supervisor no se limita al estado de systemd: tambien comprueba que el manifiesto HLS responda. Si `birdstream.service` figura activo pero deja de publicar despues de reiniciar el servidor central o perder la red, lo reinicia tras el numero de fallos consecutivos configurado.
 
 Comandos utiles con `systemd`:
 
@@ -396,6 +408,9 @@ El sistema se encuentra en fase de validación técnica con funcionalidad comple
     * **Análisis Ecológico:** Cálculo automático de Índices de Biodiversidad (Shannon $H'$, Pielou $J'$, Simpson $1-D$).
     * **Radar de Bioacústica (Paisaje Sonoro):** Análisis matricial del archivo `.wav` en el servidor utilizando `scikit-maad` para extraer los índices ACI, ADI, AEI, BIO y NDSI, midiendo la salud acústica del entorno y dibujando una huella sonora en gráfico de radar.
     * **Cartografía Dinámica:** Generación automática de mapas interactivos (Leaflet.js) basados en la geolocalización IP del nodo, mostrando radios de cobertura ponderados por el índice de Shannon local.
+    * **Evidencia acústica sincronizada:** El histórico permite escuchar un contexto de 20 segundos directamente sobre su espectrograma. Un cursor recorre la imagen durante la reproducción y una franja resalta los 3 segundos que BirdNET utilizó para clasificar la especie.
+
+Las detecciones creadas desde esta versión conservan en la base de datos los segundos de inicio y fin indicados por BirdNET. Los registros anteriores siguen siendo compatibles, pero muestran los primeros 20 segundos del WAV porque esa marca temporal no se almacenaba todavía.
 
 ## Arquitectura Técnica
 

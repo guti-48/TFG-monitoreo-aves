@@ -214,16 +214,28 @@ def obtenerFilenameBasesPendientes():
     return pendientes
 
 
-def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude):
+def enviarDatosServidor(
+    species,
+    confidence,
+    filename,
+    timestamp_str,
+    amplitude,
+    audio_start_seconds=None,
+    audio_end_seconds=None,
+):
     """Envia la deteccion al servidor FastAPI y sube los archivos asociados."""
     datos = {
         "species": species,
         "confidence": confidence,
         "timestamp": timestamp_str,
-        "filename": f"{filename}.wav",
+        "filename": normalizarFilenameWav(filename),
         "device_name": NODE_NAME,
         "amplitude": float(amplitude),
     }
+
+    if audio_start_seconds is not None and audio_end_seconds is not None:
+        datos["audio_start_seconds"] = float(audio_start_seconds)
+        datos["audio_end_seconds"] = float(audio_end_seconds)
 
     try:
         r = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=60)
@@ -232,14 +244,38 @@ def enviarDatosServidor(species, confidence, filename, timestamp_str, amplitude)
                 sincronizarRespaldo()
             else:
                 print("La deteccion llego al servidor, pero fallo la subida de archivos. Guardando para reintento...")
-                guardarBackupLocal(species, confidence, timestamp_str, amplitude, normalizarFilenameBase(filename))
+                guardarBackupLocal(
+                    species,
+                    confidence,
+                    timestamp_str,
+                    amplitude,
+                    normalizarFilenameBase(filename),
+                    audio_start_seconds,
+                    audio_end_seconds,
+                )
         else:
             print(f"Servidor rechazo la deteccion ({r.status_code}). Guardando local...")
-            guardarBackupLocal(species, confidence, timestamp_str, amplitude, normalizarFilenameBase(filename))
+            guardarBackupLocal(
+                species,
+                confidence,
+                timestamp_str,
+                amplitude,
+                normalizarFilenameBase(filename),
+                audio_start_seconds,
+                audio_end_seconds,
+            )
 
     except requests.exceptions.RequestException as e:
         print(f"Error de conexion: {e}. Guardando local...")
-        guardarBackupLocal(species, confidence, timestamp_str, amplitude, normalizarFilenameBase(filename))
+        guardarBackupLocal(
+            species,
+            confidence,
+            timestamp_str,
+            amplitude,
+            normalizarFilenameBase(filename),
+            audio_start_seconds,
+            audio_end_seconds,
+        )
 
 
 def enviarMetricasAcusticas(metricas, filename_wav, timestamp_str, rms_amplitude):
@@ -276,17 +312,31 @@ def enviarMetricasAcusticas(metricas, filename_wav, timestamp_str, rms_amplitude
         guardarEventoOffline("audio_metric", datos, str(e))
 
 
-def guardarBackupLocal(species, confidence, timestamp, amplitude, filename):
+def guardarBackupLocal(
+    species,
+    confidence,
+    timestamp,
+    amplitude,
+    filename,
+    audio_start_seconds=None,
+    audio_end_seconds=None,
+):
     """Guarda una deteccion en la cola local si el servidor no esta disponible."""
+    payload = {
+        "species": species,
+        "confidence": float(confidence),
+        "timestamp": timestamp,
+        "amplitude": float(amplitude),
+        "filename": normalizarFilenameBase(filename),
+    }
+
+    if audio_start_seconds is not None and audio_end_seconds is not None:
+        payload["audio_start_seconds"] = float(audio_start_seconds)
+        payload["audio_end_seconds"] = float(audio_end_seconds)
+
     guardarEventoOffline(
         "detection",
-        {
-            "species": species,
-            "confidence": float(confidence),
-            "timestamp": timestamp,
-            "amplitude": float(amplitude),
-            "filename": normalizarFilenameBase(filename),
-        },
+        payload,
         "pendiente de sincronizacion",
     )
 
@@ -363,6 +413,16 @@ def sincronizarRespaldo():
                         "device_name": NODE_NAME,
                         "amplitude": float(payload["amplitude"]),
                     }
+                    if (
+                        payload.get("audio_start_seconds") is not None
+                        and payload.get("audio_end_seconds") is not None
+                    ):
+                        datos_json["audio_start_seconds"] = float(
+                            payload["audio_start_seconds"]
+                        )
+                        datos_json["audio_end_seconds"] = float(
+                            payload["audio_end_seconds"]
+                        )
                     response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=60)
                     ok = response.status_code == 200 and subirArchivos(filename_base)
 
