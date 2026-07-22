@@ -6,6 +6,8 @@
 .pytest_cache/
 .tmp/
 *.secret
+*.crt
+*.key
 secrets/
 *.wav
 *.png
@@ -25,7 +27,10 @@ hardware/raspberry_pi/birdweather_token
 hardware/raspberry_pi/birdweather_token.txt
 tools/mediamtx/macos/mediamtx
 tools/mediamtx/mediamtx.exe
+tools/mediamtx/.mediamtx.exe.old
 tools/mediamtx/auto.crt
 tools/mediamtx/auto.key
 tools/mediamtx/mediamtx.log
 tools/mediamtx/*.tar.gz
+*.crt
+*.key
