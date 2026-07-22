@@ -11,6 +11,22 @@ from node_config import (
 )
 
 
+def _parsearCoordenada(value, nombre, minimo, maximo):
+    if not value:
+        return None
+
+    try:
+        coordenada = float(value)
+    except (TypeError, ValueError):
+        print(f"Coordenada manual {nombre} invalida: {value!r}.")
+        return None
+
+    if not minimo <= coordenada <= maximo:
+        print(f"Coordenada manual {nombre} fuera de rango: {coordenada}.")
+        return None
+    return coordenada
+
+
 def cargarUbicacionCache():
     """Carga la ultima ubicacion conocida desde disco."""
     try:
@@ -86,8 +102,8 @@ def obtenerUbicacionNodo():
     if NODE_LOCATION:
         return {
             "location": NODE_LOCATION,
-            "lat": float(NODE_LAT) if NODE_LAT else None,
-            "lon": float(NODE_LON) if NODE_LON else None,
+            "lat": _parsearCoordenada(NODE_LAT, "latitud", -90.0, 90.0),
+            "lon": _parsearCoordenada(NODE_LON, "longitud", -180.0, 180.0),
             "source": "manual",
         }
 

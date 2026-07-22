@@ -43,6 +43,28 @@ def asegurar_esquema_runtime() -> None:
                 "ALTER TABLE detections ADD COLUMN audio_end_seconds FLOAT"
             )
 
+        columnas_audio_metrics = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(audio_metrics)").fetchall()
+        }
+        nuevas_columnas_audio = {
+            "peak": "FLOAT",
+            "clipping_ratio": "FLOAT",
+            "dc_offset": "FLOAT",
+            "noise_floor_rms": "FLOAT",
+            "quality_status": "VARCHAR",
+            "quality_detail": "VARCHAR",
+            "mic_device": "VARCHAR",
+            "birdnet_model": "VARCHAR",
+            "birdnet_model_version": "VARCHAR",
+            "birdnetlib_version": "VARCHAR",
+        }
+        for nombre, tipo in nuevas_columnas_audio.items():
+            if nombre not in columnas_audio_metrics:
+                conn.exec_driver_sql(
+                    f"ALTER TABLE audio_metrics ADD COLUMN {nombre} {tipo}"
+                )
+
 
 asegurar_esquema_runtime()
 

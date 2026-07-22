@@ -1,55 +1,95 @@
-import os, requests
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version as package_version
+from pathlib import Path
+
 from birdnetlib import Recording
 from birdnetlib.analyzer import Analyzer
 
-# Parámetros de análisis BirdNET
-MIN_CONF   = 0.5   # confianza mínima para aceptar una detección
-OVERLAP    = 1.5   # solapamiento de ventana en segundos
-SENSITIVITY = 1.25  # sensibilidad para aves en la lejanía
+from node_config import (
+    BIRDNET_MIN_CONFIDENCE,
+    BIRDNET_MODEL_VERSION,
+    BIRDNET_OVERLAP,
+    BIRDNET_SENSITIVITY,
+)
 
-#### CONFIGURACION ####
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(CURRENT_DIR, "model", "birdnet_model.tflite")
-LABELS_PATH = os.path.join(CURRENT_DIR, "model", "birdnet_labels.txt")
+
+DEFAULT_LAT = 40.4168
+DEFAULT_LON = -3.7038
+
+
+def _coordenadas_validas(lat, lon):
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except (TypeError, ValueError):
+        return False
+    return -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
+
 
 class BirdAnalyzer:
-    def __init__(self):
-        print("Motor de BirdNet Cargando...")
+    def __init__(self, lat=None, lon=None):
+        print("Motor de BirdNET cargando...")
         self.analyzer = None
-        try: 
-            self.analyzer = Analyzer()
-            print("El modelo BirdNet se ha cargado correctamente.")
-        except Exception as e:
-            print(f"[ERROR] No se ha podido cargar el modelo BirdNet: {e}")
 
-        self.lat, self.lon = self.get_auto_location()
-        print(f"Ubicación detectada: Latitud {self.lat}, Longitud {self.lon}")        
+        if _coordenadas_validas(lat, lon):
+            self.lat = float(lat)
+            self.lon = float(lon)
+            self.location_source = "node"
+        else:
+            self.lat = DEFAULT_LAT
+            self.lon = DEFAULT_LON
+            self.location_source = "default"
+            print(
+                "[WARN] BirdNET no recibio coordenadas validas del nodo; "
+                "se usa la ubicacion de respaldo del centro de Espana."
+            )
 
-    def get_auto_location(self):
-        """Aqui consulatremos una APi de localizacion basada en la IP publica"""
         try:
-            response = requests.get('http://ip-api.com/json/', timeout=5)
-            data = response.json()
-            if data['status'] == 'success':
-                return data['lat'], data['lon']
-        except Exception as e:
-            print(f"[WARN] Fallo en geolocalización ({e}).")
-        
-        print("[WARN] Usando ubicación por defecto (Centro de España).")
-        return 40.4168, -3.7038
+            self.analyzer = Analyzer(version=BIRDNET_MODEL_VERSION)
+            info = self.get_model_info()
+            print(
+                "BirdNET cargado: "
+                f"{info['model_name']} v{info['model_version']} "
+                f"(birdnetlib {info['birdnetlib_version']}, "
+                f"modelo={info['model_file']})."
+            )
+        except Exception as exc:
+            print(f"[ERROR] No se ha podido cargar BirdNET: {exc}")
 
-    def _load_labels(self, path):
-        with open(path, 'r', encoding='utf-8') as f:
-            return [line.strip() for line in f.readlines()]
-        
-    def predict(self, audio_path):
-        """
-        analiza el audio usando la librería oficiale e implementamos filtros avanzados
-        detectando multiples especies y ruidos de fondo
-        """
+        print(
+            f"Ubicacion usada por BirdNET: {self.lat}, {self.lon} "
+            f"(origen={self.location_source})."
+        )
+
+    def get_model_info(self):
+        """Devuelve metadatos reproducibles del motor activo para telemetria."""
+        try:
+            birdnetlib_version = package_version("birdnetlib")
+        except PackageNotFoundError:
+            birdnetlib_version = "unknown"
+
         if self.analyzer is None:
-            print("[ERROR] Modelo no disponible — se omite el análisis.")
+            return {
+                "model_name": "BirdNET-Analyzer",
+                "model_version": BIRDNET_MODEL_VERSION,
+                "model_file": None,
+                "birdnetlib_version": birdnetlib_version,
+            }
+
+        model_path = getattr(self.analyzer, "model_path", None)
+        return {
+            "model_name": getattr(self.analyzer, "model_name", "BirdNET-Analyzer"),
+            "model_version": str(
+                getattr(self.analyzer, "version", BIRDNET_MODEL_VERSION)
+            ),
+            "model_file": Path(model_path).name if model_path else None,
+            "birdnetlib_version": birdnetlib_version,
+        }
+
+    def predict(self, audio_path):
+        """Analiza el WAV con BirdNET y conserva todos los filtros posteriores."""
+        if self.analyzer is None:
+            print("[ERROR] Modelo no disponible; se omite el analisis.")
             return []
 
         try:
@@ -58,24 +98,24 @@ class BirdAnalyzer:
                 audio_path,
                 lat=self.lat,
                 lon=self.lon,
-                date=datetime.now(),    # filtra aves migratorias según la fecha
-                min_conf=MIN_CONF,
-                overlap=OVERLAP,
-                sensitivity=SENSITIVITY,
+                date=datetime.now(),
+                min_conf=BIRDNET_MIN_CONFIDENCE,
+                overlap=BIRDNET_OVERLAP,
+                sensitivity=BIRDNET_SENSITIVITY,
             )
             recording.analyze()
 
             return [
                 {
-                    "species":    d['common_name'],
-                    "scientific_name": d['scientific_name'],
-                    "confidence": d['confidence'],
-                    "time_start": d['start_time'],
-                    "time_end":   d['end_time'],
+                    "species": detection["common_name"],
+                    "scientific_name": detection["scientific_name"],
+                    "confidence": detection["confidence"],
+                    "time_start": detection["start_time"],
+                    "time_end": detection["end_time"],
                 }
-                for d in recording.detections
+                for detection in recording.detections
             ]
 
-        except Exception as e:
-            print(f"[ERROR] Fallo en análisis de audio: {e}")
+        except Exception as exc:
+            print(f"[ERROR] Fallo en analisis de audio: {exc}")
             return []

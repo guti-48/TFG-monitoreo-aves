@@ -58,6 +58,19 @@ class _EcologyScreenState extends State<EcologyScreen> {
     return ((value - min) / (max - min)).clamp(0, 1).toDouble();
   }
 
+  String _microphoneQualityLabel(String status) {
+    if (status == 'ok') return 'Microfono correcto';
+    if (status == 'unknown') return 'Sin diagnostico del microfono';
+
+    final issues = <String>[];
+    if (status.contains('low_signal')) issues.add('senal baja');
+    if (status.contains('clipping')) issues.add('saturacion');
+    if (status.contains('dc_offset')) issues.add('desplazamiento DC');
+    return issues.isEmpty
+        ? 'Revisar microfono'
+        : 'Revisar: ${issues.join(', ')}';
+  }
+
   String _bioacousticLevel(AudioMetric? metric) {
     final ndsi = metric?.ndsi;
     if (metric == null || ndsi == null) return 'Sin lectura acustica';
@@ -283,6 +296,13 @@ class _EcologyScreenState extends State<EcologyScreen> {
       );
     }
 
+    final qualityStatus = metric.qualityStatus ?? 'unknown';
+    final qualityOk = qualityStatus == 'ok';
+    final qualityKnown = qualityStatus != 'unknown';
+    final clippingPercent = metric.clippingRatio == null
+        ? null
+        : metric.clippingRatio! * 100;
+
     return AppDataPanel(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -301,6 +321,30 @@ class _EcologyScreenState extends State<EcologyScreen> {
             ],
           ),
           const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppStatusPill(
+              text: _microphoneQualityLabel(qualityStatus),
+              icon: qualityOk
+                  ? Icons.mic
+                  : qualityKnown
+                  ? Icons.mic_off_outlined
+                  : Icons.help_outline,
+              color: qualityOk
+                  ? Colors.green
+                  : qualityKnown
+                  ? Colors.orange.shade800
+                  : Colors.blueGrey,
+            ),
+          ),
+          if (metric.qualityDetail != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              metric.qualityDetail!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 8),
           _buildMetricLine(
             icon: Icons.speed,
             label: 'RMS',
@@ -308,6 +352,24 @@ class _EcologyScreenState extends State<EcologyScreen> {
             description:
                 'Energia general del audio: sirve para detectar muestras muy silenciosas o saturadas.',
             progress: _boundedProgress(metric.rms),
+          ),
+          _buildMetricLine(
+            icon: Icons.graphic_eq,
+            label: 'Pico',
+            value: formatValue(metric.peak),
+            description:
+                'Nivel maximo capturado. Valores cercanos a 1 pueden indicar saturacion.',
+            progress: _rangeProgress(metric.peak, 0, 1),
+          ),
+          _buildMetricLine(
+            icon: Icons.warning_amber_outlined,
+            label: 'Clipping',
+            value: clippingPercent == null
+                ? '--'
+                : '${clippingPercent.toStringAsFixed(3)} %',
+            description:
+                'Porcentaje de muestras saturadas; debe permanecer practicamente en cero.',
+            progress: _rangeProgress(metric.clippingRatio, 0, 0.01),
           ),
           _buildMetricLine(
             icon: Icons.bar_chart,
@@ -332,6 +394,15 @@ class _EcologyScreenState extends State<EcologyScreen> {
                 'Entropia temporal y frecuencial: describen distribucion del sonido en tiempo y frecuencia.',
             progress: _rangeProgress(metric.h ?? metric.ht, 0, 1),
           ),
+          if (metric.birdnetModelVersion != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${metric.birdnetModel ?? 'BirdNET'} v${metric.birdnetModelVersion}'
+              ' · birdnetlib ${metric.birdnetlibVersion ?? '--'}'
+              '${metric.micDevice == null ? '' : ' · ${metric.micDevice}'}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );

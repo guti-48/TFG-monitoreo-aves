@@ -1,13 +1,16 @@
 import time
-import numpy as np
 import requests
 from datetime import datetime
 from audio_processing import (
+    analizarCalidadAudio,
     calcularMetricasAcusticas,
+    configurarGananciaMicrofono,
     generacionEspectograma,
     grabacionAudio,
     guardoWAV,
     listarDispositivosAudio,
+    mostrarDiagnosticoAudio,
+    obtenerNombreDispositivoEntrada,
     resolverDispositivoEntrada,
 )
 from analyzer import BirdAnalyzer
@@ -34,8 +37,8 @@ from node_sync import (
 )
 
 # Se carga una única vez el modelo
-def get_brain():
-    return BirdAnalyzer()
+def get_brain(lat=None, lon=None):
+    return BirdAnalyzer(lat=lat, lon=lon)
 
 def esperarSiguienteCiclo(inicio_ciclo):
     """Espera hasta completar el intervalo configurado del ciclo."""
@@ -57,10 +60,15 @@ def esperarSiguienteCiclo(inicio_ciclo):
 ### Flujo de trabajo principal ###
 if __name__ == "__main__":
 
-    brain = get_brain()
     listarDispositivosAudio()
     device_index = resolverDispositivoEntrada()
+    configurarGananciaMicrofono()
     ubicacion_nodo = obtenerUbicacionNodo()
+    brain = get_brain(
+        lat=ubicacion_nodo.get("lat"),
+        lon=ubicacion_nodo.get("lon"),
+    )
+    birdnet_info = brain.get_model_info()
     print("Verificando reloj interno")
     while datetime.now().year < 2024:
         print("Esperando a que el sistema sincronice la hora por WiFi...")
@@ -106,8 +114,10 @@ if __name__ == "__main__":
                     continue
 
                 audio_data = grabacionAudio(DURATION, SAMPLE_RATE, device_index)
-                rms_amplitude = float(np.sqrt(np.mean(audio_data ** 2)))
-                print(f"Nivel de Audio (RMS): {rms_amplitude:.4f}")
+                calidad_audio = analizarCalidadAudio(audio_data, SAMPLE_RATE)
+                calidad_audio["mic_device"] = obtenerNombreDispositivoEntrada(device_index)
+                rms_amplitude = calidad_audio["rms"]
+                mostrarDiagnosticoAudio(calidad_audio)
 
                 #Guardar WAV y espectrograma
                 audio_path = guardoWAV(audio_data, SAMPLE_RATE, filenameWAV)
@@ -117,7 +127,14 @@ if __name__ == "__main__":
                 # Métricas acústicas del ciclo completo.
                 # Se envían siempre que se puedan calcular, aunque no haya aves detectadas.
                 metricas_acusticas = calcularMetricasAcusticas(audio_path)
-                enviarMetricasAcusticas(metricas_acusticas, filenameWAV, timestampDB, rms_amplitude)
+                enviarMetricasAcusticas(
+                    metricas_acusticas,
+                    filenameWAV,
+                    timestampDB,
+                    rms_amplitude,
+                    calidad_audio=calidad_audio,
+                    birdnet_info=birdnet_info,
+                )
 
                 #Análisis BirdNET
                 print("Analizando especies de aves y ruidos...")

@@ -59,3 +59,41 @@ def test_deteccion_envia_tiempos_al_backend(monkeypatch):
     assert captured["payload"]["filename"] == "record_2026-07-22_14-30-00.wav"
     assert captured["payload"]["audio_start_seconds"] == 16.5
     assert captured["payload"]["audio_end_seconds"] == 19.5
+
+
+def test_metricas_envian_diagnostico_aunque_fallen_indices(monkeypatch):
+    captured = {}
+
+    class SuccessfulResponse:
+        status_code = 200
+
+    def fake_post(url, json, timeout):
+        captured.update(url=url, payload=json, timeout=timeout)
+        return SuccessfulResponse()
+
+    monkeypatch.setattr(node_sync.requests, "post", fake_post)
+
+    node_sync.enviarMetricasAcusticas(
+        None,
+        "record_2026-07-22_14-30-00.wav",
+        "2026-07-22T14:30:00",
+        0.012,
+        calidad_audio={
+            "peak": 0.7,
+            "clipping_ratio": 0.0,
+            "dc_offset": 0.001,
+            "noise_floor_rms": 0.004,
+            "quality_status": "ok",
+            "quality_detail": "Captura correcta",
+            "mic_device": "USB Mic",
+        },
+        birdnet_info={
+            "model_name": "BirdNET-Analyzer",
+            "model_version": "2.4",
+            "birdnetlib_version": "0.18.1",
+        },
+    )
+
+    assert captured["payload"]["quality_status"] == "ok"
+    assert captured["payload"]["birdnet_model_version"] == "2.4"
+    assert captured["payload"]["aci"] == 0.0

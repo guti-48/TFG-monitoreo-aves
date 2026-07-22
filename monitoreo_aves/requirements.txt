@@ -5,7 +5,7 @@ librosa
 sounddevice
 soundfile
 tensorflow
-birdnetlib
+birdnetlib==0.18.1
 fastapi
 uvicorn
 pydantic

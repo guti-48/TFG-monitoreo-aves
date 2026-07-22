@@ -278,10 +278,18 @@ def enviarDatosServidor(
         )
 
 
-def enviarMetricasAcusticas(metricas, filename_wav, timestamp_str, rms_amplitude):
+def enviarMetricasAcusticas(
+    metricas,
+    filename_wav,
+    timestamp_str,
+    rms_amplitude,
+    calidad_audio=None,
+    birdnet_info=None,
+):
     """Envia al backend una fila de metricas acusticas por cada ciclo de grabacion."""
-    if not metricas:
-        return
+    metricas = metricas or {}
+    calidad_audio = calidad_audio or {}
+    birdnet_info = birdnet_info or {}
 
     datos = {
         "timestamp": timestamp_str,
@@ -290,6 +298,16 @@ def enviarMetricasAcusticas(metricas, filename_wav, timestamp_str, rms_amplitude
         "sample_rate": SAMPLE_RATE,
         "duration": float(DURATION),
         "rms": float(rms_amplitude),
+        "peak": float(calidad_audio.get("peak", 0.0)),
+        "clipping_ratio": float(calidad_audio.get("clipping_ratio", 0.0)),
+        "dc_offset": float(calidad_audio.get("dc_offset", 0.0)),
+        "noise_floor_rms": float(calidad_audio.get("noise_floor_rms", 0.0)),
+        "quality_status": calidad_audio.get("quality_status", "unknown"),
+        "quality_detail": calidad_audio.get("quality_detail"),
+        "mic_device": calidad_audio.get("mic_device"),
+        "birdnet_model": birdnet_info.get("model_name"),
+        "birdnet_model_version": birdnet_info.get("model_version"),
+        "birdnetlib_version": birdnet_info.get("birdnetlib_version"),
         "aci": float(metricas.get("aci", 0.0)),
         "adi": float(metricas.get("adi", 0.0)),
         "aei": float(metricas.get("aei", 0.0)),

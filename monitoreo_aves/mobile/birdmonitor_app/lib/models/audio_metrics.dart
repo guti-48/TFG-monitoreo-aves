@@ -5,6 +5,16 @@ class AudioMetric {
   final int? sampleRate;
   final double? duration;
   final double? rms;
+  final double? peak;
+  final double? clippingRatio;
+  final double? dcOffset;
+  final double? noiseFloorRms;
+  final String? qualityStatus;
+  final String? qualityDetail;
+  final String? micDevice;
+  final String? birdnetModel;
+  final String? birdnetModelVersion;
+  final String? birdnetlibVersion;
   final double? aci;
   final double? adi;
   final double? aei;
@@ -22,6 +32,16 @@ class AudioMetric {
     this.sampleRate,
     this.duration,
     this.rms,
+    this.peak,
+    this.clippingRatio,
+    this.dcOffset,
+    this.noiseFloorRms,
+    this.qualityStatus,
+    this.qualityDetail,
+    this.micDevice,
+    this.birdnetModel,
+    this.birdnetModelVersion,
+    this.birdnetlibVersion,
     this.aci,
     this.adi,
     this.aei,
@@ -38,9 +58,25 @@ class AudioMetric {
       id: _toInt(json['id']),
       timestamp: json['timestamp']?.toString() ?? '',
       filename: json['filename']?.toString(),
-      sampleRate: json['sample_rate'] == null ? null : _toInt(json['sample_rate']),
+      sampleRate: json['sample_rate'] == null
+          ? null
+          : _toInt(json['sample_rate']),
       duration: json['duration'] == null ? null : _toDouble(json['duration']),
       rms: json['rms'] == null ? null : _toDouble(json['rms']),
+      peak: json['peak'] == null ? null : _toDouble(json['peak']),
+      clippingRatio: json['clipping_ratio'] == null
+          ? null
+          : _toDouble(json['clipping_ratio']),
+      dcOffset: json['dc_offset'] == null ? null : _toDouble(json['dc_offset']),
+      noiseFloorRms: json['noise_floor_rms'] == null
+          ? null
+          : _toDouble(json['noise_floor_rms']),
+      qualityStatus: json['quality_status']?.toString(),
+      qualityDetail: json['quality_detail']?.toString(),
+      micDevice: json['mic_device']?.toString(),
+      birdnetModel: json['birdnet_model']?.toString(),
+      birdnetModelVersion: json['birdnet_model_version']?.toString(),
+      birdnetlibVersion: json['birdnetlib_version']?.toString(),
       aci: json['aci'] == null ? null : _toDouble(json['aci']),
       adi: json['adi'] == null ? null : _toDouble(json['adi']),
       aei: json['aei'] == null ? null : _toDouble(json['aei']),

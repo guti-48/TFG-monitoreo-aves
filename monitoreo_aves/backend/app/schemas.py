@@ -129,6 +129,16 @@ class AudioMetricCreate(BaseModel):
     sample_rate: int
     duration: float
     rms: float
+    peak: float = Field(default=0.0, ge=0)
+    clipping_ratio: float = Field(default=0.0, ge=0, le=1)
+    dc_offset: float = 0.0
+    noise_floor_rms: float = Field(default=0.0, ge=0)
+    quality_status: str = "unknown"
+    quality_detail: Optional[str] = None
+    mic_device: Optional[str] = None
+    birdnet_model: Optional[str] = None
+    birdnet_model_version: Optional[str] = None
+    birdnetlib_version: Optional[str] = None
     aci: float
     adi: float
     aei: float
@@ -146,6 +156,16 @@ class AudioMetricResponse(BaseModel):
     sample_rate: int
     duration: float
     rms: float
+    peak: Optional[float] = None
+    clipping_ratio: Optional[float] = None
+    dc_offset: Optional[float] = None
+    noise_floor_rms: Optional[float] = None
+    quality_status: Optional[str] = None
+    quality_detail: Optional[str] = None
+    mic_device: Optional[str] = None
+    birdnet_model: Optional[str] = None
+    birdnet_model_version: Optional[str] = None
+    birdnetlib_version: Optional[str] = None
     aci: float
     adi: float
     aei: float

@@ -109,9 +109,12 @@ La IP que normalmente hay que cambiar es la del servidor central vista desde cad
 | Nombre de cada Raspberry/nodo | `BIRDMONITOR_NODE_NAME` | Un nombre unico por nodo, por ejemplo `birdmonitor-norte`, `birdmonitor-sur` |
 | Ubicacion del nodo | `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Lugar y coordenadas reales del nodo |
 | Microfono en Raspberry | `BIRDMONITOR_MIC_DEVICE` | Indice del dispositivo de entrada si no quieres usar el predeterminado |
+| Ganancia fisica ALSA | `BIRDMONITOR_MIC_ALSA_CARD`, `BIRDMONITOR_MIC_CAPTURE_VOLUME`, `BIRDMONITOR_MIC_AUTO_GAIN` | Ejemplo para un USB en la tarjeta 3: `3`, `50%`, `0` |
 | Ciclo de grabacion | `BIRDMONITOR_RECORD_SECONDS`, `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | Duracion e intervalo en segundos, por ejemplo `60`, `300` |
 | Umbrales de deteccion | `BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD`, `BIRDMONITOR_HUMAN_CONFIDENCE_THRESHOLD`, `BIRDMONITOR_MOTOR_CONFIDENCE_THRESHOLD` | Por ejemplo `0.65`, `0.35`, `0.40` |
 | Umbral de ruido ambiente | `BIRDMONITOR_HIGH_NOISE_RMS_THRESHOLD` | Por ejemplo `0.02` |
+| BirdNET reproducible | `BIRDMONITOR_BIRDNET_MODEL_VERSION`, `BIRDMONITOR_BIRDNET_OVERLAP_SECONDS`, `BIRDMONITOR_BIRDNET_SENSITIVITY` | Por defecto `2.4`, `1.5`, `1.25` |
+| Diagnostico del microfono | `BIRDMONITOR_MIC_MIN_RMS`, `BIRDMONITOR_MIC_MAX_CLIPPING_RATIO`, `BIRDMONITOR_MIC_MAX_DC_OFFSET`, `BIRDMONITOR_MIC_CLIPPING_LEVEL` | Los valores por defecto detectan senal baja, clipping y desplazamiento DC sin modificar el WAV |
 | BirdWeather | `BIRDWEATHER_TOKEN_FILE` | Ruta local del token, por ejemplo `/etc/birdmonitor/birdweather_token` |
 | Servicio de streaming de la Raspberry | Archivo o servicio `birdstream.service` que publique audio hacia MediaMTX | Debe apuntar a la IP del servidor y al path HLS/MediaMTX elegido, normalmente `birdmonitor-audio` |
 | Dashboard web | Normalmente no se edita: `frontend/js/dashboard.js` carga `/devices/` y permite seleccionar nodo y path MediaMTX desde la vista de directo | Si entras en `http://IP_SERVIDOR:8000`, usara `http://IP_SERVIDOR:8888` |
@@ -121,6 +124,8 @@ La IP que normalmente hay que cambiar es la del servidor central vista desde cad
 | Origenes web externos | `BIRDMONITOR_CORS_ORIGINS` | Lista separada por comas |
 | Arranque del backend | `BIRDMONITOR_BACKEND_HOST`, `BIRDMONITOR_BACKEND_PORT` | `0.0.0.0`, `8000` |
 | App movil | Pantalla de conexion de la app | `http://IP_DEL_SERVIDOR:8000`; no usar `127.0.0.1` en un movil real |
+
+El diagnostico del microfono es observacional: no normaliza ni aplica ganancia digital al WAV. Si aparece `low_signal` o `clipping`, ajusta el nivel fijo de captura del dispositivo (por ejemplo con `alsamixer` en Raspberry Pi) y vuelve a observar varias muestras. Amplificar despues de grabar no recupera relacion senal/ruido ni corrige una entrada ya saturada.
 
 Ejemplo para una Raspberry que apunta a un Mac por Tailscale:
 
@@ -384,13 +389,14 @@ El sistema se encuentra en fase de validación técnica con funcionalidad comple
 
 * **Captura y Procesamiento de Señal:**
 
-    * * Grabación de audio en ventanas de 60 segundos a una frecuencia de muestreo de 48kHz, ejecutadas en ciclos de 5 minutos para reducir carga térmica y consumo del nodo Edge..
+    * * Grabación de audio en ventanas de 60 segundos a una frecuencia de muestreo de 48kHz, ejecutadas en ciclos de 5 minutos para reducir carga térmica y consumo del nodo Edge.
     * Generación automática de espectrogramas de Mel para validación visual de las detecciones.
     * Cálculo de energía RMS (Root Mean Square) para la medición objetiva del nivel de ruido ambiental.
+    * Diagnóstico de cada captura mediante pico, clipping, desplazamiento DC y suelo de ruido, sin alterar el audio original.
 
 * **Inteligencia Artificial en el Borde:**
 
-    * Inferencia local mediante el modelo **BirdNET-Lite** (framework TensorFlow Lite).
+    * Inferencia local mediante **BirdNET-Analyzer V2.4** con `birdnetlib` y TensorFlow Lite.
     * Capacidad de clasificación de más de 6,000 especies de aves.
     * Filtrado de falsos positivos mediante umbrales de confianza configurables.
     * Clasificación de fuentes de ruido antropogénico (voces humanas, motores).

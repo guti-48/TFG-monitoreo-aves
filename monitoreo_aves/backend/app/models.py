@@ -168,6 +168,17 @@ class AudioMetric(Base):
     sample_rate = Column(Integer)
     duration = Column(Float)
     rms = Column(Float, default=0.0)
+    peak = Column(Float, default=0.0)
+    clipping_ratio = Column(Float, default=0.0)
+    dc_offset = Column(Float, default=0.0)
+    noise_floor_rms = Column(Float, default=0.0)
+    quality_status = Column(String, default="unknown", index=True)
+    quality_detail = Column(String, nullable=True)
+    mic_device = Column(String, nullable=True)
+
+    birdnet_model = Column(String, nullable=True)
+    birdnet_model_version = Column(String, nullable=True)
+    birdnetlib_version = Column(String, nullable=True)
 
     aci = Column(Float, default=0.0)
     adi = Column(Float, default=0.0)
