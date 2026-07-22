@@ -28,6 +28,21 @@ def asegurar_esquema_runtime() -> None:
         if "lon" not in columnas_devices:
             conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN lon FLOAT")
 
+        columnas_detections = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(detections)").fetchall()
+        }
+
+        if "audio_start_seconds" not in columnas_detections:
+            conn.exec_driver_sql(
+                "ALTER TABLE detections ADD COLUMN audio_start_seconds FLOAT"
+            )
+
+        if "audio_end_seconds" not in columnas_detections:
+            conn.exec_driver_sql(
+                "ALTER TABLE detections ADD COLUMN audio_end_seconds FLOAT"
+            )
+
 
 asegurar_esquema_runtime()
 

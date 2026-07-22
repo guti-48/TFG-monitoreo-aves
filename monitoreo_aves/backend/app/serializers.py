@@ -28,6 +28,8 @@ def serializar_deteccion(detection: models.Detection, db: Session) -> dict:
         "filename": detection.filename,
         "device_id": detection.device_id,
         "amplitude": detection.amplitude,
+        "audio_start_seconds": detection.audio_start_seconds,
+        "audio_end_seconds": detection.audio_end_seconds,
         "review": serializar_review(detection.review),
         "learned_suggestion": learning.find_suggestion(db, detection),
     }

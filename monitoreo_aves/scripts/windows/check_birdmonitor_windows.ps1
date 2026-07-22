@@ -4,6 +4,9 @@ Write-Host " BirdMonitor Status Check" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
 
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
+$InstallScript = Join-Path $ProjectDir "scripts\windows\install_birdmonitor_windows.ps1"
 $RuntimeDir = Join-Path $env:LOCALAPPDATA "BirdMonitor"
 $StreamNodeName = if ($env:BIRDMONITOR_NODE_NAME) { $env:BIRDMONITOR_NODE_NAME } else { "birdmonitor" }
 $StreamName = if ($env:BIRDMONITOR_STREAM_PATH) { $env:BIRDMONITOR_STREAM_PATH } elseif ($env:BIRDMONITOR_STREAM_NAME) { $env:BIRDMONITOR_STREAM_NAME } else { "$StreamNodeName-audio" }
@@ -16,6 +19,33 @@ $StreamControlUrl = "$BackendBaseUrl/stream/control?node_name=$StreamNodeName"
 $streamState = $null
 $mediaMtxIsRunning = $false
 $mediaMtxPortOpen = $false
+$missingScheduledTasks = $false
+$scheduledTaskQueryFailed = $false
+
+function Test-TcpPort {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$TimeoutMs = 1000
+    )
+
+    $client = New-Object System.Net.Sockets.TcpClient
+
+    try {
+        $connection = $client.BeginConnect($HostName, $Port, $null, $null)
+
+        if (-not $connection.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) {
+            return $false
+        }
+
+        $client.EndConnect($connection)
+        return $client.Connected
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
+}
 
 Write-Host "Procesos MediaMTX:" -ForegroundColor Yellow
 $mediaMtxProcess = Get-Process mediamtx -ErrorAction SilentlyContinue
@@ -29,7 +59,7 @@ if ($mediaMtxProcess) {
 Write-Host ""
 Write-Host "Puerto $MediaMtxHlsPort MediaMTX:" -ForegroundColor Yellow
 netstat -ano | findstr ":$MediaMtxHlsPort"
-$mediaMtxPortOpen = $null -ne (Get-NetTCPConnection -LocalPort $MediaMtxHlsPort -State Listen -ErrorAction SilentlyContinue)
+$mediaMtxPortOpen = Test-TcpPort -HostName "127.0.0.1" -Port ([int]$MediaMtxHlsPort)
 
 Write-Host ""
 Write-Host "Puerto $BackendPort Backend:" -ForegroundColor Yellow
@@ -37,17 +67,46 @@ netstat -ano | findstr ":$BackendPort"
 
 Write-Host ""
 Write-Host "Tarea MediaMTX:" -ForegroundColor Yellow
-$mediaTaskInfo = Get-ScheduledTaskInfo -TaskName "BirdMonitor MediaMTX" -ErrorAction SilentlyContinue
-if ($mediaTaskInfo) {
+$mediaTask = $null
+$mediaTaskInfo = $null
+
+try {
+    $mediaTask = Get-ScheduledTask -TaskName "BirdMonitor MediaMTX" -ErrorAction Stop
+    $mediaTaskInfo = Get-ScheduledTaskInfo -TaskName "BirdMonitor MediaMTX" -ErrorAction Stop
+} catch [Microsoft.Management.Infrastructure.CimException] {
+    if ($_.Exception.Message -match "Acceso denegado|Access is denied") {
+        $scheduledTaskQueryFailed = $true
+        Write-Host "No hay permisos para consultar esta tarea. Ejecuta este diagnostico como administrador." -ForegroundColor Yellow
+    }
+}
+
+if ($mediaTask -and $mediaTaskInfo) {
+    $mediaTask | Select-Object TaskName,State | Format-List
     $mediaTaskInfo | Format-List LastRunTime,LastTaskResult
-} else {
+} elseif (-not $scheduledTaskQueryFailed) {
+    $missingScheduledTasks = $true
     Write-Host "No existe la tarea BirdMonitor MediaMTX." -ForegroundColor Red
 }
 
 Write-Host ""
 Write-Host "Tarea Backend:" -ForegroundColor Yellow
-$backendTaskInfo = Get-ScheduledTaskInfo -TaskName "BirdMonitor Backend" -ErrorAction SilentlyContinue
-if ($backendTaskInfo) {
+$backendTask = $null
+$backendTaskInfo = $null
+$backendTaskQueryFailed = $false
+
+try {
+    $backendTask = Get-ScheduledTask -TaskName "BirdMonitor Backend" -ErrorAction Stop
+    $backendTaskInfo = Get-ScheduledTaskInfo -TaskName "BirdMonitor Backend" -ErrorAction Stop
+} catch [Microsoft.Management.Infrastructure.CimException] {
+    if ($_.Exception.Message -match "Acceso denegado|Access is denied") {
+        $scheduledTaskQueryFailed = $true
+        $backendTaskQueryFailed = $true
+        Write-Host "No hay permisos para consultar esta tarea. Ejecuta este diagnostico como administrador." -ForegroundColor Yellow
+    }
+}
+
+if ($backendTask -and $backendTaskInfo) {
+    $backendTask | Select-Object TaskName,State | Format-List
     $backendTaskInfo | Format-List LastRunTime,LastTaskResult
 
     if ($backendTaskInfo.LastTaskResult -eq 267009) {
@@ -55,7 +114,8 @@ if ($backendTaskInfo) {
     } elseif ($backendTaskInfo.LastTaskResult -ne 0) {
         Write-Host "Aviso: LastTaskResult distinto de 0. Si el backend responde, normalmente significa que la tarea intento arrancar otra instancia con el puerto 8000 ocupado." -ForegroundColor Yellow
     }
-} else {
+} elseif (-not $backendTaskQueryFailed) {
+    $missingScheduledTasks = $true
     Write-Host "No existe la tarea BirdMonitor Backend." -ForegroundColor Red
 }
 
@@ -106,4 +166,16 @@ Write-Host $RuntimeDir
 
 if (Test-Path $RuntimeDir) {
     Get-ChildItem $RuntimeDir
+}
+
+if ($missingScheduledTasks) {
+    Write-Host ""
+    Write-Host "Reparacion necesaria:" -ForegroundColor Yellow
+    Write-Host "Abre PowerShell como administrador y ejecuta una sola vez:" -ForegroundColor Yellow
+    Write-Host "powershell.exe -ExecutionPolicy Bypass -File `"$InstallScript`"" -ForegroundColor White
+}
+
+if ($scheduledTaskQueryFailed) {
+    Write-Host ""
+    Write-Host "La consulta de tareas quedo incompleta por permisos; los procesos y puertos anteriores si se comprobaron." -ForegroundColor Yellow
 }

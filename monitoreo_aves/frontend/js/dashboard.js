@@ -43,8 +43,10 @@ let lastStreamData = null;
 let currentScienceReport = [];
 const detectionCache = new Map();
 const speciesPreviewCache = new Map();
+const speciesChartColorMap = new Map();
 let activeSpeciesPreviewTrigger = null;
 let speciesPreviewHideTimer = null;
+let detectionAudioReviewState = null;
 
 function slugifyStreamValue(value) {
     const clean = String(value || '').trim().replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -157,6 +159,7 @@ function isSpeciesPreviewCandidate(speciesRawName, label) {
 // NAVEGACIÓ
 function switchView(viewName, nodeFilter = null) {
     closeSpeciesPreview();
+    closeDetectionAudioReview();
 
     if (currentView === 'live' && viewName !== 'live') {
         cleanupLiveStream();
@@ -878,6 +881,405 @@ function buildReviewActions(detection) {
     `;
 }
 
+function buildAudioEvidenceButton(detection, imageUrl = null) {
+    const safeSpecies = escapeHtml(cleanName(getDisplaySpecies(detection)));
+
+    if (imageUrl) {
+        return `
+            <button
+                type="button"
+                class="audio-evidence-thumbnail"
+                title="Escuchar y revisar la evidencia de ${safeSpecies}"
+                aria-label="Escuchar y revisar la evidencia de ${safeSpecies}"
+                onclick="openDetectionAudioReview(${detection.id})"
+            >
+                <img src="${escapeHtml(imageUrl)}" alt="" onerror="this.style.visibility='hidden'">
+                <span class="audio-evidence-thumbnail-icon" aria-hidden="true">
+                    <i class="bi bi-play-fill"></i>
+                </span>
+            </button>
+        `;
+    }
+
+    return `
+        <button
+            type="button"
+            class="btn btn-sm audio-evidence-open"
+            title="Escuchar y revisar la evidencia de ${safeSpecies}"
+            onclick="openDetectionAudioReview(${detection.id})"
+        >
+            <i class="bi bi-soundwave" aria-hidden="true"></i>
+            <span>Escuchar</span>
+        </button>
+    `;
+}
+
+function formatAudioReviewTime(seconds) {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = Math.floor(safeSeconds % 60);
+    return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+}
+
+async function openDetectionAudioReview(detectionId) {
+    closeSpeciesPreview();
+    closeDetectionAudioReview();
+
+    const detection = detectionCache.get(detectionId);
+    const species = cleanName(getDisplaySpecies(detection || { species: "Deteccion" }));
+    const dialog = document.createElement("div");
+    dialog.id = "audio-review-dialog";
+    dialog.className = "audio-review-backdrop";
+    dialog.innerHTML = `
+        <section class="audio-review-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-review-title">
+            <header class="audio-review-header">
+                <div>
+                    <p class="audio-review-eyebrow">Evidencia acustica</p>
+                    <h3 id="audio-review-title">${escapeHtml(species)}</h3>
+                </div>
+                <button type="button" class="audio-review-close" onclick="closeDetectionAudioReview()" title="Cerrar" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div id="audio-review-content" class="audio-review-loading" aria-live="polite">
+                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                <span>Preparando el tramo de audio...</span>
+            </div>
+        </section>
+    `;
+
+    dialog.addEventListener("click", event => {
+        if (event.target === dialog) closeDetectionAudioReview();
+    });
+    document.body.appendChild(dialog);
+
+    try {
+        const response = await fetch(`/detections/${detectionId}/review-media`, { cache: "no-store" });
+        if (!response.ok) {
+            const errorPayload = await response.json().catch(() => ({}));
+            throw new Error(errorPayload.detail || `HTTP ${response.status}`);
+        }
+
+        const media = await response.json();
+        if (!document.body.contains(dialog)) return;
+        renderDetectionAudioReview(detectionId, detection, media);
+    } catch (error) {
+        const content = document.getElementById("audio-review-content");
+        if (content) {
+            content.className = "audio-review-error";
+            content.innerHTML = `
+                <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                <div>
+                    <strong>No se pudo abrir la evidencia de audio</strong>
+                    <span>${escapeHtml(error.message)}</span>
+                </div>
+            `;
+        }
+    }
+}
+
+function renderDetectionAudioReview(detectionId, detection, media) {
+    const content = document.getElementById("audio-review-content");
+    if (!content) return;
+
+    const reviewStart = Number(media.review_start_seconds) || 0;
+    const reviewEnd = Number(media.review_end_seconds) || reviewStart;
+    const reviewDuration = Math.max(0.001, reviewEnd - reviewStart);
+    const detectionStart = Number(media.audio_start_seconds);
+    const detectionEnd = Number(media.audio_end_seconds);
+    const hasTiming = media.timing_available
+        && Number.isFinite(detectionStart)
+        && Number.isFinite(detectionEnd);
+    const markerStart = hasTiming ? Math.max(reviewStart, detectionStart) : reviewStart;
+    const markerEnd = hasTiming ? Math.min(reviewEnd, detectionEnd) : reviewStart;
+    const markerLeft = ((markerStart - reviewStart) / reviewDuration) * 100;
+    const markerWidth = Math.max(0, ((markerEnd - markerStart) / reviewDuration) * 100);
+    const ticks = [0, 0.25, 0.5, 0.75, 1]
+        .map(position => `
+            <span style="left:${position * 100}%">
+                ${formatAudioReviewTime(reviewStart + reviewDuration * position)}
+            </span>
+        `)
+        .join("");
+    const confidence = detection ? `${Math.round((detection.confidence || 0) * 100)}%` : "--";
+
+    content.className = "audio-review-content";
+    content.innerHTML = `
+        <div class="audio-review-summary">
+            <div>
+                <span>Tramo de comprobacion</span>
+                <strong>${formatAudioReviewTime(reviewStart)} - ${formatAudioReviewTime(reviewEnd)}</strong>
+            </div>
+            <div>
+                <span>Confianza BirdNET</span>
+                <strong>${confidence}</strong>
+            </div>
+        </div>
+
+        <div class="audio-review-spectrum-layout">
+            <div class="audio-review-frequency-axis" aria-hidden="true">
+                <span>10 kHz</span>
+                <span>5 kHz</span>
+                <span>0 kHz</span>
+            </div>
+            <div class="audio-review-spectrum-column">
+                <div
+                    id="audio-review-plot"
+                    class="audio-review-plot"
+                    role="slider"
+                    tabindex="0"
+                    aria-label="Posicion de reproduccion sobre el espectrograma"
+                    aria-valuemin="0"
+                    aria-valuemax="${reviewDuration.toFixed(2)}"
+                    aria-valuenow="0"
+                    onclick="seekDetectionAudioReview(event)"
+                    onkeydown="handleDetectionAudioReviewKey(event)"
+                >
+                    <span class="audio-review-image-loading">Generando espectrograma...</span>
+                    <img
+                        src="${escapeHtml(media.spectrogram_url)}"
+                        alt="Espectrograma del tramo de comprobacion"
+                        draggable="false"
+                        onload="markDetectionSpectrogramReady()"
+                        onerror="markDetectionSpectrogramError()"
+                    >
+                    ${hasTiming ? `
+                        <span
+                            class="audio-review-detection-window"
+                            style="left:${markerLeft}%;width:${markerWidth}%"
+                            aria-hidden="true"
+                        ></span>
+                    ` : ""}
+                    <span id="audio-review-playhead" class="audio-review-playhead" aria-hidden="true"></span>
+                </div>
+                <div class="audio-review-time-axis" aria-hidden="true">${ticks}</div>
+            </div>
+        </div>
+
+        <div class="audio-review-legend">
+            ${hasTiming ? `
+                <span><i class="audio-review-marker-swatch" aria-hidden="true"></i>Ventana clasificada por BirdNET (${formatAudioReviewTime(detectionStart)} - ${formatAudioReviewTime(detectionEnd)})</span>
+            ` : `
+                <span class="audio-review-legacy-note"><i class="bi bi-info-circle" aria-hidden="true"></i>Este registro no conserva la marca temporal de BirdNET; se muestran sus primeros 20 segundos.</span>
+            `}
+        </div>
+
+        <div class="audio-review-controls">
+            <button id="audio-review-play" type="button" class="audio-review-play" onclick="toggleDetectionAudioReview()" title="Reproducir" aria-label="Reproducir">
+                <i class="bi bi-play-fill"></i>
+            </button>
+            <button type="button" class="audio-review-control-icon" onclick="resetDetectionAudioReview()" title="Volver al inicio" aria-label="Volver al inicio">
+                <i class="bi bi-skip-start-fill"></i>
+            </button>
+            <output id="audio-review-clock" class="audio-review-clock">00:00 / ${formatAudioReviewTime(reviewDuration)}</output>
+            <div class="audio-review-volume">
+                <button id="audio-review-mute" type="button" class="audio-review-control-icon" onclick="toggleDetectionAudioMute()" title="Silenciar" aria-label="Silenciar">
+                    <i class="bi bi-volume-up-fill"></i>
+                </button>
+                <input type="range" min="0" max="1" step="0.05" value="1" aria-label="Volumen" oninput="setDetectionAudioVolume(this.value)">
+            </div>
+        </div>
+
+        <footer class="audio-review-footer">
+            <div>
+                <span class="audio-review-footer-label">Revision humana</span>
+                ${detection ? buildReviewBadge(detection) : ""}
+            </div>
+            ${detection ? buildReviewActions(detection) : ""}
+        </footer>
+
+        <audio id="audio-review-engine" preload="metadata" src="${escapeHtml(media.audio_url)}"></audio>
+    `;
+
+    initializeDetectionAudioReview(media);
+}
+
+function initializeDetectionAudioReview(media) {
+    const audio = document.getElementById("audio-review-engine");
+    if (!audio) return;
+
+    detectionAudioReviewState = {
+        audio,
+        start: Number(media.review_start_seconds) || 0,
+        end: Number(media.review_end_seconds) || 0,
+        frame: null,
+        finished: false,
+    };
+
+    audio.addEventListener("loadedmetadata", () => {
+        audio.currentTime = detectionAudioReviewState.start;
+        updateDetectionAudioReviewPlayback();
+    });
+    audio.addEventListener("timeupdate", updateDetectionAudioReviewPlayback);
+    audio.addEventListener("play", () => {
+        detectionAudioReviewState.finished = false;
+        animateDetectionAudioReview();
+    });
+    audio.addEventListener("pause", updateDetectionAudioReviewPlayback);
+    audio.addEventListener("error", () => {
+        const clock = document.getElementById("audio-review-clock");
+        if (clock) clock.textContent = "Audio no disponible";
+    });
+    audio.load();
+}
+
+function updateDetectionAudioReviewPlayback() {
+    const state = detectionAudioReviewState;
+    if (!state) return;
+
+    const { audio, start, end } = state;
+    const duration = Math.max(0.001, end - start);
+    let current = Number.isFinite(audio.currentTime) ? audio.currentTime : start;
+
+    if (!audio.paused && current >= end - 0.025) {
+        audio.pause();
+        audio.currentTime = Math.min(end, audio.duration || end);
+        current = end;
+        state.finished = true;
+    }
+
+    const elapsed = Math.min(duration, Math.max(0, current - start));
+    const progress = Math.min(100, Math.max(0, (elapsed / duration) * 100));
+    const playhead = document.getElementById("audio-review-playhead");
+    const clock = document.getElementById("audio-review-clock");
+    const plot = document.getElementById("audio-review-plot");
+    const playButton = document.getElementById("audio-review-play");
+
+    if (playhead) playhead.style.left = `${progress}%`;
+    if (clock) clock.textContent = `${formatAudioReviewTime(elapsed)} / ${formatAudioReviewTime(duration)}`;
+    if (plot) plot.setAttribute("aria-valuenow", elapsed.toFixed(2));
+    if (playButton) {
+        const icon = playButton.querySelector("i");
+        const label = state.finished ? "Repetir" : (audio.paused ? "Reproducir" : "Pausar");
+        if (icon) icon.className = state.finished
+            ? "bi bi-arrow-counterclockwise"
+            : (audio.paused ? "bi bi-play-fill" : "bi bi-pause-fill");
+        playButton.title = label;
+        playButton.setAttribute("aria-label", label);
+    }
+}
+
+function animateDetectionAudioReview() {
+    const state = detectionAudioReviewState;
+    if (!state || state.audio.paused) return;
+    updateDetectionAudioReviewPlayback();
+    state.frame = requestAnimationFrame(animateDetectionAudioReview);
+}
+
+async function toggleDetectionAudioReview() {
+    const state = detectionAudioReviewState;
+    if (!state) return;
+
+    if (!state.audio.paused) {
+        state.audio.pause();
+        return;
+    }
+
+    if (state.finished || state.audio.currentTime < state.start || state.audio.currentTime >= state.end) {
+        state.audio.currentTime = state.start;
+        state.finished = false;
+    }
+
+    try {
+        await state.audio.play();
+    } catch (error) {
+        console.error("No se pudo reproducir la evidencia", error);
+    }
+}
+
+function resetDetectionAudioReview() {
+    const state = detectionAudioReviewState;
+    if (!state) return;
+    state.audio.pause();
+    state.audio.currentTime = state.start;
+    state.finished = false;
+    updateDetectionAudioReviewPlayback();
+}
+
+function seekDetectionAudioReview(event) {
+    const state = detectionAudioReviewState;
+    const plot = document.getElementById("audio-review-plot");
+    if (!state || !plot) return;
+
+    const bounds = plot.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    state.audio.currentTime = state.start + (state.end - state.start) * ratio;
+    state.finished = ratio >= 0.999;
+    updateDetectionAudioReviewPlayback();
+}
+
+function handleDetectionAudioReviewKey(event) {
+    const state = detectionAudioReviewState;
+    if (!state) return;
+
+    if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        toggleDetectionAudioReview();
+        return;
+    }
+
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    state.audio.currentTime = Math.min(
+        state.end,
+        Math.max(state.start, state.audio.currentTime + direction),
+    );
+    state.finished = state.audio.currentTime >= state.end;
+    updateDetectionAudioReviewPlayback();
+}
+
+function setDetectionAudioVolume(value) {
+    const state = detectionAudioReviewState;
+    if (!state) return;
+    state.audio.volume = Number(value);
+    state.audio.muted = Number(value) === 0;
+    updateDetectionAudioMuteIcon();
+}
+
+function toggleDetectionAudioMute() {
+    const state = detectionAudioReviewState;
+    if (!state) return;
+    state.audio.muted = !state.audio.muted;
+    updateDetectionAudioMuteIcon();
+}
+
+function updateDetectionAudioMuteIcon() {
+    const state = detectionAudioReviewState;
+    const button = document.getElementById("audio-review-mute");
+    if (!state || !button) return;
+    const muted = state.audio.muted || state.audio.volume === 0;
+    const icon = button.querySelector("i");
+    if (icon) icon.className = muted ? "bi bi-volume-mute-fill" : "bi bi-volume-up-fill";
+    button.title = muted ? "Activar sonido" : "Silenciar";
+    button.setAttribute("aria-label", button.title);
+}
+
+function markDetectionSpectrogramReady() {
+    document.getElementById("audio-review-plot")?.classList.add("is-ready");
+}
+
+function markDetectionSpectrogramError() {
+    const plot = document.getElementById("audio-review-plot");
+    if (!plot) return;
+    plot.classList.add("has-image-error");
+    const loading = plot.querySelector(".audio-review-image-loading");
+    if (loading) loading.textContent = "No se pudo generar el espectrograma";
+}
+
+function closeDetectionAudioReview() {
+    if (detectionAudioReviewState) {
+        if (detectionAudioReviewState.frame) {
+            cancelAnimationFrame(detectionAudioReviewState.frame);
+        }
+        detectionAudioReviewState.audio.pause();
+        detectionAudioReviewState.audio.removeAttribute("src");
+        detectionAudioReviewState.audio.load();
+    }
+    detectionAudioReviewState = null;
+    document.getElementById("audio-review-dialog")?.remove();
+}
+
 async function applyLearnedSuggestion(detectionId) {
     const detection = detectionCache.get(detectionId);
     const suggestion = detection ? getLearningSuggestion(detection) : null;
@@ -902,6 +1304,7 @@ async function applyLearnedSuggestion(detectionId) {
             reviewer: "dashboard"
         });
 
+        closeDetectionAudioReview();
         await refreshCurrentDetectionView();
     } catch (e) {
         alert(`No se pudo aplicar la sugerencia: ${e.message}`);
@@ -941,6 +1344,7 @@ async function quickReviewDetection(detectionId, status) {
             reviewer: "dashboard"
         });
 
+        closeDetectionAudioReview();
         await refreshCurrentDetectionView();
 
     } catch (e) {
@@ -951,6 +1355,8 @@ async function quickReviewDetection(detectionId, status) {
 async function correctDetectionSpecies(detectionId) {
     const detection = detectionCache.get(detectionId);
     let speciesOptions = [];
+
+    closeDetectionAudioReview();
 
     try {
         const response = await fetch(SPECIES_OPTIONS_URL);
@@ -1117,7 +1523,6 @@ async function renderHistoryView(container) {
             const timeDate = new Date(d.timestamp);
             const dateStr = timeDate.toLocaleDateString();
             const timeStr = timeDate.toLocaleTimeString();
-            const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
             const displayedSpecies = getDisplaySpecies(d);
             const clean = cleanName(displayedSpecies);
             const originalClean = cleanName(d.species);
@@ -1153,11 +1558,7 @@ async function renderHistoryView(container) {
                     </td>
                     <td>${buildReviewBadge(d)}</td>
                     <td>${buildReviewActions(d)}</td>
-                    <td>
-                        <a href="${imgUrl}" target="_blank" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-image"></i> Ver
-                        </a>
-                    </td>
+                    <td>${buildAudioEvidenceButton(d)}</td>
                 </tr>`;
         });
         container.innerHTML = `
@@ -1183,7 +1584,7 @@ async function renderHistoryView(container) {
                                     <th class="py-3">Confianza</th>
                                     <th class="py-3">Revisión</th>
                                     <th class="py-3">Acciones</th>
-                                    <th class="py-3 pe-3">Foto</th>
+                                    <th class="py-3 pe-3">Evidencia</th>
                                 </tr>
                             </thead>
                             <tbody>${rowsHtml}</tbody>
@@ -1329,7 +1730,7 @@ function getDashboardHTML() {
                                 <th>Confianza</th>
                                 <th>Revisión</th>
                                 <th>Acciones</th>
-                                <th>Espectrograma</th>
+                                <th>Audio</th>
                                 <th class="text-end pe-4">ID</th>
                             </tr>
                         </thead>
@@ -1568,7 +1969,10 @@ function closeSpeciesPreview() {
 
 document.addEventListener('click', closeSpeciesPreview);
 document.addEventListener('keydown', event => {
-    if (event.key === "Escape") closeSpeciesPreview();
+    if (event.key === "Escape") {
+        closeSpeciesPreview();
+        closeDetectionAudioReview();
+    }
 });
 window.addEventListener('resize', () => {
     const card = document.getElementById('species-preview-card');
@@ -1663,11 +2067,7 @@ function renderTable(data) {
                     ${buildReviewActions(d)}
                 </td>
 
-                <td>
-                    <a href="${imgUrl}" target="_blank">
-                        <img src="${imgUrl}" class="table-img-preview" onerror="this.style.display='none'">
-                    </a>
-                </td>
+                <td>${buildAudioEvidenceButton(d, imgUrl)}</td>
 
                 <td class="text-end pe-4 text-muted small">
                     #${d.id}
@@ -1682,14 +2082,29 @@ function updateChart(counts) {
     if (!canvas) return;
     if (myChart) { myChart.destroy(); }
     const ctx = canvas.getContext('2d');
-    const labels = Object.keys(counts).map(cleanName);
-    const values = Object.values(counts);
-    const natureColors = ['#2f6f4e', '#326f72', '#a66f2f', '#6f7f5a', '#405f82'];
+    const entries = Object.entries(counts);
+    const labels = entries.map(([species]) => cleanName(species));
+    const values = entries.map(([, count]) => count);
+    const colors = entries.map(([species]) => getSpeciesChartColor(species));
     myChart = new Chart(ctx, {
         type: 'doughnut',
-        data: { labels, datasets: [{ data: values, backgroundColor: natureColors, borderWidth: 0 }] },
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#5f6f65' } } } }
     });
+}
+
+function getSpeciesChartColor(species) {
+    const key = String(species || 'Desconocido');
+    if (speciesChartColorMap.has(key)) return speciesChartColorMap.get(key);
+
+    const index = speciesChartColorMap.size;
+    const hue = (142 + index * 137.508) % 360;
+    const saturation = 52 + (index % 3) * 6;
+    const lightness = 40 + (Math.floor(index / 3) % 2) * 8;
+    const color = `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`;
+
+    speciesChartColorMap.set(key, color);
+    return color;
 }
 
 function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.innerText = text; }

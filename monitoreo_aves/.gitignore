@@ -29,3 +29,4 @@ tools/mediamtx/auto.crt
 tools/mediamtx/auto.key
 tools/mediamtx/mediamtx.log
 tools/mediamtx/*.tar.gz
+stream_control.json

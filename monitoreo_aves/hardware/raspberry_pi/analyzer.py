@@ -15,7 +15,6 @@ LABELS_PATH = os.path.join(CURRENT_DIR, "model", "birdnet_labels.txt")
 
 class BirdAnalyzer:
     def __init__(self):
-        # Cargamos el model TFLite que nos permite filtros de ubicacion y fecha
         print("Motor de BirdNet Cargando...")
         self.analyzer = None
         try: 
@@ -37,7 +36,6 @@ class BirdAnalyzer:
         except Exception as e:
             print(f"[WARN] Fallo en geolocalización ({e}).")
         
-        # Si no hay internet o falla api enviaremos madrid por defecto
         print("[WARN] Usando ubicación por defecto (Centro de España).")
         return 40.4168, -3.7038
 
@@ -70,6 +68,7 @@ class BirdAnalyzer:
             return [
                 {
                     "species":    d['common_name'],
+                    "scientific_name": d['scientific_name'],
                     "confidence": d['confidence'],
                     "time_start": d['start_time'],
                     "time_end":   d['end_time'],
