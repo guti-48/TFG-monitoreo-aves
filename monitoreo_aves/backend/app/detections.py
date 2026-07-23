@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -146,10 +147,20 @@ def get_detection_review_media(
         detection.audio_start_seconds,
         detection.audio_end_seconds,
     )
+    diagnostics = review_media.analyze_review_audio(audio_path, window)
 
     return {
         "audio_url": f"/records/{quote(audio_path.name)}",
+        "clean_audio_url": f"/detections/{detection_id}/review-audio-clean",
         "spectrogram_url": f"/detections/{detection_id}/review-spectrogram",
+        "clean_audio_description": (
+            "Tramo de revision con paso alto de 250 Hz y volumen normalizado. "
+            "No sustituye ni modifica el WAV original."
+        ),
+        "spectrogram_description": (
+            "Vista realzada entre 250 Hz y 10 kHz, normalizada contra el fondo "
+            "estacionario para destacar eventos."
+        ),
         "audio_duration_seconds": window.audio_duration_seconds,
         "review_start_seconds": window.review_start_seconds,
         "review_end_seconds": window.review_end_seconds,
@@ -157,6 +168,7 @@ def get_detection_review_media(
         "audio_start_seconds": window.audio_start_seconds,
         "audio_end_seconds": window.audio_end_seconds,
         "timing_available": window.timing_available,
+        "diagnostics": asdict(diagnostics),
     }
 
 
@@ -188,6 +200,40 @@ def get_detection_review_spectrogram(
     return FileResponse(
         image_path,
         media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get("/detections/{detection_id}/review-audio-clean")
+def get_detection_clean_review_audio(
+    detection_id: int,
+    db: Session = Depends(database.get_db),
+):
+    detection = _get_detection_or_404(detection_id, db)
+
+    try:
+        audio_path = review_media.resolve_audio_path(detection.filename)
+        duration = review_media.get_audio_duration(audio_path)
+        window = review_media.build_review_window(
+            duration,
+            detection.audio_start_seconds,
+            detection.audio_end_seconds,
+        )
+        clean_audio_path = review_media.get_clean_review_audio_path(
+            detection.id,
+            audio_path,
+            window,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return FileResponse(
+        clean_audio_path,
+        media_type="audio/wav",
+        filename=f"{audio_path.stem}_revision_limpia.wav",
+        content_disposition_type="inline",
         headers={"Cache-Control": "public, max-age=86400"},
     )
 

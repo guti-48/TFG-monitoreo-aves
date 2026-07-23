@@ -390,9 +390,10 @@ El sistema se encuentra en fase de validación técnica con funcionalidad comple
 * **Captura y Procesamiento de Señal:**
 
     * * Grabación de audio en ventanas de 60 segundos a una frecuencia de muestreo de 48kHz, ejecutadas en ciclos de 5 minutos para reducir carga térmica y consumo del nodo Edge.
-    * Generación automática de espectrogramas de Mel para validación visual de las detecciones.
+    * Generación automática de espectrogramas de Mel para el archivo científico y de una vista de revisión realzada entre 250 Hz y 10 kHz.
     * Cálculo de energía RMS (Root Mean Square) para la medición objetiva del nivel de ruido ambiental.
     * Diagnóstico de cada captura mediante pico, clipping, desplazamiento DC y suelo de ruido, sin alterar el audio original.
+    * Diagnóstico bajo demanda de cada evidencia mediante proporción de graves, prominencia del zumbido de red y contraste de la ventana clasificada.
 
 * **Inteligencia Artificial en el Borde:**
 
@@ -415,6 +416,7 @@ El sistema se encuentra en fase de validación técnica con funcionalidad comple
     * **Radar de Bioacústica (Paisaje Sonoro):** Análisis matricial del archivo `.wav` en el servidor utilizando `scikit-maad` para extraer los índices ACI, ADI, AEI, BIO y NDSI, midiendo la salud acústica del entorno y dibujando una huella sonora en gráfico de radar.
     * **Cartografía Dinámica:** Generación automática de mapas interactivos (Leaflet.js) basados en la geolocalización IP del nodo, mostrando radios de cobertura ponderados por el índice de Shannon local.
     * **Evidencia acústica sincronizada:** El histórico permite escuchar un contexto de 20 segundos directamente sobre su espectrograma. Un cursor recorre la imagen durante la reproducción y una franja resalta los 3 segundos que BirdNET utilizó para clasificar la especie.
+    * **Revisión limpia y reversible:** El revisor puede alternar entre el WAV original y una copia temporal con paso alto de 250 Hz y volumen normalizado. El espectrograma resta el fondo estacionario para destacar eventos, pero BirdNET y el archivo científico siempre conservan el audio crudo.
 
 Las detecciones creadas desde esta versión conservan en la base de datos los segundos de inicio y fin indicados por BirdNET. Los registros anteriores siguen siendo compatibles, pero muestran los primeros 20 segundos del WAV porque esa marca temporal no se almacenaba todavía.
 

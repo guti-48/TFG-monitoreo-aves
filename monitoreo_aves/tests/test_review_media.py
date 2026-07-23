@@ -1,3 +1,4 @@
+import io
 import wave
 from datetime import datetime, timezone
 
@@ -39,12 +40,15 @@ def test_review_media_recorta_20_segundos_y_genera_espectrograma(
 ):
     audio_dir = tmp_path / "records"
     cache_dir = tmp_path / "review_segments"
+    clean_audio_dir = tmp_path / "review_audio"
     audio_dir.mkdir()
     filename = "record_review_timed.wav"
     _write_test_wav(audio_dir / filename)
 
     monkeypatch.setattr(review_media, "SERVER_AUDIO_DIR", audio_dir)
     monkeypatch.setattr(review_media, "REVIEW_SPECTROGRAM_DIR", cache_dir)
+    monkeypatch.setattr(review_media, "REVIEW_AUDIO_DIR", clean_audio_dir)
+    original_bytes = (audio_dir / filename).read_bytes()
 
     create_response = client.post(
         "/detections/",
@@ -68,11 +72,57 @@ def test_review_media_recorta_20_segundos_y_genera_espectrograma(
     assert media["review_end_seconds"] == 23.5
     assert media["review_duration_seconds"] == 20.0
     assert media["audio_url"] == f"/records/{filename}"
+    assert media["clean_audio_url"].endswith("/review-audio-clean")
+    assert media["diagnostics"]["status"] == "review"
+    assert "weak_bird_evidence" in media["diagnostics"]["warnings"]
+    assert media["diagnostics"]["high_pass_hz"] == 250.0
 
     image_response = client.get(media["spectrogram_url"])
     assert image_response.status_code == 200
     assert image_response.headers["content-type"] == "image/png"
     assert image_response.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+    clean_response = client.get(media["clean_audio_url"])
+    assert clean_response.status_code == 200
+    assert clean_response.headers["content-type"] == "audio/wav"
+    with wave.open(io.BytesIO(clean_response.content), "rb") as clean_wav:
+        assert clean_wav.getframerate() == 8000
+        assert clean_wav.getnframes() == 20 * 8000
+
+    assert (audio_dir / filename).read_bytes() == original_bytes
+
+
+def test_diagnostico_detecta_zumbido_y_conserva_contraste_de_evento(tmp_path):
+    sample_rate = 8000
+    duration_seconds = 20
+    times = np.arange(duration_seconds * sample_rate, dtype=np.float64) / sample_rate
+    samples = 0.08 * np.sin(2 * np.pi * 50 * times)
+    samples += 0.04 * np.sin(2 * np.pi * 100 * times)
+    event = (times >= 8.5) & (times < 11.5)
+    samples[event] += 0.08 * np.sin(2 * np.pi * 1800 * times[event])
+
+    audio_path = tmp_path / "hum_with_bird_event.wav"
+    pcm = np.int16(np.clip(samples, -1.0, 1.0) * 32767)
+    with wave.open(str(audio_path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm.tobytes())
+
+    window = review_media.build_review_window(
+        duration_seconds,
+        audio_start_seconds=8.5,
+        audio_end_seconds=11.5,
+    )
+    diagnostics = review_media.analyze_review_audio(audio_path, window)
+
+    assert diagnostics.low_frequency_ratio > 0.5
+    assert diagnostics.mains_hum_prominence_db >= 10.0
+    assert diagnostics.bird_band_snr_db is not None
+    assert diagnostics.bird_band_snr_db > 3.0
+    assert "low_frequency_noise" in diagnostics.warnings
+    assert "mains_hum" in diagnostics.warnings
+    assert "weak_bird_evidence" not in diagnostics.warnings
 
 
 def test_reintento_completa_tiempos_y_registro_antiguo_sigue_siendo_valido(client):

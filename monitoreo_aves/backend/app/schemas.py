@@ -110,9 +110,22 @@ class DetectionResponse(BaseModel):
         from_attributes = True
 
 
+class DetectionAudioDiagnostics(BaseModel):
+    status: Literal["ok", "review"]
+    summary: str
+    warnings: list[str]
+    low_frequency_ratio: float = Field(ge=0, le=1)
+    mains_hum_prominence_db: float
+    bird_band_snr_db: Optional[float] = None
+    high_pass_hz: float = Field(gt=0)
+
+
 class DetectionReviewMediaResponse(BaseModel):
     audio_url: str
+    clean_audio_url: str
     spectrogram_url: str
+    clean_audio_description: str
+    spectrogram_description: str
     audio_duration_seconds: float
     review_start_seconds: float
     review_end_seconds: float
@@ -120,6 +133,7 @@ class DetectionReviewMediaResponse(BaseModel):
     audio_start_seconds: Optional[float] = None
     audio_end_seconds: Optional[float] = None
     timing_available: bool
+    diagnostics: DetectionAudioDiagnostics
 
 #Esquemas para métricas acústicas por ciclo
 class AudioMetricCreate(BaseModel):

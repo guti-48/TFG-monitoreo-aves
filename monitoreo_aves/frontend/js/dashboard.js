@@ -921,6 +921,61 @@ function formatAudioReviewTime(seconds) {
     return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
+function formatSignedAudioDb(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "--";
+    return `${numeric >= 0 ? "+" : ""}${numeric.toFixed(1)} dB`;
+}
+
+function renderAudioReviewDiagnostics(diagnostics) {
+    if (!diagnostics) return "";
+
+    const requiresReview = diagnostics.status === "review";
+    const lowFrequencyPercent = Math.round(
+        Math.min(1, Math.max(0, Number(diagnostics.low_frequency_ratio) || 0)) * 100,
+    );
+    const humProminence = formatSignedAudioDb(diagnostics.mains_hum_prominence_db);
+    const birdSnr = diagnostics.bird_band_snr_db == null
+        ? null
+        : formatSignedAudioDb(diagnostics.bird_band_snr_db);
+    const warnings = new Set(Array.isArray(diagnostics.warnings) ? diagnostics.warnings : []);
+    const warningLabels = [
+        warnings.has("low_frequency_noise") ? "Exceso de graves" : null,
+        warnings.has("mains_hum") ? "Zumbido de red" : null,
+        warnings.has("weak_bird_evidence") ? "Evidencia debil" : null,
+    ].filter(Boolean);
+
+    return `
+        <section class="audio-review-diagnostics ${requiresReview ? "needs-review" : "is-ok"}">
+            <div class="audio-review-diagnostics-head">
+                <i class="bi ${requiresReview ? "bi-exclamation-triangle" : "bi-check-circle"}" aria-hidden="true"></i>
+                <div>
+                    <strong>${requiresReview ? "Revision acustica recomendada" : "Captura sin avisos relevantes"}</strong>
+                    <span>${escapeHtml(diagnostics.summary || "")}</span>
+                </div>
+            </div>
+            <div class="audio-review-diagnostic-values">
+                <span title="Porcentaje de energia por debajo de 200 Hz">
+                    Graves <strong>${lowFrequencyPercent}%</strong>
+                </span>
+                <span title="Prominencia maxima de 50, 100, 150 o 200 Hz">
+                    Zumbido <strong>${humProminence}</strong>
+                </span>
+                ${birdSnr === null ? "" : `
+                    <span title="Energia de 1,2 a 10 kHz dentro de la ventana frente al fondo">
+                        Contraste del evento <strong>${birdSnr}</strong>
+                    </span>
+                `}
+            </div>
+            ${warningLabels.length ? `
+                <div class="audio-review-warning-tags">
+                    ${warningLabels.map(label => `<span>${escapeHtml(label)}</span>`).join("")}
+                </div>
+            ` : ""}
+        </section>
+    `;
+}
+
 async function openDetectionAudioReview(detectionId) {
     closeSpeciesPreview();
     closeDetectionAudioReview();
@@ -1016,11 +1071,13 @@ function renderDetectionAudioReview(detectionId, detection, media) {
             </div>
         </div>
 
+        ${renderAudioReviewDiagnostics(media.diagnostics)}
+
         <div class="audio-review-spectrum-layout">
             <div class="audio-review-frequency-axis" aria-hidden="true">
                 <span>10 kHz</span>
                 <span>5 kHz</span>
-                <span>0 kHz</span>
+                <span>0,25 kHz</span>
             </div>
             <div class="audio-review-spectrum-column">
                 <div
@@ -1057,11 +1114,37 @@ function renderDetectionAudioReview(detectionId, detection, media) {
         </div>
 
         <div class="audio-review-legend">
-            ${hasTiming ? `
-                <span><i class="audio-review-marker-swatch" aria-hidden="true"></i>Ventana clasificada por BirdNET (${formatAudioReviewTime(detectionStart)} - ${formatAudioReviewTime(detectionEnd)})</span>
-            ` : `
-                <span class="audio-review-legacy-note"><i class="bi bi-info-circle" aria-hidden="true"></i>Este registro no conserva la marca temporal de BirdNET; se muestran sus primeros 20 segundos.</span>
-            `}
+            <div>
+                ${hasTiming ? `
+                    <span><i class="audio-review-marker-swatch" aria-hidden="true"></i>Ventana clasificada por BirdNET (${formatAudioReviewTime(detectionStart)} - ${formatAudioReviewTime(detectionEnd)})</span>
+                ` : `
+                    <span class="audio-review-legacy-note"><i class="bi bi-info-circle" aria-hidden="true"></i>Este registro no conserva la marca temporal de BirdNET; se muestran sus primeros 20 segundos.</span>
+                `}
+                <span class="audio-review-enhanced-note">
+                    <i class="bi bi-sliders" aria-hidden="true"></i>
+                    ${escapeHtml(media.spectrogram_description || "Vista realzada para revision; el WAV original no se modifica.")}
+                </span>
+            </div>
+        </div>
+
+        <div class="audio-review-mode-row">
+            <span>Escucha</span>
+            <div class="audio-review-mode-switch" role="group" aria-label="Modo de escucha">
+                <button
+                    id="audio-review-mode-original"
+                    type="button"
+                    class="is-active"
+                    aria-pressed="true"
+                    onclick="switchDetectionAudioMode('original')"
+                >Original</button>
+                <button
+                    id="audio-review-mode-clean"
+                    type="button"
+                    aria-pressed="false"
+                    onclick="switchDetectionAudioMode('clean')"
+                >Limpio</button>
+            </div>
+            <small>${escapeHtml(media.clean_audio_description || "El modo limpio solo afecta a la escucha humana.")}</small>
         </div>
 
         <div class="audio-review-controls">
@@ -1100,15 +1183,48 @@ function initializeDetectionAudioReview(media) {
 
     detectionAudioReviewState = {
         audio,
+        sources: {
+            original: {
+                url: media.audio_url,
+                start: Number(media.review_start_seconds) || 0,
+                end: Number(media.review_end_seconds) || 0,
+            },
+            clean: {
+                url: media.clean_audio_url,
+                start: 0,
+                end: Math.max(
+                    0,
+                    (Number(media.review_end_seconds) || 0)
+                        - (Number(media.review_start_seconds) || 0),
+                ),
+            },
+        },
+        mode: "original",
         start: Number(media.review_start_seconds) || 0,
         end: Number(media.review_end_seconds) || 0,
+        pendingElapsed: 0,
+        resumeAfterLoad: false,
         frame: null,
         finished: false,
     };
 
     audio.addEventListener("loadedmetadata", () => {
-        audio.currentTime = detectionAudioReviewState.start;
+        const state = detectionAudioReviewState;
+        if (!state || state.audio !== audio) return;
+        const duration = Math.max(0, state.end - state.start);
+        const elapsed = Math.min(
+            duration,
+            Math.max(0, Number(state.pendingElapsed) || 0),
+        );
+        audio.currentTime = state.start + elapsed;
+        state.pendingElapsed = null;
         updateDetectionAudioReviewPlayback();
+        if (state.resumeAfterLoad) {
+            state.resumeAfterLoad = false;
+            audio.play().catch(error => {
+                console.error("No se pudo reanudar la evidencia", error);
+            });
+        }
     });
     audio.addEventListener("timeupdate", updateDetectionAudioReviewPlayback);
     audio.addEventListener("play", () => {
@@ -1118,9 +1234,47 @@ function initializeDetectionAudioReview(media) {
     audio.addEventListener("pause", updateDetectionAudioReviewPlayback);
     audio.addEventListener("error", () => {
         const clock = document.getElementById("audio-review-clock");
-        if (clock) clock.textContent = "Audio no disponible";
+        if (clock) {
+            clock.textContent = detectionAudioReviewState?.mode === "clean"
+                ? "Audio limpio no disponible"
+                : "Audio no disponible";
+        }
     });
     audio.load();
+}
+
+function switchDetectionAudioMode(mode) {
+    const state = detectionAudioReviewState;
+    if (!state || !state.sources[mode] || state.mode === mode) return;
+
+    const elapsed = Math.min(
+        Math.max(0, state.end - state.start),
+        Math.max(0, state.audio.currentTime - state.start),
+    );
+    const resumeAfterLoad = !state.audio.paused;
+    const source = state.sources[mode];
+
+    state.audio.pause();
+    state.mode = mode;
+    state.start = source.start;
+    state.end = source.end;
+    state.pendingElapsed = elapsed;
+    state.resumeAfterLoad = resumeAfterLoad;
+    state.finished = elapsed >= Math.max(0, source.end - source.start);
+    state.audio.src = source.url;
+    updateDetectionAudioModeButtons();
+    state.audio.load();
+}
+
+function updateDetectionAudioModeButtons() {
+    const mode = detectionAudioReviewState?.mode || "original";
+    for (const candidate of ["original", "clean"]) {
+        const button = document.getElementById(`audio-review-mode-${candidate}`);
+        if (!button) continue;
+        const active = candidate === mode;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+    }
 }
 
 function updateDetectionAudioReviewPlayback() {
