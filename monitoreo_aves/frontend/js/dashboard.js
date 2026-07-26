@@ -34,10 +34,7 @@ let liveSpectrumFrame = null;
 let liveSpectrumData = null;
 
 let currentView = 'dashboard';
-let activeNodeFilter = null;
 let myChart = null;
-let intervalId = null;
-let liveHls = null;
 let streamStatusTimer = null;
 let lastStreamData = null;
 let currentScienceReport = [];
@@ -67,10 +64,6 @@ function streamPathForNode(nodeName) {
     }
 
     return `${slugifyStreamValue(nodeName)}-audio`;
-}
-
-function getLiveStreamPageUrl() {
-    return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/`;
 }
 
 function getCurrentHlsUrl() {
@@ -160,7 +153,7 @@ function isSpeciesPreviewCandidate(speciesRawName, label) {
 }
 
 // NAVEGACIÓ
-function switchView(viewName, nodeFilter = null) {
+function switchView(viewName) {
     closeSpeciesPreview();
     closeDetectionAudioReview();
 
@@ -169,7 +162,6 @@ function switchView(viewName, nodeFilter = null) {
     }
 
     currentView = viewName;
-    activeNodeFilter = nodeFilter;
 
     ['btn-dashboard', 'btn-live', 'btn-nodes', 'btn-history', 'btn-science', 'btn-daily'].forEach(id => {
         const el = document.getElementById(id);
@@ -399,30 +391,11 @@ async function refreshLiveStreamControlStatus() {
         }
 
         const hlsUrl = selectedStreamPathIsCustom ? getCurrentHlsUrl() : (data.hls_url || getCurrentHlsUrl());
-        const pageUrl = selectedStreamPathIsCustom ? getLiveStreamPageUrl() : (data.page_url || getLiveStreamPageUrl());
         updateLiveStreamLabels(selectedStreamPathIsCustom ? null : data);
 
         const hlsLabel = document.getElementById('live-hls-url');
-        const directLink = document.getElementById('live-stream-page-link');
-        const desired = document.getElementById('stream-desired-state');
-        const real = document.getElementById('stream-real-state');
-        const lastStatus = document.getElementById('stream-last-status');
-        const detail = document.getElementById('live-stream-detail');
 
         if (hlsLabel) hlsLabel.textContent = hlsUrl;
-        if (directLink) directLink.href = pageUrl;
-
-        if (desired) desired.textContent = data.stream_enabled ? 'Activado' : 'Desactivado';
-        if (real) real.textContent = data.actual_running ? 'Ejecutándose' : 'Detenido';
-        if (lastStatus) lastStatus.textContent = data.last_status_at || '-';
-
-        if (detail) {
-            detail.innerHTML = `
-                <div><strong>Detalle:</strong> ${data.detail || 'Sin detalle'}</div>
-                <div><strong>HLS:</strong> <span class="font-monospace">${hlsUrl}</span></div>
-                <div><strong>Actualizado:</strong> ${data.updated_at || '-'}</div>
-            `;
-        }
 
         if (data.actual_running) {
             setLiveStreamStatus('online', 'Stream activo');
@@ -438,11 +411,6 @@ async function refreshLiveStreamControlStatus() {
     } catch (e) {
         setLiveStreamStatus('offline', 'Error backend');
         setLiveStreamMessage(`No se pudo consultar /stream/control: ${e.message}`, true);
-
-        const detail = document.getElementById('live-stream-detail');
-        if (detail) {
-            detail.textContent = `Error consultando el estado del streaming: ${e.message}`;
-        }
     }
 }
 
@@ -822,35 +790,6 @@ function buildReviewBadge(detection) {
         <span class="badge review-badge ${meta.badge}">
             <i class="bi ${meta.icon} me-1"></i>${meta.label}${extra}
         </span>
-    `;
-}
-
-function buildReviewActionsLegacy(detection) {
-    const suggestion = getLearningSuggestion(detection);
-    const suggestionAction = suggestion ? `
-            <button class="btn btn-outline-success review-action-suggestion" title="Aplicar sugerencia aprendida" onclick="applyLearnedSuggestion(${detection.id})">
-                <i class="bi bi-stars"></i>
-            </button>
-    ` : "";
-
-    return `
-        <div class="btn-group btn-group-sm review-actions" role="group" aria-label="Revisión detección ${detection.id}">
-            <button class="btn btn-outline-success" title="Validar detección" onclick="quickReviewDetection(${detection.id}, 'validated')">
-                <i class="bi bi-check-lg"></i>
-            </button>
-            <button class="btn btn-outline-warning" title="Marcar como ruido" onclick="quickReviewDetection(${detection.id}, 'noise')">
-                <i class="bi bi-volume-mute"></i>
-            </button>
-            <button class="btn btn-outline-info" title="Corregir especie" onclick="correctDetectionSpecies(${detection.id})">
-                <i class="bi bi-pencil"></i>
-            </button>
-            <button class="btn btn-outline-primary" title="Marcar como dudosa" onclick="quickReviewDetection(${detection.id}, 'doubtful')">
-                <i class="bi bi-question-lg"></i>
-            </button>
-            <button class="btn btn-outline-danger" title="Descartar detección" onclick="quickReviewDetection(${detection.id}, 'discarded')">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
     `;
 }
 
@@ -1807,9 +1746,9 @@ async function updateDashboard() {
             });
             const topSpecies = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
             safeSetText('top-species', cleanName(topSpecies));
-            if (typeof renderLiveFeedSplit === "function") await renderLiveFeedSplit(latestBird);
-            if (typeof renderTable === "function") renderTable(birdsOnly.slice(0, 10));
-            if (typeof updateChart === "function") updateChart(counts);
+            await renderLiveFeedSplit(latestBird);
+            renderTable(birdsOnly.slice(0, 10));
+            updateChart(counts);
         }
     } catch (error) { console.error("Error Dashboard:", error); }
 }
@@ -3108,8 +3047,6 @@ function downloadDailyCSV() {
 
 //ARRANQUE
 document.addEventListener('DOMContentLoaded', () => {
-    const container = document.getElementById('main-content');
-    if (container) { container.className = "d-flex flex-column flex-grow-1 w-100"; container.innerHTML = getDashboardHTML(); }
     switchView('dashboard');
     setInterval(updateDashboard, 4000);
 

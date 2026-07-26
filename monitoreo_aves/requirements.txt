@@ -12,12 +12,8 @@ pydantic
 sqlalchemy
 pandas
 openpyxl==3.1.5
-#geopandas
-contextily
-pyproj
 geocoder
 scikit-maad
 python-multipart
-datetime
 pytest
 httpx

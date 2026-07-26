@@ -1,11 +1,3 @@
-import sys
-from pathlib import Path
-
-
-HARDWARE_DIR = Path(__file__).resolve().parents[1] / "hardware" / "raspberry_pi"
-if str(HARDWARE_DIR) not in sys.path:
-    sys.path.insert(0, str(HARDWARE_DIR))
-
 import analyzer
 import node_config
 
@@ -44,4 +36,3 @@ def test_birdnet_usa_ubicacion_del_nodo_y_umbral_mas_bajo(monkeypatch):
         node_config.UMBRAL_MOTORES,
     )
     assert captured["analyzed"] is True
-

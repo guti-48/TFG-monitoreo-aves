@@ -1,12 +1,4 @@
-import sys
-from pathlib import Path
-
 import numpy as np
-
-
-HARDWARE_DIR = Path(__file__).resolve().parents[1] / "hardware" / "raspberry_pi"
-if str(HARDWARE_DIR) not in sys.path:
-    sys.path.insert(0, str(HARDWARE_DIR))
 
 import audio_processing
 from audio_processing import analizarCalidadAudio

@@ -15,13 +15,6 @@ class DetectionCreate(BaseModel):
     audio_end_seconds: Optional[float] = Field(default=None, ge=0)
 
 
-class Detection(DetectionCreate):
-    id: int
-    device_id: int
-
-    class Config:
-        from_attributes = True
-
 #### Esquemas para revisión humana de detecciones ####
 ReviewStatus = Literal[
     "unreviewed",

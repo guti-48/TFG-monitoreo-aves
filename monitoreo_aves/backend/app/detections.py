@@ -255,14 +255,7 @@ def update_detection_review(
     review_data: schemas.DetectionReviewUpdate,
     db: Session = Depends(database.get_db),
 ):
-    detection = (
-        db.query(models.Detection)
-        .filter(models.Detection.id == detection_id)
-        .first()
-    )
-
-    if detection is None:
-        raise HTTPException(status_code=404, detail="Detection not found")
+    detection = _get_detection_or_404(detection_id, db)
 
     if review_data.status == "corrected" and not review_data.corrected_species:
         raise HTTPException(
@@ -318,14 +311,7 @@ def get_detection_review(
     detection_id: int,
     db: Session = Depends(database.get_db),
 ):
-    detection = (
-        db.query(models.Detection)
-        .filter(models.Detection.id == detection_id)
-        .first()
-    )
-
-    if detection is None:
-        raise HTTPException(status_code=404, detail="Detection not found")
+    _get_detection_or_404(detection_id, db)
 
     review = (
         db.query(models.DetectionReview)

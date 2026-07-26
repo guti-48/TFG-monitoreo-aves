@@ -1,10 +1,7 @@
 import sqlite3, os, glob, geocoder
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from maad import sound, features
-import warnings
-warnings.filterwarnings("ignore")
 
 ###DIRECTORIO DE LA BASE DE DATOS Y UMBRAL
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

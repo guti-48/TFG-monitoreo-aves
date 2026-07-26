@@ -30,9 +30,6 @@ def normalizar_nombre_archivo(filename: str, extensiones_permitidas: set[str]) -
             detail=f"Extension no permitida: {extension}",
         )
 
-    if not nombre:
-        raise HTTPException(status_code=400, detail="Nombre de archivo invalido")
-
     return nombre
 
 
