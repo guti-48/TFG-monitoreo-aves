@@ -8,6 +8,7 @@ from .analytics import router as analytics_router
 from .audio_metrics import router as audio_metrics_router
 from .detections import router as detections_router
 from .devices import router as devices_router
+from .exports import router as exports_router
 from .learning_routes import router as learning_router
 from .streaming import router as streaming_router
 from .uploads import router as uploads_router
@@ -82,6 +83,7 @@ app.add_middleware(
 app.include_router(streaming_router)
 app.include_router(uploads_router)
 app.include_router(devices_router)
+app.include_router(exports_router)
 app.include_router(detections_router)
 app.include_router(learning_router)
 app.include_router(audio_metrics_router)

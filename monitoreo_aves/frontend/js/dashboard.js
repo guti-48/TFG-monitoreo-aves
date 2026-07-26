@@ -44,6 +44,9 @@ let currentScienceReport = [];
 const detectionCache = new Map();
 const speciesPreviewCache = new Map();
 const speciesChartColorMap = new Map();
+const SPECIES_CHART_INITIAL_LIMIT = 7;
+let latestSpeciesCounts = {};
+let speciesChartExpanded = false;
 let activeSpeciesPreviewTrigger = null;
 let speciesPreviewHideTimer = null;
 let detectionAudioReviewState = null;
@@ -1717,12 +1720,19 @@ async function renderHistoryView(container) {
         });
         container.innerHTML = `
             <div class="row mb-4 animate-fade-in">
-                <div class="col-12 d-flex justify-content-between align-items-center">
+                <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-3">
                     <div>
                         <h3 class="fw-bold text-white"><i class="bi bi-database-fill me-2 text-accent"></i>Histórico</h3>
                         <p class="text-muted mb-0">Total registros: ${sortedData.length}</p>
                     </div>
-                    <button class="btn btn-success" onclick="downloadCSV()"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar Excel</button>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-outline-success" onclick="downloadCSV()">
+                            <i class="bi bi-filetype-csv me-2"></i>Exportar CSV
+                        </button>
+                        <button class="btn btn-success" onclick="downloadExcelReport(this)">
+                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar informe Excel
+                        </button>
+                    </div>
                 </div>
             </div>
             <div class="card bg-dark shadow-sm border-0 flex-grow-1 d-flex flex-column animate-fade-in history-card-container">
@@ -1864,7 +1874,32 @@ function getDashboardHTML() {
                 <div class="card-header bg-transparent border-0 py-3">
                     <h5 class="fw-bold m-0"><i class="bi bi-pie-chart-fill me-2 text-accent"></i>Distribución de Especies</h5>
                 </div>
-                <div class="card-body"><canvas id="speciesChart" style="max-height:300px;"></canvas></div>
+                <div class="card-body species-chart-body">
+                    <div class="species-chart-canvas-wrap">
+                        <canvas id="speciesChart" aria-label="Distribución de detecciones por especie"></canvas>
+                    </div>
+                    <div class="species-chart-actions">
+                        <button
+                            id="species-chart-toggle"
+                            type="button"
+                            class="species-chart-toggle"
+                            onclick="toggleSpeciesChartDetails()"
+                            aria-controls="species-chart-all-panel"
+                            aria-expanded="false"
+                            hidden
+                        >
+                            <span>Mostrar más</span>
+                            <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div
+                        id="species-chart-all-panel"
+                        class="species-chart-all-panel"
+                        aria-live="polite"
+                        hidden
+                    >
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1946,6 +1981,52 @@ async function downloadCSV() {
             rows
         );
     } catch (e) { alert("Error exportando"); }
+}
+
+async function downloadExcelReport(button) {
+    const originalContent = button?.innerHTML;
+
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Generando informe...';
+    }
+
+    try {
+        const response = await fetch('/exports/report.xlsx', { cache: 'no-store' });
+        if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+                const errorData = await response.json();
+                detail = errorData.detail || detail;
+            } catch (_) {
+                // La respuesta puede no ser JSON si el servidor se interrumpe.
+            }
+            throw new Error(detail);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+        const filename = filenameMatch?.[1]
+            || `birdmonitor_informe_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+        console.error("Error generando el informe Excel:", error);
+        alert(`No se pudo generar el informe Excel: ${error.message}`);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalContent;
+        }
+    }
 }
 
 function getSpeciesWikiTitle(speciesRawName) {
@@ -2234,17 +2315,109 @@ function renderTable(data) {
 function updateChart(counts) {
     const canvas = document.getElementById('speciesChart');
     if (!canvas) return;
+
+    latestSpeciesCounts = { ...counts };
     if (myChart) { myChart.destroy(); }
+
     const ctx = canvas.getContext('2d');
-    const entries = Object.entries(counts);
-    const labels = entries.map(([species]) => cleanName(species));
-    const values = entries.map(([, count]) => count);
-    const colors = entries.map(([species]) => getSpeciesChartColor(species));
+    const allEntries = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1] || cleanName(a[0]).localeCompare(cleanName(b[0]), 'es'));
+    const hasMoreSpecies = allEntries.length > SPECIES_CHART_INITIAL_LIMIT;
+    if (!hasMoreSpecies) speciesChartExpanded = false;
+    const allDetectionsTotal = allEntries.reduce(
+        (sum, [, count]) => sum + count,
+        0
+    );
+    const labels = allEntries.map(([species]) => cleanName(species));
+    const values = allEntries.map(([, count]) => count);
+    const colors = allEntries.map(([species]) => getSpeciesChartColor(species));
+
     myChart = new Chart(ctx, {
         type: 'doughnut',
         data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#5f6f65' } } } }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '62%',
+            plugins: {
+                legend: {
+                    display: true,
+                    position: window.innerWidth <= 576 ? 'bottom' : 'right',
+                    labels: {
+                        color: '#5f6f65',
+                        boxWidth: 32,
+                        boxHeight: 12,
+                        padding: 14,
+                        filter(legendItem) {
+                            return legendItem.index < SPECIES_CHART_INITIAL_LIMIT;
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label(context) {
+                            const percentage = allDetectionsTotal > 0
+                                ? ((context.parsed / allDetectionsTotal) * 100).toFixed(1)
+                                : '0.0';
+                            return `${context.label}: ${context.parsed} (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
     });
+
+    renderAllSpeciesPanel(allEntries, hasMoreSpecies);
+}
+
+function renderAllSpeciesPanel(allEntries, hasMoreSpecies) {
+    const panel = document.getElementById('species-chart-all-panel');
+    const toggle = document.getElementById('species-chart-toggle');
+    if (!panel || !toggle) return;
+
+    const previousScrollTop = panel.scrollTop;
+    const totalDetections = allEntries.reduce((sum, [, count]) => sum + count, 0);
+    panel.hidden = !hasMoreSpecies || !speciesChartExpanded;
+    panel.innerHTML = `
+        <div class="species-chart-all-heading">
+            <strong>Todas las especies</strong>
+            <span>${allEntries.length} registradas</span>
+        </div>
+        <div class="species-chart-all-grid">
+            ${allEntries.map(([species, count]) => {
+        const cleanSpecies = cleanName(species);
+        const percentage = totalDetections > 0
+            ? ((count / totalDetections) * 100).toFixed(1)
+            : '0.0';
+
+        return `
+            <div class="species-chart-all-item" title="${escapeHtml(cleanSpecies)}">
+                <span
+                    class="species-chart-all-swatch"
+                    style="--species-color:${getSpeciesChartColor(species)}"
+                    aria-hidden="true"
+                ></span>
+                <span class="species-chart-all-name">${escapeHtml(cleanSpecies)}</span>
+                <span class="species-chart-all-value">
+                    <strong>${count}</strong> · ${percentage}%
+                </span>
+            </div>
+        `;
+            }).join('')}
+        </div>
+    `;
+    if (speciesChartExpanded) panel.scrollTop = previousScrollTop;
+
+    toggle.hidden = !hasMoreSpecies;
+    toggle.setAttribute('aria-expanded', String(speciesChartExpanded));
+    toggle.innerHTML = speciesChartExpanded
+        ? '<span>Mostrar menos</span><i class="bi bi-chevron-up" aria-hidden="true"></i>'
+        : `<span>Mostrar más (${allEntries.length - SPECIES_CHART_INITIAL_LIMIT})</span><i class="bi bi-chevron-down" aria-hidden="true"></i>`;
+}
+
+function toggleSpeciesChartDetails() {
+    speciesChartExpanded = !speciesChartExpanded;
+    updateChart(latestSpeciesCounts);
 }
 
 function getSpeciesChartColor(species) {

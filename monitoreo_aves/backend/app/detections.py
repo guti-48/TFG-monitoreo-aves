@@ -151,11 +151,19 @@ def get_detection_review_media(
 
     return {
         "audio_url": f"/records/{quote(audio_path.name)}",
-        "clean_audio_url": f"/detections/{detection_id}/review-audio-clean",
-        "spectrogram_url": f"/detections/{detection_id}/review-spectrogram",
+        "clean_audio_url": (
+            f"/detections/{detection_id}/review-audio-clean"
+            f"?v={review_media.REVIEW_RENDER_VERSION}"
+        ),
+        "spectrogram_url": (
+            f"/detections/{detection_id}/review-spectrogram"
+            f"?v={review_media.REVIEW_RENDER_VERSION}"
+        ),
         "clean_audio_description": (
-            "Tramo de revision con paso alto de 250 Hz y volumen normalizado. "
-            "No sustituye ni modifica el WAV original."
+            "Tramo de revision con paso alto de 250 Hz, eliminacion selectiva "
+            "de zumbidos, reduccion adaptativa del fondo y volumen reforzado. "
+            "Solo mejora la escucha humana: no sustituye el WAV original ni "
+            "el audio analizado por BirdNET."
         ),
         "spectrogram_description": (
             "Vista realzada entre 250 Hz y 10 kHz, normalizada contra el fondo "
