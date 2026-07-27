@@ -24,9 +24,9 @@ def get_biodiversity_report():
         return []
 
 @router.get("/analytics/map")
-def get_map_data():
+def get_map_data(device_id: int | None = None):
     try:
-        return obetenerDatosMapa()
+        return obetenerDatosMapa(device_id=device_id)
     except Exception as e:
         print(f"Error en mapa: {e}")
         return {"error": str(e)}

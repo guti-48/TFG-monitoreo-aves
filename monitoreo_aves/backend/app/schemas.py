@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import Optional, Literal
 
@@ -80,8 +80,22 @@ class LearningRebuildResponse(BaseModel):
 class DeviceCreate(BaseModel):
     name: str
     location: str
-    lat: Optional[float] = None
-    lon: Optional[float] = None
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lon: Optional[float] = Field(default=None, ge=-180, le=180)
+    location_source: Optional[
+        Literal["manual", "gps", "ip_geolocation", "unknown"]
+    ] = None
+    location_accuracy_m: Optional[float] = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validar_coordenadas_completas(self):
+        if (self.lat is None) != (self.lon is None):
+            raise ValueError("lat y lon deben proporcionarse juntas")
+        if self.location_accuracy_m is not None and self.lat is None:
+            raise ValueError(
+                "location_accuracy_m requiere coordenadas lat y lon"
+            )
+        return self
 
     class Config:
         from_attributes = True
@@ -115,9 +129,7 @@ class DetectionAudioDiagnostics(BaseModel):
 
 class DetectionReviewMediaResponse(BaseModel):
     audio_url: str
-    clean_audio_url: str
     spectrogram_url: str
-    clean_audio_description: str
     spectrogram_description: str
     audio_duration_seconds: float
     review_start_seconds: float
@@ -146,6 +158,7 @@ class AudioMetricCreate(BaseModel):
     birdnet_model: Optional[str] = None
     birdnet_model_version: Optional[str] = None
     birdnetlib_version: Optional[str] = None
+    acoustic_metrics_version: str = "legacy-v1"
     aci: float
     adi: float
     aei: float
@@ -173,6 +186,7 @@ class AudioMetricResponse(BaseModel):
     birdnet_model: Optional[str] = None
     birdnet_model_version: Optional[str] = None
     birdnetlib_version: Optional[str] = None
+    acoustic_metrics_version: Optional[str] = None
     aci: float
     adi: float
     aei: float

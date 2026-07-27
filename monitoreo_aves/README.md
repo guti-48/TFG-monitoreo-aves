@@ -11,11 +11,19 @@ El proyecto queda preparado para clonarse y ejecutarse con un servidor central e
 ### Arquitectura de despliegue
 
 ```text
-Raspberry Pi / nodos Edge  --->  Servidor central Windows o macOS  --->  Dashboard web / app movil
-        mainNode.py                  FastAPI :8000                         http://IP_SERVIDOR:8000
-        supervisor.py                MediaMTX :8888                        HLS :8888
-        birdstream.service
+Raspberry Pi / nodo Edge                  Servidor central                 Clientes
+┌────────────────────────┐               ┌────────────────────┐           ┌─────────────────────┐
+│ microfono → ALSA       │               │ FastAPI       :8000│──────────▶│ navegador / movil   │
+│   ├─ mainNode / BirdNET│── datos ─────▶│ base de datos      │           │ dashboard      :8000│
+│   └─ birdstream/FFmpeg │── RTSP ──────▶│ MediaMTX      :8554│── HLS ───▶│ escucha HLS    :8888│
+│ supervisor.py          │               │                  │ └── RTSP ──▶│ VLC             :8554│
+└────────────────────────┘               └────────────────────┘           └─────────────────────┘
 ```
+
+La Raspberry captura y analiza el microfono, y publica **una sola señal** RTSP.
+FastAPI y MediaMTX se ejecutan en el servidor central. MediaMTX transforma esa
+señal en HLS y la distribuye a todos los oyentes; abrir dos móviles no duplica
+la captura, BirdNET ni el proceso FFmpeg de la Raspberry.
 
 Reglas importantes de red:
 
@@ -24,6 +32,7 @@ Reglas importantes de red:
 * Desde la Raspberry, la app movil u otro ordenador, usa la IP LAN o Tailscale del servidor.
 * Si cambias el servidor de Windows a Mac, cambia la IP en la Raspberry y en la app movil, no en todos los archivos del backend.
 * Varios clientes pueden abrir el mismo dashboard a la vez: Mac, Windows, movil o tablet solo necesitan entrar a `http://IP_DEL_SERVIDOR:8000`.
+* Para VLC se usa `rtsp://IP_DEL_SERVIDOR:8554/NOMBRE_DEL_STREAM`; nunca la IP de la Raspberry.
 
 ### Servidor central y clientes
 
@@ -32,15 +41,45 @@ La Raspberry no necesita saber desde que ordenador vas a mirar el dashboard. La 
 Ejemplos:
 
 ```text
-Raspberry -> http://100.80.10.25:8000      # servidor central por Tailscale
-Mac       -> http://100.80.10.25:8000      # cliente viendo el dashboard
-Windows   -> http://100.80.10.25:8000      # otro cliente viendo el mismo dashboard
-Movil     -> http://100.80.10.25:8000      # app o navegador
+Raspberry -> http://IP_TAILSCALE_SERVIDOR:8000   # envio de datos y control
+Mac       -> http://IP_TAILSCALE_SERVIDOR:8000   # cliente viendo el dashboard
+Windows   -> http://IP_TAILSCALE_SERVIDOR:8000   # servidor y cliente local
+Movil     -> http://IP_TAILSCALE_SERVIDOR:8000   # navegador, con Tailscale activo
 ```
 
 Si el servidor central es el Mac, Windows tambien puede entrar al dashboard del Mac. Si el servidor central es Windows, el Mac puede entrar al dashboard de Windows. Lo importante es que todos apunten al mismo backend si quieres ver la misma base de datos y controlar la misma Raspberry.
 
-No hace falta cambiar el codigo visual para esto. La URL se introduce en el navegador o en la pantalla de conexion de la app movil.
+No hace falta instalar la app móvil para escuchar. El dashboard web es responsive
+y constituye el cliente móvil principal. Al entrar desde la misma Wi-Fi se usa
+la IP LAN del servidor; desde otra red se usa su IP Tailscale y el móvil también
+debe tener Tailscale conectado.
+
+Para un stream llamado `birdmonitor-audio`, las direcciones son:
+
+```text
+Dashboard y escucha móvil:  http://IP_DEL_SERVIDOR:8000
+Reproductor HLS alternativo: http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/
+Manifiesto HLS:              http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+VLC / RTSP:                  rtsp://IP_DEL_SERVIDOR:8554/birdmonitor-audio
+```
+
+El botón **Desconectar este dispositivo** solo para el reproductor de ese
+navegador. **Detener emisión para todos**, situado dentro del control global,
+detiene `birdstream.service` en la Raspberry y corta a todos los oyentes.
+
+La distribución web usa HLS fMP4 con segmentos de 1 segundo. En condiciones
+normales el reproductor se mantiene aproximadamente 3–5 segundos detrás del
+directo y vuelve automáticamente al borde al reanudar la pestaña o regresar
+desde segundo plano. El dashboard intenta cargar `hls.js` desde el CDN y, si no
+hay acceso a Internet, utiliza la copia que sirve el propio MediaMTX. En móvil
+se prioriza la salida de audio y se omite el espectro Web Audio para evitar que
+las políticas de reproducción del navegador silencien la escucha.
+
+Si reaparece un retraso cercano a 30 segundos, comprueba el manifiesto hijo:
+debe indicar `#EXT-X-TARGETDURATION:1` y segmentos de alrededor de 1 segundo.
+Un valor próximo a 11 indica que MediaMTX sigue ejecutándose con la variante
+MPEG-TS antigua. Después de actualizar, fuerza la recarga del navegador para
+obtener la versión nueva de `dashboard.js`.
 
 ### 1. Clonar el repositorio
 
@@ -107,7 +146,8 @@ La IP que normalmente hay que cambiar es la del servidor central vista desde cad
 | --- | --- | --- |
 | Raspberry envia detecciones al servidor | Variable `BIRDMONITOR_SERVER_URL`, usada por `hardware/raspberry_pi/mainNode.py` y `hardware/raspberry_pi/supervisor.py` | `http://IP_DEL_SERVIDOR:8000` |
 | Nombre de cada Raspberry/nodo | `BIRDMONITOR_NODE_NAME` | Un nombre unico por nodo, por ejemplo `birdmonitor-norte`, `birdmonitor-sur` |
-| Ubicacion del nodo | `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Lugar y coordenadas reales del nodo |
+| Ubicacion del nodo | `BIRDMONITOR_NODE_LOCATION`, `BIRDMONITOR_NODE_LAT`, `BIRDMONITOR_NODE_LON` | Lugar y coordenadas manuales/GPS del nodo; necesarias para dibujar el círculo local |
+| Geolocalización IP | `BIRDMONITOR_AUTO_GEOLOCATION` | Desactivada por defecto (`0`); si se activa, el mapa avisa de que es aproximada y oculta el círculo |
 | Microfono en Raspberry | `BIRDMONITOR_MIC_DEVICE` | Indice del dispositivo de entrada si no quieres usar el predeterminado |
 | Ganancia fisica ALSA | `BIRDMONITOR_MIC_ALSA_CARD`, `BIRDMONITOR_MIC_CAPTURE_VOLUME`, `BIRDMONITOR_MIC_AUTO_GAIN` | Ejemplo para un USB en la tarjeta 3: `3`, `50%`, `0` |
 | Ciclo de grabacion | `BIRDMONITOR_RECORD_SECONDS`, `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | Duracion e intervalo en segundos, por ejemplo `60`, `300` |
@@ -115,12 +155,14 @@ La IP que normalmente hay que cambiar es la del servidor central vista desde cad
 | Umbral de ruido ambiente | `BIRDMONITOR_HIGH_NOISE_RMS_THRESHOLD` | Por ejemplo `0.02` |
 | BirdNET reproducible | `BIRDMONITOR_BIRDNET_MODEL_VERSION`, `BIRDMONITOR_BIRDNET_OVERLAP_SECONDS`, `BIRDMONITOR_BIRDNET_SENSITIVITY` | Por defecto `2.4`, `1.5`, `1.25` |
 | Diagnostico del microfono | `BIRDMONITOR_MIC_MIN_RMS`, `BIRDMONITOR_MIC_MAX_CLIPPING_RATIO`, `BIRDMONITOR_MIC_MAX_DC_OFFSET`, `BIRDMONITOR_MIC_CLIPPING_LEVEL` | Los valores por defecto detectan senal baja, clipping y desplazamiento DC sin modificar el WAV |
+| Entorno acústico del mapa | `BIRDMONITOR_ACOUSTIC_REFERENCE_RADIUS_M` | `25` m por defecto, siempre rotulado como referencia no calibrada; usa `0` para ocultar el círculo |
 | BirdWeather | `BIRDWEATHER_TOKEN_FILE` | Ruta local del token, por ejemplo `/etc/birdmonitor/birdweather_token` |
-| Servicio de streaming de la Raspberry | Archivo o servicio `birdstream.service` que publique audio hacia MediaMTX | Debe apuntar a la IP del servidor y al path HLS/MediaMTX elegido, normalmente `birdmonitor-audio` |
+| Servicio de streaming de la Raspberry | Archivo o servicio `birdstream.service` que publique audio por RTSP hacia MediaMTX | Debe apuntar a `rtsp://IP_DEL_SERVIDOR:8554/PATH`, normalmente `birdmonitor-audio` |
 | Dashboard web | Normalmente no se edita: `frontend/js/dashboard.js` carga `/devices/` y permite seleccionar nodo y path MediaMTX desde la vista de directo | Si entras en `http://IP_SERVIDOR:8000`, usara `http://IP_SERVIDOR:8888` |
-| Dashboard con MediaMTX en otro host/puerto | `frontend/index.html`, antes de cargar `frontend/js/dashboard.js`, definiendo `window.BIRDMONITOR_CONFIG` | `liveStreamBaseUrl`, `streamName`, `streamNodeName` |
+| Dashboard con MediaMTX en otro host/puerto | `frontend/index.html`, antes de cargar `frontend/js/dashboard.js`, definiendo `window.BIRDMONITOR_CONFIG` | `liveStreamBaseUrl`, `liveStreamRtspBaseUrl`, `streamName`, `streamNodeName` |
 | Rutas HLS por nodo | `BIRDMONITOR_STREAM_PATH` o `BIRDMONITOR_STREAM_PATH_TEMPLATE`, leidas por `backend/app/config.py` | Ruta fija o plantilla, por ejemplo `{node_name}-audio` |
 | Backend si MediaMTX no esta en el mismo host | `BIRDMONITOR_STREAM_BASE_URL` | `http://IP_DEL_SERVIDOR:8888` |
+| RTSP si MediaMTX no esta en el mismo host | `BIRDMONITOR_STREAM_RTSP_BASE_URL` | `rtsp://IP_DEL_SERVIDOR:8554` |
 | Origenes web externos | `BIRDMONITOR_CORS_ORIGINS` | Lista separada por comas |
 | Arranque del backend | `BIRDMONITOR_BACKEND_HOST`, `BIRDMONITOR_BACKEND_PORT` | `0.0.0.0`, `8000` |
 | App movil | Pantalla de conexion de la app | `http://IP_DEL_SERVIDOR:8000`; no usar `127.0.0.1` en un movil real |
@@ -154,6 +196,7 @@ La vista web carga los nodos registrados y permite seleccionar el nodo y el path
 <script>
 window.BIRDMONITOR_CONFIG = {
   liveStreamBaseUrl: "http://IP_DEL_SERVIDOR:8888",
+  liveStreamRtspBaseUrl: "rtsp://IP_DEL_SERVIDOR:8554",
   streamName: "birdmonitor-norte-audio",
   streamNodeName: "birdmonitor-norte"
 };
@@ -194,6 +237,16 @@ Comprobar estado:
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
 ```
+
+Aplicar cambios del backend o de `mediamtx.yml` sin detener procesos ajenos:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\restart_birdmonitor_streaming.ps1
+```
+
+Este reinicio debe ejecutarse desde PowerShell como administrador. Comprueba que
+los procesos que escuchan en `8000` y `8888` pertenecen a BirdMonitor antes de
+detenerlos, arranca de nuevo ambas tareas y espera a que HLS vuelva a estar listo.
 
 Desinstalar automatizacion:
 
@@ -412,15 +465,25 @@ El sistema se encuentra en fase de validación técnica con funcionalidad comple
 * **Interfaz de Visualización y Control (Dashboard):**
 
     * **Telemetría en Tiempo Real:** Interfaz SPA con actualizaciones sin recarga (Polling) y evasión inteligente de caché HTTP.
-    * **Análisis Ecológico:** Cálculo automático de Índices de Biodiversidad (Shannon $H'$, Pielou $J'$, Simpson $1-D$).
-    * **Radar de Bioacústica (Paisaje Sonoro):** Análisis matricial del archivo `.wav` en el servidor utilizando `scikit-maad` para extraer los índices ACI, ADI, AEI, BIO y NDSI, midiendo la salud acústica del entorno y dibujando una huella sonora en gráfico de radar.
-    * **Cartografía Dinámica:** Generación automática de mapas interactivos (Leaflet.js) basados en la geolocalización IP del nodo, mostrando radios de cobertura ponderados por el índice de Shannon local.
+    * **Análisis Ecológico Descriptivo:** Cálculo de Shannon $H'$, Pielou $J'$ y Simpson $1-D$ sobre los eventos de detección válidos. El valor $N$ representa eventos, no individuos, y los índices no estiman por sí solos población, densidad ni salud del ecosistema.
+    * **Radar de Bioacústica (Paisaje Sonoro):** Análisis matricial del archivo `.wav` mediante `scikit-maad` para extraer ACI, ADI, AEI, BIO y NDSI. Son descriptores de la señal y se interpretan comparando el mismo nodo, micrófono, configuración y esfuerzo de muestreo; no constituyen por sí solos un diagnóstico de salud ecológica. En la configuración usada, NDSI expresa el balance normalizado de energía entre 0–1 kHz y 1–10 kHz.
+    * **Cartografía del punto de muestreo:** Mapa interactivo basado en la ubicación comunicada por el nodo. Con coordenadas manuales o GPS, el círculo representa un entorno local orientativo de 25 m, no calibrado; con geolocalización IP solo se muestra un marcador aproximado. Ninguno de ellos garantiza que todas las aves próximas se detecten ni excluye señales audibles más lejanas.
     * **Evidencia acústica sincronizada:** El histórico permite escuchar un contexto de 20 segundos directamente sobre su espectrograma. Un cursor recorre la imagen durante la reproducción y una franja resalta los 3 segundos que BirdNET utilizó para clasificar la especie.
-    * **Revisión limpia y reversible:** El revisor puede alternar entre el WAV original y una copia temporal con paso alto de 250 Hz, muescas selectivas para los armónicos de red realmente presentes, limitación de altas frecuencias, reducción espectral adaptativa por bloques y volumen reforzado. El espectrograma resta el fondo estacionario para destacar eventos, pero BirdNET y el archivo científico siempre conservan el audio crudo.
+    * **Revisión acústica enfocada:** El revisor escucha directamente el WAV original dentro de un contexto de 20 segundos, sin copias filtradas que puedan introducir artefactos. La vista muestra solo la confianza, el evento marcado, el reproductor y las acciones humanas; el diagnóstico de graves, zumbido y contraste queda plegado como detalle técnico. El espectrograma resta visualmente el fondo estacionario para facilitar la lectura, sin modificar el audio ni la inferencia de BirdNET.
     * **Exportación científica y visual:** El histórico conserva la descarga CSV interoperable y añade un informe `.xlsx` real generado en el servidor. El libro contiene un resumen con gráficos, detecciones, actividad horaria, especies, índices ecológicos, calidad de audio, revisiones humanas y metadatos de BirdNET, con filtros y formato condicional para facilitar su uso en Excel.
     * **Distribución de especies escalable:** El gráfico principal ordena las especies por número de detecciones y presenta inicialmente las siete más escuchadas. Un control permite desplegar la lista completa dentro de la propia tarjeta sin ocultar nombres ni desbordar lateralmente la interfaz.
 
 Las detecciones creadas desde esta versión conservan en la base de datos los segundos de inicio y fin indicados por BirdNET. Los registros anteriores siguen siendo compatibles, pero muestran los primeros 20 segundos del WAV porque esa marca temporal no se almacenaba todavía.
+
+### Alcance espacial e interpretación científica
+
+El radio de 25 m es una referencia visual conservadora para el despliegue urbano actual, no una especificación universal del micrófono ni un área de inventario exhaustivo. Solo se dibuja cuando el nodo comunica coordenadas manuales o GPS; una posición obtenida por IP se identifica como aproximada y muestra únicamente el marcador. La distancia de detección cambia con la especie y su vocalización, la frecuencia, el nivel de ruido, la vegetación, los edificios, la orientación y la cadena completa de grabación. Darras et al. observaron que el 95 % de las detecciones de su sistema y sus hábitats se concentró dentro de 40 m, pero también remarcaron la necesidad de estimar la detectabilidad para cada configuración ([Methods in Ecology and Evolution, 2018](https://doi.org/10.1111/2041-210X.13031)). Un conjunto urbano reciente con AudioMoth confirma que la cobertura depende de la frecuencia, la amplitud y el entorno construido ([Scientific Data, 2025](https://www.nature.com/articles/s41597-025-05481-z)).
+
+Por ello, para convertir el círculo orientativo en un radio efectivo debe realizarse una calibración de campo con reproducciones conocidas a varias distancias y direcciones, bajo condiciones representativas, documentando el umbral de detección. Hasta entonces, los resultados describen exclusivamente las grabaciones obtenidas en el punto del nodo. Del mismo modo, NDSI se presenta como el balance de las bandas configuradas (0–1 kHz frente a 1–10 kHz) conforme a la [implementación de `soundscape_index` de scikit-maad](https://scikit-maad.github.io/generated/maad.features.soundscape_index.html), sin equiparar automáticamente sus extremos con «urbano» o «natural».
+
+Las métricas acústicas corregidas se guardan con la versión `maad-v2`: ACI, ADI, AEI y BIO se calculan sobre amplitud; NDSI y la entropía frecuencial sobre potencia; Ht sobre la envolvente temporal. El panel utiliza únicamente las últimas 100 muestras `maad-v2` del mismo nodo y muestra el periodo y el número de capturas. Las filas anteriores quedan identificadas como `legacy-v1` y se conservan para trazabilidad, pero no se mezclan con la nueva serie.
+
+En una actualización existente debe desplegarse y reiniciarse primero el backend, comprobando que la respuesta de `/audio-metrics/` conserva `acoustic_metrics_version`; después se actualiza y reinicia la Raspberry. Este orden evita que un backend antiguo acepte los valores nuevos pero descarte su versión de cálculo.
 
 ## Arquitectura Técnica
 

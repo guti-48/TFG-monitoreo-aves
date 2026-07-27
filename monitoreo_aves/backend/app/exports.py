@@ -267,48 +267,48 @@ def _apply_row_borders(worksheet, first_row: int, last_row: int, columns: int):
             cell.alignment = Alignment(vertical="top")
 
 
-def _mean_attribute(items: list[models.AudioMetric], attribute: str) -> float:
+def _mean_attribute(
+    items: list[models.AudioMetric],
+    attribute: str,
+) -> float | None:
     values = [
         float(value)
         for item in items
         if (value := getattr(item, attribute, None)) is not None
     ]
-    return round(mean(values), 4) if values else 0.0
+    return round(mean(values), 4) if values else None
 
 
 def _biodiversity_indices(
     detections: list[models.Detection],
-) -> tuple[int, int, float, float, float, str]:
-    abundance = len(detections)
+) -> tuple[int, int, float, float, float | None, str]:
+    event_count = len(detections)
     counts = Counter(_effective_species(item) for item in detections)
-    richness = len(counts)
+    species_count = len(counts)
 
-    if abundance == 0:
-        return 0, 0, 0.0, 0.0, 0.0, "SIN DATOS"
+    if event_count == 0:
+        return 0, 0, 0.0, 0.0, None, "SIN DATOS"
 
-    proportions = [count / abundance for count in counts.values()]
+    proportions = [count / event_count for count in counts.values()]
     shannon = -sum(value * log(value) for value in proportions if value > 0)
 
-    if abundance > 1:
+    if event_count > 1:
         dominance = sum(count * (count - 1) for count in counts.values()) / (
-            abundance * (abundance - 1)
+            event_count * (event_count - 1)
         )
         simpson = 1 - dominance
     else:
         simpson = 0.0
 
-    pielou = shannon / log(richness) if richness > 1 else 0.0
-    quality = "POBRE" if shannon < 1.5 else "MODERADO"
-    if shannon >= 3.0:
-        quality = "EXCELENTE"
+    pielou = shannon / log(species_count) if species_count > 1 else None
 
     return (
-        abundance,
-        richness,
+        event_count,
+        species_count,
         round(shannon, 3),
         round(simpson, 3),
-        round(pielou, 3),
-        quality,
+        round(pielou, 3) if pielou is not None else None,
+        "DESCRIPTIVO",
     )
 
 
@@ -614,41 +614,63 @@ def _build_biodiversity_sheet(
     valid_detections: list[models.Detection],
     audio_metrics: list[models.AudioMetric],
 ):
-    detections_by_location: dict[str, list[models.Detection]] = defaultdict(list)
-    metrics_by_location: dict[str, list[models.AudioMetric]] = defaultdict(list)
+    detections_by_device: dict[int, list[models.Detection]] = defaultdict(list)
+    metrics_by_device: dict[int, list[models.AudioMetric]] = defaultdict(list)
+    device_labels: dict[int, tuple[str, str]] = {}
 
     for detection in valid_detections:
+        device_id = int(detection.device_id)
+        node_name = (
+            detection.device.name
+            if detection.device and detection.device.name
+            else f"Nodo {device_id}"
+        )
         location = (
             detection.device.location
             if detection.device and detection.device.location
             else "Desconocida"
         )
-        detections_by_location[location].append(detection)
+        device_labels[device_id] = (node_name, location)
+        detections_by_device[device_id].append(detection)
 
     for metric in audio_metrics:
+        if metric.acoustic_metrics_version != "maad-v2":
+            continue
+        device_id = int(metric.device_id)
+        node_name = (
+            metric.device.name
+            if metric.device and metric.device.name
+            else f"Nodo {device_id}"
+        )
         location = (
             metric.device.location
             if metric.device and metric.device.location
             else "Desconocida"
         )
-        metrics_by_location[location].append(metric)
+        device_labels[device_id] = (node_name, location)
+        metrics_by_device[device_id].append(metric)
 
-    locations = sorted(
-        set(detections_by_location) | set(metrics_by_location),
-        key=str.casefold,
+    device_ids = sorted(
+        set(detections_by_device) | set(metrics_by_device),
+        key=lambda device_id: (
+            device_labels[device_id][0].casefold(),
+            device_id,
+        ),
     )
     rows: list[list[object]] = []
-    for location in locations:
-        abundance, richness, shannon, simpson, pielou, quality = (
-            _biodiversity_indices(detections_by_location[location])
+    for device_id in device_ids:
+        node_name, location = device_labels[device_id]
+        event_count, species_count, shannon, simpson, pielou, scope = (
+            _biodiversity_indices(detections_by_device[device_id])
         )
-        metrics = metrics_by_location[location]
+        metrics = metrics_by_device[device_id]
         rows.append(
             [
+                node_name,
                 location,
-                quality,
-                abundance,
-                richness,
+                scope,
+                event_count,
+                species_count,
                 shannon,
                 simpson,
                 pielou,
@@ -665,10 +687,11 @@ def _build_biodiversity_sheet(
         )
 
     headers = [
+        "Nodo",
         "Zona",
-        "Calidad Shannon",
-        "Abundancia N",
-        "Riqueza S",
+        "Alcance de interpretación",
+        "Eventos de detección N",
+        "Especies detectadas S",
         "Shannon H'",
         "Simpson 1-D",
         "Pielou J'",
@@ -685,35 +708,35 @@ def _build_biodiversity_sheet(
     worksheet = _create_table_sheet(
         workbook,
         "Índices ecológicos",
-        "Índices ecológicos y del paisaje sonoro",
+        "Índices descriptivos de detecciones y del paisaje sonoro",
         (
-            "Los índices ecológicos usan detecciones válidas; los índices "
-            "acústicos son medias de las capturas de cada zona."
+            "Shannon, Simpson y Pielou describen el reparto de eventos válidos, "
+            "no la abundancia de individuos. Los descriptores acústicos son "
+            "medias de las capturas de cada nodo y solo deben compararse con el "
+            "mismo nodo, micrófono, configuración y esfuerzo de muestreo. Solo "
+            "se agrega la serie corregida maad-v2; el histórico legacy no se mezcla."
         ),
         headers,
         rows,
         "TablaIndicesEcologicos",
-        {1: 25, 2: 18, **{column: 18 for column in range(3, 17)}},
+        {
+            1: 23,
+            2: 25,
+            3: 25,
+            4: 24,
+            5: 23,
+            **{column: 18 for column in range(6, 18)},
+        },
     )
 
     if rows:
         last_row = 4 + len(rows)
         _apply_row_borders(worksheet, 5, last_row, len(headers))
         for row_number in range(5, last_row + 1):
-            quality_cell = worksheet.cell(row_number, 2)
-            quality_cell.fill = PatternFill(
-                "solid",
-                fgColor=(
-                    COLOR_GREEN_LIGHT
-                    if quality_cell.value == "EXCELENTE"
-                    else COLOR_EARTH_LIGHT
-                    if quality_cell.value == "MODERADO"
-                    else COLOR_RED_LIGHT
-                    if quality_cell.value == "POBRE"
-                    else COLOR_GREY
-                ),
+            worksheet.cell(row_number, 3).fill = PatternFill(
+                "solid", fgColor=COLOR_BLUE_LIGHT
             )
-            for column in range(5, 17):
+            for column in range(6, 18):
                 worksheet.cell(row_number, column).number_format = "0.000"
     return worksheet
 
@@ -743,6 +766,7 @@ def _build_audio_quality_sheet(
         "Modelo BirdNET",
         "Versión modelo",
         "Versión birdnetlib",
+        "Versión métricas acústicas",
         "ACI",
         "ADI",
         "AEI",
@@ -777,6 +801,7 @@ def _build_audio_quality_sheet(
                 metric.birdnet_model,
                 metric.birdnet_model_version,
                 metric.birdnetlib_version,
+                metric.acoustic_metrics_version or "legacy-v1",
                 metric.aci,
                 metric.adi,
                 metric.aei,
@@ -813,6 +838,7 @@ def _build_audio_quality_sheet(
             18: 25,
             19: 18,
             20: 20,
+            21: 24,
         },
     )
 
@@ -827,7 +853,7 @@ def _build_audio_quality_sheet(
             for column in (10, 11, 13, 14):
                 worksheet.cell(row_number, column).number_format = "0.000000"
             worksheet.cell(row_number, 12).number_format = "0.000%"
-            for column in range(21, 29):
+            for column in range(22, 30):
                 worksheet.cell(row_number, column).number_format = "0.000"
 
             status_cell = worksheet.cell(row_number, 15)
@@ -1096,17 +1122,24 @@ def _build_metadata_sheet(
         start_row=node_title_row,
         start_column=1,
         end_row=node_title_row,
-        end_column=4,
+        end_column=6,
     )
     node_title = worksheet.cell(node_title_row, 1)
     node_title.value = "Nodos incluidos"
     node_title.font = Font(size=14, bold=True, color=COLOR_DARK)
 
     node_header_row = node_title_row + 1
-    node_headers = ["ID", "Nodo", "Ubicación", "Coordenadas"]
+    node_headers = [
+        "ID",
+        "Nodo",
+        "Ubicación",
+        "Coordenadas",
+        "Origen ubicación",
+        "Precisión declarada (m)",
+    ]
     for column, header in enumerate(node_headers, start=1):
         worksheet.cell(node_header_row, column, value=header)
-    _style_header_row(worksheet, node_header_row, 4)
+    _style_header_row(worksheet, node_header_row, len(node_headers))
 
     filtered_devices = (
         [device for device in devices if device.id == device_id]
@@ -1125,6 +1158,8 @@ def _build_metadata_sheet(
                 _safe_text(device.name),
                 _safe_text(device.location),
                 coordinates,
+                device.location_source or "unknown",
+                device.location_accuracy_m,
             ]
         )
 
@@ -1132,14 +1167,19 @@ def _build_metadata_sheet(
     if filtered_devices:
         node_table = Table(
             displayName="TablaNodosInforme",
-            ref=f"A{node_header_row}:D{node_end}",
+            ref=f"A{node_header_row}:F{node_end}",
         )
         node_table.tableStyleInfo = TableStyleInfo(
             name="TableStyleMedium4",
             showRowStripes=True,
         )
         worksheet.add_table(node_table)
-        _apply_row_borders(worksheet, node_header_row + 1, node_end, 4)
+        _apply_row_borders(
+            worksheet,
+            node_header_row + 1,
+            node_end,
+            len(node_headers),
+        )
 
     index_title_row = max(node_end, node_header_row) + 3
     worksheet.merge_cells(
@@ -1159,14 +1199,30 @@ def _build_metadata_sheet(
     _style_header_row(worksheet, index_header_row, 3)
 
     definitions = [
-        ["Shannon H'", "Diversidad", "Combina riqueza y reparto de detecciones."],
-        ["Simpson 1-D", "Diversidad", "Probabilidad de obtener taxones distintos."],
-        ["Pielou J'", "Equidad", "Uniformidad en el reparto entre especies."],
+        [
+            "Shannon H'",
+            "Diversidad de detecciones",
+            "Combina especies detectadas y reparto de eventos; no mide población.",
+        ],
+        [
+            "Simpson 1-D",
+            "Diversidad de detecciones",
+            "Describe la concentración de eventos entre especies detectadas.",
+        ],
+        [
+            "Pielou J'",
+            "Equidad de detecciones",
+            "Uniformidad del reparto de eventos entre especies detectadas.",
+        ],
         ["ACI", "Complejidad acústica", "Variación temporal de energía por frecuencia."],
         ["ADI", "Diversidad acústica", "Distribución de energía entre bandas."],
         ["AEI", "Evenness acústico", "Desigualdad de ocupación entre bandas."],
         ["BIO", "Índice bioacústico", "Energía asociada a la banda biológica."],
-        ["NDSI", "Paisaje sonoro", "Balance entre biofonía y antropofonía."],
+        [
+            "NDSI",
+            "Balance espectral",
+            "Balance de energía entre 0–1 kHz y 1–10 kHz; no clasifica por sí solo el entorno.",
+        ],
         ["Ht / Hf / H", "Entropía acústica", "Heterogeneidad temporal, frecuencial y total."],
     ]
     for definition in definitions:
@@ -1188,6 +1244,8 @@ def _build_metadata_sheet(
     worksheet.column_dimensions["B"].width = 40
     worksheet.column_dimensions["C"].width = 64
     worksheet.column_dimensions["D"].width = 24
+    worksheet.column_dimensions["E"].width = 24
+    worksheet.column_dimensions["F"].width = 24
     worksheet.freeze_panes = "A5"
     worksheet.sheet_view.showGridLines = False
     return worksheet
@@ -1305,7 +1363,9 @@ def _build_summary_sheet(
     worksheet["A18"] = (
         "Los agregados usan la especie corregida cuando existe. Las detecciones "
         "marcadas como ruido, dudosas o descartadas se conservan en Detecciones, "
-        "pero no cuentan en actividad, especies ni biodiversidad."
+        "pero no cuentan en actividad ni en los índices. N representa eventos de "
+        "detección, no individuos. Los resultados son descriptivos y solo se "
+        "comparan bajo el mismo nodo, micrófono, configuración y esfuerzo."
     )
     worksheet["A18"].alignment = Alignment(wrap_text=True, vertical="top")
     worksheet["A18"].font = Font(color=COLOR_MUTED)

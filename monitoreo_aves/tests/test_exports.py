@@ -63,6 +63,7 @@ def test_informe_excel_contiene_datos_graficos_y_trazabilidad(client):
             "birdnet_model": "BirdNET-Analyzer",
             "birdnet_model_version": "2.4",
             "birdnetlib_version": "0.18.1",
+            "acoustic_metrics_version": "maad-v2",
             "aci": 110.2,
             "adi": 0.58,
             "aei": 0.72,
@@ -108,6 +109,33 @@ def test_informe_excel_contiene_datos_graficos_y_trazabilidad(client):
     )
     assert len(workbook["Resumen"]._charts) == 2
 
+    ecological_sheet = workbook["Índices ecológicos"]
+    ecological_headers = [
+        cell.value for cell in ecological_sheet[4]
+    ]
+    assert ecological_headers[:5] == [
+        "Nodo",
+        "Zona",
+        "Alcance de interpretación",
+        "Eventos de detección N",
+        "Especies detectadas S",
+    ]
+    ecological_rows = list(
+        ecological_sheet.iter_rows(min_row=5, values_only=True)
+    )
+    exported_indices = next(
+        row for row in ecological_rows if row[0] == "raspberry-test-excel"
+    )
+    assert exported_indices[1] == "Humedal Export Test"
+    assert exported_indices[2] == "DESCRIPTIVO"
+    assert exported_indices[3] == 1
+    assert exported_indices[4] == 1
+    assert all(
+        value not in {"POBRE", "MODERADO", "EXCELENTE"}
+        for row in ecological_rows
+        for value in row
+    )
+
     detections_sheet = workbook["Detecciones"]
     detection_rows = list(
         detections_sheet.iter_rows(min_row=5, values_only=False)
@@ -131,6 +159,7 @@ def test_informe_excel_contiene_datos_graficos_y_trazabilidad(client):
     )
     assert exported_audio[14] == "ok"
     assert exported_audio[18] == "2.4"
+    assert exported_audio[20] == "maad-v2"
 
     review_sheet = workbook["Revisiones humanas"]
     review_rows = list(review_sheet.iter_rows(min_row=5, values_only=True))
@@ -149,3 +178,57 @@ def test_informe_excel_rechaza_un_rango_invertido(client):
 
     assert response.status_code == 422
     assert "date_from" in response.json()["detail"]
+
+
+def test_excel_no_mezcla_nodos_con_la_misma_ubicacion(client):
+    timestamp = datetime(2026, 7, 21, 7, 0, 0, tzinfo=timezone.utc)
+    for suffix, species in (("a", "Species alpha"), ("b", "Species beta")):
+        node = f"excel-zona-compartida-{suffix}"
+        device = client.post(
+            "/devices/",
+            json={
+                "name": node,
+                "location": "Zona compartida",
+                "lat": 37.38,
+                "lon": -5.98,
+                "location_source": "manual",
+            },
+        )
+        assert device.status_code == 200
+        detection = client.post(
+            "/detections/",
+            json={
+                "species": species,
+                "confidence": 0.9,
+                "timestamp": timestamp.isoformat(),
+                "filename": f"{node}.wav",
+                "device_name": node,
+                "amplitude": 0.01,
+            },
+        )
+        assert detection.status_code == 200
+
+    response = client.get(
+        "/exports/report.xlsx",
+        params={"date_from": "2026-07-21", "date_to": "2026-07-21"},
+    )
+    assert response.status_code == 200
+
+    workbook = load_workbook(BytesIO(response.content))
+    rows = list(
+        workbook["Índices ecológicos"].iter_rows(
+            min_row=5,
+            values_only=True,
+        )
+    )
+    shared_rows = [
+        row for row in rows if str(row[0]).startswith("excel-zona-compartida-")
+    ]
+    assert len(shared_rows) == 2
+    assert {row[0] for row in shared_rows} == {
+        "excel-zona-compartida-a",
+        "excel-zona-compartida-b",
+    }
+    assert all(row[1] == "Zona compartida" for row in shared_rows)
+    assert all(row[3] == 1 for row in shared_rows)
+    assert all(row[8] is None for row in shared_rows)

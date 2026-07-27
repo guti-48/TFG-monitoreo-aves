@@ -1,18 +1,25 @@
-import sqlite3, os, glob, geocoder
+import os
+import sqlite3
+
 import pandas as pd
 import numpy as np
-from maad import sound, features
 
 ###DIRECTORIO DE LA BASE DE DATOS Y UMBRAL
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.getenv("BIRDMONITOR_DB_PATH", os.path.join(BASE_DIR, 'app', 'birdmonitor.db'))
 
-#ruta para los archivos wav
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-RECORDS_DIR = os.path.join(PROJECT_ROOT, 'hardware', 'raspberry_pi', 'records')
-
-UMBRA_CONFIANZA = 0.0 #estipulado en el documento 
+UMBRA_CONFIANZA = 0.0
 FILTRO_RUIDO = r"Noise|Ruido|Human|Motor|Ambiente"
+ACOUSTIC_METRICS_VERSION = "maad-v2"
+
+
+def _radio_referencia_m():
+    """Radio visual local; no representa una distancia efectiva calibrada."""
+    try:
+        value = float(os.getenv("BIRDMONITOR_ACOUSTIC_REFERENCE_RADIUS_M", "25"))
+    except (TypeError, ValueError):
+        value = 25.0
+    return round(max(0.0, min(value, 200.0)), 1)
 
 
 def conectar_db():
@@ -32,7 +39,11 @@ def conectar_db():
             ELSE d.species
         END AS species,
         d.confidence,
-        dev.location as zona
+        dev.id AS device_id,
+        dev.name AS device_name,
+        dev.location AS zona,
+        dev.lat,
+        dev.lon
     FROM detections d
     JOIN devices dev ON d.device_id = dev.id
     LEFT JOIN detection_reviews r ON r.detection_id = d.id
@@ -41,8 +52,23 @@ def conectar_db():
     conexion.close()
     return res
 
+
+def _limpiar_detecciones(df):
+    """Aplica a todas las vistas el mismo alcance de detecciones de aves."""
+    if df.empty:
+        return df.copy()
+
+    limpio = df[df['confidence'] >= UMBRA_CONFIANZA].copy()
+    limpio['species'] = limpio['species'].fillna('').astype(str).apply(
+        lambda value: value.split('_', 1)[1] if '_' in value else value
+    )
+    return limpio[
+        ~limpio['species'].str.contains(FILTRO_RUIDO, case=False, na=False)
+    ].copy()
+
+
 def calculo_de_indices(zona):
-    """Calculo los indices de biodiversidad para un DataFrame de una zona especifica"""
+    """Describe la distribución de eventos BirdNET; no estima individuos."""
     N = len(zona)
     if N == 0:
         return None
@@ -72,252 +98,271 @@ def calculo_de_indices(zona):
     if S > 1:
         pielou_j = shannon / np.log(S)
     else:
-        pielou_j = 0
+        pielou_j = None
 
     return {
         'abundancia': N,
         'riqueza': S,
         'shannon': round(shannon,3),
         'simpson': round(simps_index,3),
-        'pielou': round(pielou_j,3),
+        'pielou': round(pielou_j,3) if pielou_j is not None else None,
         'calidad': evaluar_shannon(shannon)
     }
 
-def evaluar_shannon(valor):
-    if valor < 1.5: return "POBRE"
-    if valor < 3.0: return "MODERADO"
-    return "EXCELENTE"
+def evaluar_shannon(_valor):
+    """No existen umbrales universales de calidad ecológica para Shannon."""
+    return "DESCRIPTIVO"
 
 def _media_segura(df, columna, decimales):
     if columna not in df.columns or df[columna].dropna().empty:
-        return 0.0
+        return None
     valor = float(df[columna].mean())
-    return round(valor, decimales) if not np.isnan(valor) else 0.0
+    return round(valor, decimales) if np.isfinite(valor) else None
 
 
-def calcular_indices_acusticos_desde_db():
+def _metricas_no_disponibles(legacy_samples=0):
+    return {
+        'rms_avg': None,
+        'aci_avg': None,
+        'adi_avg': None,
+        'aei_avg': None,
+        'bio_avg': None,
+        'ndsi_avg': None,
+        'ht_avg': None,
+        'hf_avg': None,
+        'h_avg': None,
+        'metrics_available': False,
+        'metrics_status': 'pending_maad_v2',
+        'metrics_version': ACOUSTIC_METRICS_VERSION,
+        'metric_samples': 0,
+        'metric_duration_seconds': 0.0,
+        'metric_period_start': None,
+        'metric_period_end': None,
+        'legacy_metric_samples': int(legacy_samples),
+    }
+
+
+def calcular_indices_acusticos_desde_db(device_id):
     """
-    Calcula medias acústicas desde la tabla audio_metrics.
-    Esta es la fuente principal: contiene una fila por ciclo de grabación,
-    aunque no haya detección de ave.
+    Calcula las últimas 100 medias del mismo nodo y método.
+
+    Las filas heredadas no se mezclan con ``maad-v2``: el cálculo anterior
+    usaba unidades incorrectas y un AEI sintético, por lo que combinarlas
+    produciría una serie sin significado comparable.
     """
     try:
-        conexion = sqlite3.connect(DB_PATH)
-        query = """
-        SELECT
-            am.timestamp,
-            am.rms,
-            am.aci,
-            am.adi,
-            am.aei,
-            am.bio,
-            am.ndsi,
-            am.ht,
-            am.hf,
-            am.h
-        FROM audio_metrics am
-        JOIN devices dev ON am.device_id = dev.id
-        ORDER BY am.timestamp DESC
-        LIMIT 100
-        """
-        df = pd.read_sql_query(query, conexion)
-        conexion.close()
+        with sqlite3.connect(DB_PATH) as conexion:
+            legacy_samples = conexion.execute(
+                """
+                SELECT COUNT(*)
+                FROM audio_metrics
+                WHERE device_id = ?
+                  AND COALESCE(acoustic_metrics_version, 'legacy-v1') != ?
+                """,
+                (int(device_id), ACOUSTIC_METRICS_VERSION),
+            ).fetchone()[0]
+            df = pd.read_sql_query(
+                """
+                SELECT
+                    am.timestamp,
+                    am.duration,
+                    am.rms,
+                    am.aci,
+                    am.adi,
+                    am.aei,
+                    am.bio,
+                    am.ndsi,
+                    am.ht,
+                    am.hf,
+                    am.h
+                FROM audio_metrics am
+                WHERE am.device_id = ?
+                  AND am.acoustic_metrics_version = ?
+                ORDER BY am.timestamp DESC
+                LIMIT 100
+                """,
+                conexion,
+                params=(int(device_id), ACOUSTIC_METRICS_VERSION),
+            )
     except Exception as e:
         print(f"No se pudieron leer métricas acústicas desde la base de datos: {e}")
-        return None
+        return _metricas_no_disponibles()
 
     if df.empty:
-        return None
+        return _metricas_no_disponibles(legacy_samples)
+
+    timestamps = pd.to_datetime(df['timestamp'], errors='coerce').dropna()
+    duration = pd.to_numeric(df['duration'], errors='coerce').fillna(0).sum()
 
     return {
         'rms_avg':  _media_segura(df, 'rms', 4),
-        'aci_avg':  _media_segura(df, 'aci', 2),
-        'adi_avg':  _media_segura(df, 'adi', 2),
-        'aei_avg':  _media_segura(df, 'aei', 2),
-        'bio_avg':  _media_segura(df, 'bio', 2),
-        'ndsi_avg': _media_segura(df, 'ndsi', 2),
+        'aci_avg':  _media_segura(df, 'aci', 3),
+        'adi_avg':  _media_segura(df, 'adi', 3),
+        'aei_avg':  _media_segura(df, 'aei', 3),
+        'bio_avg':  _media_segura(df, 'bio', 3),
+        'ndsi_avg': _media_segura(df, 'ndsi', 3),
         'ht_avg':   _media_segura(df, 'ht', 3),
         'hf_avg':   _media_segura(df, 'hf', 3),
         'h_avg':    _media_segura(df, 'h', 3),
+        'metrics_available': True,
+        'metrics_status': 'current',
+        'metrics_version': ACOUSTIC_METRICS_VERSION,
+        'metric_samples': int(len(df)),
+        'metric_duration_seconds': round(float(duration), 1),
+        'metric_period_start': (
+            timestamps.min().isoformat() if not timestamps.empty else None
+        ),
+        'metric_period_end': (
+            timestamps.max().isoformat() if not timestamps.empty else None
+        ),
+        'legacy_metric_samples': int(legacy_samples),
     }
 
 
-def calcular_indices_acusticos_desde_wav():
-    """
-    Fallback temporal: calcula índices a partir de WAV disponibles en servidor.
-    Se mantiene para no romper el dashboard si todavía no hay filas en audio_metrics.
-    """
-    archivos = glob.glob(os.path.join(RECORDS_DIR, "*.wav"))
-    if not archivos:
-        return None
+def calcular_indices_acusticos(device_id):
+    return calcular_indices_acusticos_desde_db(device_id)
 
-    archivos = sorted(archivos, key=os.path.getmtime, reverse=True)[:100]
-    resultados = {'aci': [], 'adi': [], 'aei': [], 'bio': [], 'ndsi': [], 'ht': [], 'hf': [], 'h': []}
-
-    for wav in archivos:
-        try:
-            s, fs = sound.load(wav)
-            Sxx, tn, fn, ext = sound.spectrogram(s, fs)
-
-            _, _, aci = features.acoustic_complexity_index(Sxx)
-            resultados['aci'].append(np.sum(aci))
-
-            adi = features.acoustic_diversity_index(Sxx, fn)
-            resultados['adi'].append(adi)
-
-            try:
-                aei = features.acoustic_evenness_index(Sxx, fn)
-            except AttributeError:
-                aei = 1.0 - (adi / 3.0) if not np.isnan(adi) else 0.5
-            resultados['aei'].append(aei)
-
-            try:
-                bio = features.bioacoustics_index(Sxx, fn)
-            except AttributeError:
-                bio = features.bioacoustic_index(Sxx, fn)
-            resultados['bio'].append(bio)
-
-            ndsi, _, _, _ = features.soundscape_index(Sxx, fn)
-            resultados['ndsi'].append(ndsi)
-
-            E_t = np.sum(Sxx, axis=0)
-            if np.sum(E_t) > 0:
-                p_i = E_t / np.sum(E_t)
-                ht = -np.sum(p_i * np.log(p_i + 1e-12)) / np.log(len(p_i))
-            else:
-                ht = 0.0
-
-            E_f = np.sum(Sxx, axis=1)
-            if np.sum(E_f) > 0:
-                p_j = E_f / np.sum(E_f)
-                hf = -np.sum(p_j * np.log(p_j + 1e-12)) / np.log(len(p_j))
-            else:
-                hf = 0.0
-
-            h = ht * hf
-
-            resultados['ht'].append(ht)
-            resultados['hf'].append(hf)
-            resultados['h'].append(h)
-
-        except Exception as e:
-            print(f'Omitiendo audio por error en el analisis: {e}')
-
-    if not resultados['aci']:
-        return None
-
-    aci_avg = float(np.mean(resultados['aci'])) if resultados['aci'] else 0.0
-    adi_avg = float(np.mean(resultados['adi'])) if resultados['adi'] else 0.0
-    aei_avg = float(np.mean(resultados['aei'])) if resultados['aei'] else 0.0
-    bio_avg = float(np.mean(resultados['bio'])) if resultados['bio'] else 0.0
-    ndsi_avg = float(np.mean(resultados['ndsi'])) if resultados['ndsi'] else 0.0
-    ht_avg = float(np.mean(resultados['ht'])) if resultados['ht'] else 0.0
-    hf_avg = float(np.mean(resultados['hf'])) if resultados['hf'] else 0.0
-    h_avg = float(np.mean(resultados['h'])) if resultados['h'] else 0.0
-
-    return {
-        'aci_avg': round(aci_avg, 2) if not np.isnan(aci_avg) else 0.0,
-        'adi_avg': round(adi_avg, 2) if not np.isnan(adi_avg) else 0.0,
-        'aei_avg': round(aei_avg, 2) if not np.isnan(aei_avg) else 0.0,
-        'bio_avg': round(bio_avg, 2) if not np.isnan(bio_avg) else 0.0,
-        'ndsi_avg': round(ndsi_avg, 2) if not np.isnan(ndsi_avg) else 0.0,
-        'ht_avg': round(ht_avg, 3) if not np.isnan(ht_avg) else 0.0,
-        'hf_avg': round(hf_avg, 3) if not np.isnan(hf_avg) else 0.0,
-        'h_avg': round(h_avg, 3) if not np.isnan(h_avg) else 0.0
-    }
-
-
-def calcular_indices_acusticos():
-    """
-    primero revisa: tabla audio_metrics
-    sino: WAVs locales del servidor, para compatibilidad con datos previos
-    """
-    datos_db = calcular_indices_acusticos_desde_db()
-    if datos_db:
-        return datos_db
-
-    return calcular_indices_acusticos_desde_wav()
 
 def obtener_reporte_biodiversidad():
-    """Esta es la función que llamará la API"""
-    df = conectar_db()
-    
+    """Genera un resumen independiente para cada nodo de grabación."""
+    df = _limpiar_detecciones(conectar_db())
+
     if df.empty:
         return []
 
-    # Limpieza de datos (Filtros científicos)
-    df = df[df['confidence'] >= UMBRA_CONFIANZA]
-    df['species'] = df['species'].apply(lambda x: x.split('_')[1] if '_' in x else x)
-    df = df[~df['species'].str.contains(FILTRO_RUIDO, case=False)]
-
-    datosAcusticos = calcular_indices_acusticos()
-    zonas = df['zona'].unique()
     informe_final = []
-
-    for zona in zonas:
-        if not zona: continue
-        datos_zona = df[df['zona'] == zona]
-
-        indices = calculo_de_indices(datos_zona)
+    for device_id, datos_nodo in df.groupby('device_id', sort=True):
+        indices = calculo_de_indices(datos_nodo)
         if indices:
-            indices['zona'] = zona
-            if datosAcusticos:
-                indices.update(datosAcusticos)
-            else:
-                indices.update({'aci_avg': 0, 'adi_avg': 0, 'aei_avg': 0, 'bio_avg': 0, 'ndsi_avg': 0,'ht_avg': 0, 'hf_avg': 0, 'h_avg': 0})
+            primera = datos_nodo.iloc[0]
+            timestamps = pd.to_datetime(
+                datos_nodo['timestamp'], errors='coerce'
+            ).dropna()
+            indices.update(
+                {
+                    'device_id': int(device_id),
+                    'node_name': primera['device_name'],
+                    'zona': primera['zona'] or 'Sin ubicación configurada',
+                    'detection_period_start': (
+                        timestamps.min().isoformat()
+                        if not timestamps.empty
+                        else None
+                    ),
+                    'detection_period_end': (
+                        timestamps.max().isoformat()
+                        if not timestamps.empty
+                        else None
+                    ),
+                }
+            )
+            indices.update(calcular_indices_acusticos(device_id))
             informe_final.append(indices)
-            
+
     return informe_final
 
-def obetenerDatosMapa():
-    '''Obtengo las coordenadas del nodo y su biodiversidad'''
-    lat, lon, ciudad = None, None, None
 
+def obetenerDatosMapa(device_id=None):
+    """Devuelve el punto real del nodo y un entorno visual no calibrado."""
     try:
-        conexion = sqlite3.connect(DB_PATH)
-        row = conexion.execute(
-            """
-            SELECT location, lat, lon
-            FROM devices
-            WHERE lat IS NOT NULL AND lon IS NOT NULL
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        conexion.close()
-
-        if row:
-            ciudad, lat, lon = row
+        with sqlite3.connect(DB_PATH) as conexion:
+            if device_id is not None:
+                row = conexion.execute(
+                    """
+                    SELECT
+                        id, name, location, lat, lon,
+                        location_source, location_accuracy_m
+                    FROM devices
+                    WHERE id = ?
+                    LIMIT 1
+                    """,
+                    (int(device_id),),
+                ).fetchone()
+            else:
+                row = conexion.execute(
+                    """
+                    SELECT
+                        id, name, location, lat, lon,
+                        location_source, location_accuracy_m
+                    FROM devices
+                    WHERE lat IS NOT NULL AND lon IS NOT NULL
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
     except Exception as e:
         print(f"No se pudieron leer coordenadas del nodo desde DB: {e}")
+        return {
+            "available": False,
+            "error": "No se pudo consultar la ubicación configurada del nodo.",
+        }
 
+    if not row:
+        return {
+            "available": False,
+            "error": "El nodo no existe o todavía no tiene coordenadas configuradas.",
+        }
+
+    (
+        selected_id,
+        node_name,
+        location,
+        lat,
+        lon,
+        location_source,
+        location_accuracy_m,
+    ) = row
     if lat is None or lon is None:
-        ip = geocoder.ip('me')
-        if ip.latlng:
-            lat, lon = ip.latlng
-            ciudad = ip.city or "Desconocida"
-        else:
-            lat, lon = 40.4168, -3.7038   # fallback: Madrid
-            ciudad = "Madrid (Desconocida)"
+        return {
+            "available": False,
+            "device_id": int(selected_id),
+            "node_name": node_name,
+            "error": (
+                "Configura la latitud y longitud del nodo para mostrar su "
+                "ubicación. No se estimará a partir de la IP del servidor."
+            ),
+        }
 
-    df = conectar_db()
-    shannon_global = 0.5
-
-    if not df.empty:
-        df = df[df['confidence'] >= UMBRA_CONFIANZA]
-        df = df[~df['species'].str.contains(FILTRO_RUIDO, case=False, na=False)]
-        N  = len(df)
-        if N > 0:
-            conteo = df['species'].value_counts()
-            prop   = conteo / N
-            shannon_global = round(float(-np.sum(prop * np.log(prop))), 3)
+    df = _limpiar_detecciones(conectar_db())
+    datos_nodo = df[df['device_id'] == selected_id] if not df.empty else df
+    indices = calculo_de_indices(datos_nodo)
+    requested_radius_m = _radio_referencia_m()
+    location_source = location_source or "unknown"
+    location_is_precise = location_source in {"manual", "gps"}
+    radius_m = requested_radius_m if location_is_precise else 0.0
 
     return {
-        "ciudad":   ciudad,
-        "lat":      lat,
-        "lon":      lon,
-        "shannon":  shannon_global,
-        "radio_km": 1,
+        "available": True,
+        "device_id": int(selected_id),
+        "node_name": node_name,
+        "ciudad": location or "Sin ubicación nominal",
+        "lat": float(lat),
+        "lon": float(lon),
+        "location_source": location_source,
+        "location_accuracy_m": (
+            float(location_accuracy_m)
+            if location_accuracy_m is not None
+            else None
+        ),
+        "location_is_precise": location_is_precise,
+        "shannon": indices['shannon'] if indices else None,
+        "event_count": indices['abundancia'] if indices else 0,
+        "species_count": indices['riqueza'] if indices else 0,
+        "reference_radius_m": radius_m,
+        "requested_reference_radius_m": requested_radius_m,
+        "reference_area_hectares": round(np.pi * radius_m ** 2 / 10000, 2),
+        "radio_km": radius_m / 1000,
+        "range_basis": "uncalibrated_local_reference",
+        "range_label": (
+            "Entorno local orientativo; radio no calibrado"
+            if location_is_precise
+            else "Círculo oculto: coordenadas sin precisión documentada"
+        ),
+        "disclaimer": (
+            "El círculo no garantiza detección dentro de él ni excluye sonidos "
+            "más lejanos. El alcance depende de la especie, el ruido, el "
+            "hábitat, la ganancia y el micrófono. Solo se dibuja con "
+            "coordenadas manuales o GPS."
+        ),
     }
 
 def obetenerActividadDiaria(fecha_str):
@@ -327,10 +372,8 @@ def obetenerActividadDiaria(fecha_str):
     if df.empty:
         return [{"hora": h, "total_detecciones": 0, "confianza_media": 0.0, "especies_activas": 0, "lista_especies": []} for h in range(24)]
     
-    #Aplicamos filtro
-    df = df[df['confidence'] >= UMBRA_CONFIANZA]
-    df['species'] = df['species'].apply(lambda x: x.split('_')[1] if '_' in x else x)
-    df = df[~df['species'].str.contains(FILTRO_RUIDO, case=False, na=False)]
+    # Aplicamos el mismo filtro usado por el resto del análisis.
+    df = _limpiar_detecciones(df)
 
     #convertimos a datetime y filtramos por fecha
     df['timestamp'] = pd.to_datetime(df['timestamp'])

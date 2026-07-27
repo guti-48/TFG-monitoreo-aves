@@ -88,6 +88,8 @@ if __name__ == "__main__":
                     "location": ubicacion_nodo["location"],
                     "lat": ubicacion_nodo.get("lat"),
                     "lon": ubicacion_nodo.get("lon"),
+                    "location_source": ubicacion_nodo.get("source", "unknown"),
+                    "location_accuracy_m": ubicacion_nodo.get("accuracy_m"),
                 },
                 timeout=10,
             )

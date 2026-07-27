@@ -39,7 +39,7 @@ SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip
 NODE_LOCATION = os.getenv("BIRDMONITOR_NODE_LOCATION", "").strip()
 NODE_LAT = os.getenv("BIRDMONITOR_NODE_LAT", "").strip()
 NODE_LON = os.getenv("BIRDMONITOR_NODE_LON", "").strip()
-AUTO_GEOLOCATION = os.getenv("BIRDMONITOR_AUTO_GEOLOCATION", "1") == "1"
+AUTO_GEOLOCATION = os.getenv("BIRDMONITOR_AUTO_GEOLOCATION", "0") == "1"
 GEO_CACHE_FILE = os.path.join(CURRENT_DIR, "node_location_cache.json")
 
 MIC_DEVICE = os.getenv("BIRDMONITOR_MIC_DEVICE", "").strip()

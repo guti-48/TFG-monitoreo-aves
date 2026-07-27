@@ -100,10 +100,18 @@ def obtenerUbicacionNodo():
     Prioridad: manual -> geolocalizacion por IP -> cache local -> desconocido.
     """
     if NODE_LOCATION:
+        lat = _parsearCoordenada(NODE_LAT, "latitud", -90.0, 90.0)
+        lon = _parsearCoordenada(NODE_LON, "longitud", -180.0, 180.0)
+        if (lat is None) != (lon is None):
+            print(
+                "La ubicacion manual necesita latitud y longitud validas; "
+                "se registrara sin coordenadas."
+            )
+            lat, lon = None, None
         return {
             "location": NODE_LOCATION,
-            "lat": _parsearCoordenada(NODE_LAT, "latitud", -90.0, 90.0),
-            "lon": _parsearCoordenada(NODE_LON, "longitud", -180.0, 180.0),
+            "lat": lat,
+            "lon": lon,
             "source": "manual",
         }
 

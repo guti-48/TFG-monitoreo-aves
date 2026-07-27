@@ -29,6 +29,16 @@ def asegurar_esquema_runtime() -> None:
         if "lon" not in columnas_devices:
             conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN lon FLOAT")
 
+        if "location_source" not in columnas_devices:
+            conn.exec_driver_sql(
+                "ALTER TABLE devices ADD COLUMN location_source VARCHAR"
+            )
+
+        if "location_accuracy_m" not in columnas_devices:
+            conn.exec_driver_sql(
+                "ALTER TABLE devices ADD COLUMN location_accuracy_m FLOAT"
+            )
+
         columnas_detections = {
             row[1]
             for row in conn.exec_driver_sql("PRAGMA table_info(detections)").fetchall()
@@ -59,6 +69,7 @@ def asegurar_esquema_runtime() -> None:
             "birdnet_model": "VARCHAR",
             "birdnet_model_version": "VARCHAR",
             "birdnetlib_version": "VARCHAR",
+            "acoustic_metrics_version": "VARCHAR",
         }
         for nombre, tipo in nuevas_columnas_audio.items():
             if nombre not in columnas_audio_metrics:

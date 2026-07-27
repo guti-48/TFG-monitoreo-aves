@@ -15,9 +15,14 @@ const BIRDMONITOR_CONFIG = window.BIRDMONITOR_CONFIG || {};
 const DEFAULT_STREAM_NODE_NAME = BIRDMONITOR_CONFIG.streamNodeName || "birdmonitor";
 const DEFAULT_STREAM_PATH = BIRDMONITOR_CONFIG.streamName || `${DEFAULT_STREAM_NODE_NAME}-audio`;
 const MEDIAMTX_HLS_PORT = BIRDMONITOR_CONFIG.mediaMtxHlsPort || 8888;
+const MEDIAMTX_RTSP_PORT = BIRDMONITOR_CONFIG.mediaMtxRtspPort || 8554;
 const LIVE_STREAM_BASE_URL = (
     BIRDMONITOR_CONFIG.liveStreamBaseUrl ||
     `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}`
+).replace(/\/$/, "");
+const LIVE_STREAM_RTSP_BASE_URL = (
+    BIRDMONITOR_CONFIG.liveStreamRtspBaseUrl ||
+    `rtsp://${window.location.hostname}:${MEDIAMTX_RTSP_PORT}`
 ).replace(/\/$/, "");
 const STREAM_CONTROL_URL = "/stream/control";
 let selectedStreamNodeName = DEFAULT_STREAM_NODE_NAME;
@@ -26,18 +31,25 @@ let selectedStreamPathIsCustom = false;
 
 
 let hlsInstance = null;
+let hlsLibraryPromise = null;
+let liveStreamSyncTimer = null;
+let liveStreamVisibilityHandler = null;
 let liveAudioContext = null;
 let liveAnalyser = null;
 let liveSourceNode = null;
 let liveSourceAudio = null;
 let liveSpectrumFrame = null;
 let liveSpectrumData = null;
+const LIVE_HLS_TARGET_SEGMENTS = 3;
+const LIVE_HLS_MAX_SEGMENTS = 6;
+const LIVE_NATIVE_EDGE_MARGIN_SECONDS = 1;
 
 let currentView = 'dashboard';
 let myChart = null;
 let streamStatusTimer = null;
 let lastStreamData = null;
 let currentScienceReport = [];
+let selectedScienceDeviceId = null;
 const detectionCache = new Map();
 const speciesPreviewCache = new Map();
 const speciesChartColorMap = new Map();
@@ -74,6 +86,61 @@ function getCurrentHlsUrl() {
     return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/index.m3u8`;
 }
 
+function getCurrentHlsPageUrl() {
+    if (!selectedStreamPathIsCustom && lastStreamData && lastStreamData.node_name === selectedStreamNodeName && lastStreamData.page_url) {
+        return lastStreamData.page_url;
+    }
+
+    return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/`;
+}
+
+function getCurrentRtspUrl() {
+    if (!selectedStreamPathIsCustom && lastStreamData && lastStreamData.node_name === selectedStreamNodeName && lastStreamData.rtsp_url) {
+        return lastStreamData.rtsp_url;
+    }
+
+    return `${LIVE_STREAM_RTSP_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}`;
+}
+
+function isAppleMobileDevice() {
+    return /iPad|iPhone|iPod/.test(navigator.platform)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function shouldPrioritizeMobileAudio() {
+    const coarsePointer = window.matchMedia
+        && window.matchMedia('(pointer: coarse)').matches;
+    return isAppleMobileDevice()
+        || (navigator.maxTouchPoints > 0 && coarsePointer);
+}
+
+function ensureHlsLibrary() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    if (hlsLibraryPromise) return hlsLibraryPromise;
+
+    hlsLibraryPromise = new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = new URL('./hls.min.js', getCurrentHlsUrl()).href;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.dataset.birdmonitorHlsFallback = 'true';
+
+        script.onload = () => {
+            if (!window.Hls) hlsLibraryPromise = null;
+            resolve(window.Hls || null);
+        };
+        script.onerror = () => {
+            script.remove();
+            hlsLibraryPromise = null;
+            resolve(null);
+        };
+
+        document.head.appendChild(script);
+    });
+
+    return hlsLibraryPromise;
+}
+
 async function fetchDevices() {
     const response = await fetch(`/devices/?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -85,14 +152,22 @@ async function fetchDevices() {
 function updateLiveStreamLabels(data = null) {
     const streamPath = normalizeStreamPath((data && data.stream_path) || selectedStreamPath);
     const hlsUrl = (data && data.hls_url) || getCurrentHlsUrl();
+    const rtspUrl = (data && data.rtsp_url) || getCurrentRtspUrl();
+    const pageUrl = (data && data.page_url) || getCurrentHlsPageUrl();
 
     const title = document.getElementById('live-stream-title');
     const hlsLabel = document.getElementById('live-hls-url');
+    const clientHlsLabel = document.getElementById('live-client-hls-url');
+    const rtspLabel = document.getElementById('live-rtsp-url');
+    const mobilePlayerLink = document.getElementById('live-mobile-player-link');
     const pathInput = document.getElementById('live-stream-path-input');
     const nodeSelect = document.getElementById('live-node-select');
 
     if (title) title.textContent = streamPath;
     if (hlsLabel) hlsLabel.textContent = hlsUrl;
+    if (clientHlsLabel) clientHlsLabel.textContent = hlsUrl;
+    if (rtspLabel) rtspLabel.textContent = rtspUrl;
+    if (mobilePlayerLink) mobilePlayerLink.href = pageUrl;
     if (pathInput && pathInput.value !== streamPath) pathInput.value = streamPath;
     if (nodeSelect && nodeSelect.value !== selectedStreamNodeName) nodeSelect.value = selectedStreamNodeName;
 }
@@ -245,9 +320,20 @@ function renderLiveStreamView(container) {
                             </div>
                         </div>
 
+                        <div class="live-client-access">
+                            <div class="live-client-access-item">
+                                <span><i class="bi bi-phone me-1"></i>Navegador móvil · HLS</span>
+                                <code id="live-client-hls-url">${escapeHtml(getCurrentHlsUrl())}</code>
+                            </div>
+                            <div class="live-client-access-item">
+                                <span><i class="bi bi-display me-1"></i>VLC · RTSP</span>
+                                <code id="live-rtsp-url">${escapeHtml(getCurrentRtspUrl())}</code>
+                            </div>
+                        </div>
+
                         <div class="live-player-shell">
                             <div class="audio-panel live-audio-panel">
-                                <audio id="live-audio-player" class="w-100" controls preload="none" crossorigin="anonymous"></audio>
+                                <audio id="live-audio-player" class="w-100" controls preload="none" playsinline crossorigin="anonymous"></audio>
                             </div>
 
                             <div class="live-spectrum-panel">
@@ -261,29 +347,51 @@ function renderLiveStreamView(container) {
 
                         <div class="live-actions">
                             <button class="btn btn-success" onclick="setLiveStreamEnabled(true)">
-                                <i class="bi bi-broadcast me-2"></i>Activar escucha
+                                <i class="bi bi-broadcast me-2"></i>Iniciar emisión
                             </button>
                             <button class="btn btn-outline-info" onclick="initLiveStreamPlayer(true)">
-                                <i class="bi bi-headphones me-2"></i>Conectar reproductor
+                                <i class="bi bi-headphones me-2"></i>Escuchar en este dispositivo
                             </button>
-                            <button class="btn btn-outline-secondary" onclick="setLiveStreamEnabled(false)">
-                                <i class="bi bi-stop-circle me-2"></i>Detener escucha
+                            <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
+                                <i class="bi bi-stop-circle me-2"></i>Desconectar este dispositivo
+                            </button>
+                            <a
+                                id="live-mobile-player-link"
+                                class="btn btn-outline-success"
+                                href="${escapeHtml(getCurrentHlsPageUrl())}"
+                                target="_blank"
+                                rel="noopener"
+                            >
+                                <i class="bi bi-box-arrow-up-right me-2"></i>Reproductor móvil alternativo
+                            </a>
+                            <button class="btn btn-outline-primary" onclick="copyLiveStreamUrl('rtsp')">
+                                <i class="bi bi-clipboard me-2"></i>Copiar URL para VLC
                             </button>
                         </div>
 
                         <p id="live-stream-message" class="text-muted small mb-0 mt-3">
-                            Activa el servicio en la Raspberry; despues conecta el reproductor HLS para escuchar y ver el espectro.
+                            Inicia la emisión si está detenida y después conecta este reproductor.
                         </p>
 
                         <div class="live-mini-note">
-                            Activar arranca el servicio en la Raspberry. Conectar enlaza este navegador al stream HLS.
+                            La Raspberry publica una sola señal. El servidor la distribuye a todos los móviles,
+                            navegadores y VLC conectados; desconectar este dispositivo no afecta a los demás.
                         </div>
+
+                        <details class="live-global-control">
+                            <summary>Control global de la estación</summary>
+                            <p>Esta acción corta el directo para todos los dispositivos conectados.</p>
+                            <button class="btn btn-sm btn-outline-danger" onclick="stopLiveStationForAll()">
+                                <i class="bi bi-power me-2"></i>Detener emisión para todos
+                            </button>
+                        </details>
                     </div>
                 </div>
             </div>
         </div>`;
 
     populateLiveNodeSelector().finally(() => refreshLiveStreamControlStatus());
+    if (!isAppleMobileDevice()) ensureHlsLibrary();
 
     streamStatusTimer = setInterval(() => {
         if (currentView === 'live') {
@@ -457,13 +565,135 @@ async function setLiveStreamEnabled(enabled) {
     }
 }
 
-function initLiveStreamPlayer(autoplay = false) {
+function stopLiveStationForAll() {
+    const confirmed = window.confirm(
+        'Esta acción detendrá la emisión en la Raspberry y desconectará a todos los oyentes. ¿Quieres continuar?'
+    );
+
+    if (confirmed) setLiveStreamEnabled(false);
+}
+
+async function copyLiveStreamUrl(kind) {
+    const url = kind === 'rtsp' ? getCurrentRtspUrl() : getCurrentHlsUrl();
+
+    try {
+        await navigator.clipboard.writeText(url);
+        setLiveStreamMessage(kind === 'rtsp'
+            ? 'URL RTSP copiada. En VLC usa Medio → Abrir ubicación de red.'
+            : 'URL HLS copiada.'
+        );
+    } catch (_) {
+        window.prompt('Copia esta URL:', url);
+    }
+}
+
+function getLiveLatencySeconds(audio) {
+    if (
+        hlsInstance
+        && Number.isFinite(hlsInstance.latency)
+        && hlsInstance.latency >= 0
+    ) {
+        return hlsInstance.latency;
+    }
+
+    if (audio && audio.seekable && audio.seekable.length > 0) {
+        const liveEdge = audio.seekable.end(audio.seekable.length - 1);
+        if (Number.isFinite(liveEdge) && Number.isFinite(audio.currentTime)) {
+            return Math.max(0, liveEdge - audio.currentTime);
+        }
+    }
+
+    return null;
+}
+
+function moveLivePlayerToEdge(audio, force = false) {
+    if (!audio) return false;
+
+    const latency = getLiveLatencySeconds(audio);
+    if (!force && (latency === null || latency <= LIVE_HLS_MAX_SEGMENTS)) {
+        return false;
+    }
+
+    let target = null;
+    if (hlsInstance && Number.isFinite(hlsInstance.liveSyncPosition)) {
+        target = hlsInstance.liveSyncPosition;
+    } else if (audio.seekable && audio.seekable.length > 0) {
+        const rangeIndex = audio.seekable.length - 1;
+        const rangeStart = audio.seekable.start(rangeIndex);
+        const rangeEnd = audio.seekable.end(rangeIndex);
+        target = Math.max(
+            rangeStart,
+            rangeEnd - LIVE_NATIVE_EDGE_MARGIN_SECONDS
+        );
+    }
+
+    if (!Number.isFinite(target)) return false;
+
+    try {
+        if (Math.abs(audio.currentTime - target) > 0.25) {
+            audio.currentTime = target;
+        }
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function detachLiveSynchronization() {
+    if (liveStreamSyncTimer) {
+        clearInterval(liveStreamSyncTimer);
+        liveStreamSyncTimer = null;
+    }
+
+    if (liveStreamVisibilityHandler) {
+        document.removeEventListener('visibilitychange', liveStreamVisibilityHandler);
+        liveStreamVisibilityHandler = null;
+    }
+}
+
+function attachLiveSynchronization(audio) {
+    detachLiveSynchronization();
+
+    liveStreamVisibilityHandler = () => {
+        if (document.visibilityState !== 'visible' || audio.paused) return;
+
+        if (liveAudioContext && liveAudioContext.state === 'suspended') {
+            liveAudioContext.resume().catch(() => {});
+        }
+
+        moveLivePlayerToEdge(audio, true);
+    };
+    document.addEventListener('visibilitychange', liveStreamVisibilityHandler);
+
+    liveStreamSyncTimer = setInterval(() => {
+        if (!audio.paused) moveLivePlayerToEdge(audio);
+    }, 3000);
+}
+
+async function initLiveStreamPlayer(autoplay = false) {
     const audio = document.getElementById('live-audio-player');
     if (!audio) return;
 
+    detachLiveSynchronization();
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
     audio.crossOrigin = 'anonymous';
-    audio.onplay = () => startLiveSpectrum(audio);
+    audio.onplay = () => {
+        moveLivePlayerToEdge(audio, true);
+        startLiveSpectrum(audio);
+    };
+    audio.onplaying = () => setLiveStreamStatus('online', 'En directo');
     audio.onpause = () => setLiveSpectrumState('Pausado');
+    audio.onwaiting = () => {
+        setTimeout(() => moveLivePlayerToEdge(audio), 500);
+    };
+    audio.onstalled = () => {
+        setTimeout(() => moveLivePlayerToEdge(audio), 500);
+    };
+    audio.onerror = null;
+    audio.onloadedmetadata = null;
+    attachLiveSynchronization(audio);
 
     if (hlsInstance) {
         hlsInstance.destroy();
@@ -475,20 +705,53 @@ function initLiveStreamPlayer(autoplay = false) {
     setLiveStreamStatus('checking', 'Conectando...');
     setLiveStreamMessage('Conectando con el flujo HLS de MediaMTX...');
 
-    if (window.Hls && Hls.isSupported()) {
-        hlsInstance = new Hls({
+    const attachNativeHls = () => {
+        audio.src = hlsUrl;
+        audio.load();
+        audio.onloadedmetadata = () => {
+            setLiveStreamStatus('online', 'Stream disponible');
+            setLiveStreamMessage('Stream cargado mediante HLS nativo.');
+            moveLivePlayerToEdge(audio, true);
+        };
+        audio.onerror = () => {
+            setLiveStreamStatus('offline', 'Stream no disponible');
+            setLiveStreamMessage('El navegador no pudo abrir el HLS. Prueba el reproductor móvil alternativo.', true);
+        };
+
+        if (autoplay) {
+            audio.play().catch(() => {
+                setLiveStreamMessage('Pulsa play para comenzar: el móvil bloqueó la reproducción automática.');
+            });
+        }
+    };
+
+    if (isAppleMobileDevice() && audio.canPlayType('application/vnd.apple.mpegurl')) {
+        attachNativeHls();
+        return;
+    }
+
+    const HlsPlayer = window.Hls || await ensureHlsLibrary();
+    if (document.getElementById('live-audio-player') !== audio) return;
+
+    if (HlsPlayer && HlsPlayer.isSupported()) {
+        hlsInstance = new HlsPlayer({
             enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 30
+            lowLatencyMode: false,
+            liveSyncDurationCount: LIVE_HLS_TARGET_SEGMENTS,
+            liveMaxLatencyDurationCount: LIVE_HLS_MAX_SEGMENTS,
+            maxLiveSyncPlaybackRate: 1.25,
+            maxBufferLength: 8,
+            maxMaxBufferLength: 12,
+            backBufferLength: 10
         });
 
-        hlsInstance.loadSource(hlsUrl);
-        hlsInstance.attachMedia(audio);
+        hlsInstance.on(HlsPlayer.Events.MEDIA_ATTACHED, () => {
+            if (hlsInstance) hlsInstance.loadSource(hlsUrl);
+        });
 
-        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        hlsInstance.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
             setLiveStreamStatus('online', 'Stream disponible');
-            setLiveStreamMessage('Stream cargado. Usa el reproductor para escuchar en directo.');
-            startLiveSpectrum(audio);
+            setLiveStreamMessage('Stream cargado cerca del borde en directo.');
             if (autoplay) {
                 audio.play().catch(() => {
                     setLiveStreamMessage('El navegador bloqueó la reproducción automática. Pulsa play manualmente.');
@@ -496,38 +759,40 @@ function initLiveStreamPlayer(autoplay = false) {
             }
         });
 
-        hlsInstance.on(Hls.Events.ERROR, (_, data) => {
+        hlsInstance.on(HlsPlayer.Events.ERROR, (_, data) => {
             if (!data || !data.fatal) return;
 
-            setLiveStreamStatus('offline', 'Stream no disponible');
-            setLiveStreamMessage('No se pudo cargar el stream HLS. Comprueba MediaMTX y birdstream.service.', true);
-
-            if (hlsInstance) {
-                hlsInstance.destroy();
-                hlsInstance = null;
+            if (data.type === HlsPlayer.ErrorTypes.NETWORK_ERROR && hlsInstance) {
+                setLiveStreamStatus('warning', 'Reconectando...');
+                setLiveStreamMessage('Se perdió la conexión con el directo. Reintentando...');
+                hlsInstance.startLoad();
+                return;
             }
+
+            if (data.type === HlsPlayer.ErrorTypes.MEDIA_ERROR && hlsInstance) {
+                setLiveStreamStatus('warning', 'Recuperando audio...');
+                hlsInstance.recoverMediaError();
+                return;
+            }
+
+            setLiveStreamStatus('offline', 'Stream no disponible');
+            setLiveStreamMessage('No se pudo cargar el HLS. Comprueba la red o abre el reproductor móvil alternativo.', true);
+
+            if (hlsInstance) hlsInstance.destroy();
+            hlsInstance = null;
         });
 
+        hlsInstance.attachMedia(audio);
         return;
     }
 
     if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-        audio.src = hlsUrl;
-        audio.addEventListener('loadedmetadata', () => {
-            setLiveStreamStatus('online', 'Stream disponible');
-            setLiveStreamMessage('Stream cargado mediante soporte HLS nativo.');
-            startLiveSpectrum(audio);
-            if (autoplay) {
-                audio.play().catch(() => {
-                    setLiveStreamMessage('El navegador bloqueó la reproducción automática. Pulsa play manualmente.');
-                });
-            }
-        }, { once: true });
+        attachNativeHls();
         return;
     }
 
     setLiveStreamStatus('warning', 'HLS no soportado');
-    setLiveStreamMessage('Este navegador no soporta HLS directamente. Abre MediaMTX en una pestaña nueva.', true);
+    setLiveStreamMessage('Este navegador no soporta HLS integrado. Usa el reproductor móvil alternativo.', true);
 }
 
 function setLiveSpectrumState(text) {
@@ -535,9 +800,14 @@ function setLiveSpectrumState(text) {
     if (el) el.textContent = text;
 }
 
-function startLiveSpectrum(audio) {
+async function startLiveSpectrum(audio) {
     const canvas = document.getElementById('live-spectrum-canvas');
     if (!canvas || !audio) return;
+
+    if (shouldPrioritizeMobileAudio()) {
+        setLiveSpectrumState('Audio prioritario en móvil');
+        return;
+    }
 
     try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -548,6 +818,15 @@ function startLiveSpectrum(audio) {
 
         if (!liveAudioContext) {
             liveAudioContext = new AudioCtx();
+        }
+
+        if (liveAudioContext.state !== 'running') {
+            await liveAudioContext.resume();
+        }
+
+        if (liveAudioContext.state !== 'running') {
+            setLiveSpectrumState('Sin visualización');
+            return;
         }
 
         if (!liveAnalyser) {
@@ -569,7 +848,6 @@ function startLiveSpectrum(audio) {
             liveAnalyser.connect(liveAudioContext.destination);
         }
 
-        liveAudioContext.resume().catch(() => {});
         setLiveSpectrumState('Analizando');
 
         if (liveSpectrumFrame) {
@@ -646,6 +924,7 @@ function stopLiveSpectrum(release = false) {
 function stopLiveStreamPlayer() {
     const audio = document.getElementById('live-audio-player');
 
+    detachLiveSynchronization();
     stopLiveSpectrum();
 
     if (hlsInstance) {
@@ -880,41 +1159,39 @@ function renderAudioReviewDiagnostics(diagnostics) {
     const birdSnr = diagnostics.bird_band_snr_db == null
         ? null
         : formatSignedAudioDb(diagnostics.bird_band_snr_db);
-    const warnings = new Set(Array.isArray(diagnostics.warnings) ? diagnostics.warnings : []);
-    const warningLabels = [
-        warnings.has("low_frequency_noise") ? "Exceso de graves" : null,
-        warnings.has("mains_hum") ? "Zumbido de red" : null,
-        warnings.has("weak_bird_evidence") ? "Evidencia debil" : null,
-    ].filter(Boolean);
 
     return `
-        <section class="audio-review-diagnostics ${requiresReview ? "needs-review" : "is-ok"}">
-            <div class="audio-review-diagnostics-head">
-                <i class="bi ${requiresReview ? "bi-exclamation-triangle" : "bi-check-circle"}" aria-hidden="true"></i>
-                <div>
-                    <strong>${requiresReview ? "Revision acustica recomendada" : "Captura sin avisos relevantes"}</strong>
-                    <span>${escapeHtml(diagnostics.summary || "")}</span>
-                </div>
-            </div>
-            <div class="audio-review-diagnostic-values">
-                <span title="Porcentaje de energia por debajo de 200 Hz">
-                    Graves <strong>${lowFrequencyPercent}%</strong>
-                </span>
-                <span title="Prominencia maxima de 50, 100, 150 o 200 Hz">
-                    Zumbido <strong>${humProminence}</strong>
-                </span>
-                ${birdSnr === null ? "" : `
-                    <span title="Energia de 1,2 a 10 kHz dentro de la ventana frente al fondo">
-                        Contraste del evento <strong>${birdSnr}</strong>
+        <details class="audio-review-diagnostics ${requiresReview ? "needs-review" : "is-ok"}">
+            <summary class="audio-review-diagnostics-head">
+                <span class="audio-review-diagnostics-status">
+                    <i class="bi ${requiresReview ? "bi-exclamation-triangle" : "bi-check-circle"}" aria-hidden="true"></i>
+                    <span>
+                        <strong>Calidad del audio</strong>
+                        <small>${requiresReview ? "Conviene escuchar antes de validar" : "Sin avisos relevantes"}</small>
                     </span>
-                `}
-            </div>
-            ${warningLabels.length ? `
-                <div class="audio-review-warning-tags">
-                    ${warningLabels.map(label => `<span>${escapeHtml(label)}</span>`).join("")}
+                </span>
+                <span class="audio-review-diagnostics-toggle">
+                    Detalles tecnicos
+                    <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                </span>
+            </summary>
+            <div class="audio-review-diagnostics-body">
+                <p>${escapeHtml(diagnostics.summary || "")}</p>
+                <div class="audio-review-diagnostic-values">
+                    <span title="Porcentaje de energia por debajo de 200 Hz">
+                        Graves <strong>${lowFrequencyPercent}%</strong>
+                    </span>
+                    <span title="Prominencia maxima de 50, 100, 150 o 200 Hz">
+                        Zumbido <strong>${humProminence}</strong>
+                    </span>
+                    ${birdSnr === null ? "" : `
+                        <span title="Energia de 1,2 a 10 kHz dentro de la ventana frente al fondo">
+                            Contraste <strong>${birdSnr}</strong>
+                        </span>
+                    `}
                 </div>
-            ` : ""}
-        </section>
+            </div>
+        </details>
     `;
 }
 
@@ -1002,18 +1279,15 @@ function renderDetectionAudioReview(detectionId, detection, media) {
 
     content.className = "audio-review-content";
     content.innerHTML = `
-        <div class="audio-review-summary">
-            <div>
-                <span>Tramo de comprobacion</span>
-                <strong>${formatAudioReviewTime(reviewStart)} - ${formatAudioReviewTime(reviewEnd)}</strong>
-            </div>
-            <div>
-                <span>Confianza BirdNET</span>
-                <strong>${confidence}</strong>
-            </div>
+        <div class="audio-review-summary" aria-label="Resumen de la deteccion">
+            <span>BirdNET <strong>${confidence}</strong></span>
+            <span class="audio-review-summary-separator" aria-hidden="true">&middot;</span>
+            <span>
+                ${hasTiming
+                    ? `Evento <strong>${formatAudioReviewTime(detectionStart)} - ${formatAudioReviewTime(detectionEnd)}</strong>`
+                    : `Contexto <strong>${formatAudioReviewTime(reviewStart)} - ${formatAudioReviewTime(reviewEnd)}</strong>`}
+            </span>
         </div>
-
-        ${renderAudioReviewDiagnostics(media.diagnostics)}
 
         <div class="audio-review-spectrum-layout">
             <div class="audio-review-frequency-axis" aria-hidden="true">
@@ -1058,35 +1332,11 @@ function renderDetectionAudioReview(detectionId, detection, media) {
         <div class="audio-review-legend">
             <div>
                 ${hasTiming ? `
-                    <span><i class="audio-review-marker-swatch" aria-hidden="true"></i>Ventana clasificada por BirdNET (${formatAudioReviewTime(detectionStart)} - ${formatAudioReviewTime(detectionEnd)})</span>
+                    <span><i class="audio-review-marker-swatch" aria-hidden="true"></i>Zona clasificada por BirdNET</span>
                 ` : `
                     <span class="audio-review-legacy-note"><i class="bi bi-info-circle" aria-hidden="true"></i>Este registro no conserva la marca temporal de BirdNET; se muestran sus primeros 20 segundos.</span>
                 `}
-                <span class="audio-review-enhanced-note">
-                    <i class="bi bi-sliders" aria-hidden="true"></i>
-                    ${escapeHtml(media.spectrogram_description || "Vista realzada para revision; el WAV original no se modifica.")}
-                </span>
             </div>
-        </div>
-
-        <div class="audio-review-mode-row">
-            <span>Escucha</span>
-            <div class="audio-review-mode-switch" role="group" aria-label="Modo de escucha">
-                <button
-                    id="audio-review-mode-original"
-                    type="button"
-                    class="is-active"
-                    aria-pressed="true"
-                    onclick="switchDetectionAudioMode('original')"
-                >Original</button>
-                <button
-                    id="audio-review-mode-clean"
-                    type="button"
-                    aria-pressed="false"
-                    onclick="switchDetectionAudioMode('clean')"
-                >Limpio</button>
-            </div>
-            <small>${escapeHtml(media.clean_audio_description || "El modo limpio solo afecta a la escucha humana.")}</small>
         </div>
 
         <div class="audio-review-controls">
@@ -1104,6 +1354,8 @@ function renderDetectionAudioReview(detectionId, detection, media) {
                 <input type="range" min="0" max="1" step="0.05" value="1" aria-label="Volumen" oninput="setDetectionAudioVolume(this.value)">
             </div>
         </div>
+
+        ${renderAudioReviewDiagnostics(media.diagnostics)}
 
         <footer class="audio-review-footer">
             <div>
@@ -1125,27 +1377,8 @@ function initializeDetectionAudioReview(media) {
 
     detectionAudioReviewState = {
         audio,
-        sources: {
-            original: {
-                url: media.audio_url,
-                start: Number(media.review_start_seconds) || 0,
-                end: Number(media.review_end_seconds) || 0,
-            },
-            clean: {
-                url: media.clean_audio_url,
-                start: 0,
-                end: Math.max(
-                    0,
-                    (Number(media.review_end_seconds) || 0)
-                        - (Number(media.review_start_seconds) || 0),
-                ),
-            },
-        },
-        mode: "original",
         start: Number(media.review_start_seconds) || 0,
         end: Number(media.review_end_seconds) || 0,
-        pendingElapsed: 0,
-        resumeAfterLoad: false,
         frame: null,
         finished: false,
     };
@@ -1153,20 +1386,8 @@ function initializeDetectionAudioReview(media) {
     audio.addEventListener("loadedmetadata", () => {
         const state = detectionAudioReviewState;
         if (!state || state.audio !== audio) return;
-        const duration = Math.max(0, state.end - state.start);
-        const elapsed = Math.min(
-            duration,
-            Math.max(0, Number(state.pendingElapsed) || 0),
-        );
-        audio.currentTime = state.start + elapsed;
-        state.pendingElapsed = null;
+        audio.currentTime = state.start;
         updateDetectionAudioReviewPlayback();
-        if (state.resumeAfterLoad) {
-            state.resumeAfterLoad = false;
-            audio.play().catch(error => {
-                console.error("No se pudo reanudar la evidencia", error);
-            });
-        }
     });
     audio.addEventListener("timeupdate", updateDetectionAudioReviewPlayback);
     audio.addEventListener("play", () => {
@@ -1176,47 +1397,9 @@ function initializeDetectionAudioReview(media) {
     audio.addEventListener("pause", updateDetectionAudioReviewPlayback);
     audio.addEventListener("error", () => {
         const clock = document.getElementById("audio-review-clock");
-        if (clock) {
-            clock.textContent = detectionAudioReviewState?.mode === "clean"
-                ? "Audio limpio no disponible"
-                : "Audio no disponible";
-        }
+        if (clock) clock.textContent = "Audio no disponible";
     });
     audio.load();
-}
-
-function switchDetectionAudioMode(mode) {
-    const state = detectionAudioReviewState;
-    if (!state || !state.sources[mode] || state.mode === mode) return;
-
-    const elapsed = Math.min(
-        Math.max(0, state.end - state.start),
-        Math.max(0, state.audio.currentTime - state.start),
-    );
-    const resumeAfterLoad = !state.audio.paused;
-    const source = state.sources[mode];
-
-    state.audio.pause();
-    state.mode = mode;
-    state.start = source.start;
-    state.end = source.end;
-    state.pendingElapsed = elapsed;
-    state.resumeAfterLoad = resumeAfterLoad;
-    state.finished = elapsed >= Math.max(0, source.end - source.start);
-    state.audio.src = source.url;
-    updateDetectionAudioModeButtons();
-    state.audio.load();
-}
-
-function updateDetectionAudioModeButtons() {
-    const mode = detectionAudioReviewState?.mode || "original";
-    for (const candidate of ["original", "clean"]) {
-        const button = document.getElementById(`audio-review-mode-${candidate}`);
-        if (!button) continue;
-        const active = candidate === mode;
-        button.classList.toggle("is-active", active);
-        button.setAttribute("aria-pressed", String(active));
-    }
 }
 
 function updateDetectionAudioReviewPlayback() {
@@ -2419,7 +2602,10 @@ function buildGaugeSVG(value, min, max, color, label, tooltip) {
     const startAngle = -210;
     const sweepTotal = 240;
 
-    const clampedVal = Math.min(Math.max(value, min), max);
+    const missing = value === null || value === undefined || value === '';
+    const numericValue = missing ? Number.NaN : Number(value);
+    const available = !missing && Number.isFinite(numericValue);
+    const clampedVal = available ? Math.min(Math.max(numericValue, min), max) : min;
     const pct = (clampedVal - min) / (max - min);
     const sweepActive = sweepTotal * pct;
 
@@ -2436,8 +2622,12 @@ function buildGaugeSVG(value, min, max, color, label, tooltip) {
 
     const endAngle = startAngle + sweepTotal;
     const activeEnd = startAngle + sweepActive;
-    const displayVal = (value % 1 === 0) ? value.toFixed(0) : value.toFixed(3);
-    const textColor = pct >= 0.65 ? '#2f6f4e' : pct >= 0.35 ? '#a66f2f' : '#9c3f3f';
+    const displayVal = available
+        ? ((numericValue % 1 === 0) ? numericValue.toFixed(0) : numericValue.toFixed(3))
+        : '—';
+    const textColor = !available
+        ? '#879389'
+        : pct >= 0.65 ? '#2f6f4e' : pct >= 0.35 ? '#a66f2f' : '#9c3f3f';
     const tipEscaped = tooltip.replace(/"/g, '&quot;');
 
     return `
@@ -2463,6 +2653,13 @@ function buildGaugeSVG(value, min, max, color, label, tooltip) {
     </div>`;
 }
 
+function selectScienceNode(deviceId) {
+    const parsed = Number(deviceId);
+    selectedScienceDeviceId = Number.isInteger(parsed) ? parsed : null;
+    const container = document.getElementById('main-content');
+    if (container && currentView === 'science') renderScienceView(container);
+}
+
 // VISTA ANÁLISIS ECO
 async function renderScienceView(container) {
     container.innerHTML = `
@@ -2479,23 +2676,81 @@ async function renderScienceView(container) {
             return;
         }
 
-        const r = report[0];
-
-        const calidad = r.calidad || 'POBRE';
-        const calidadUpper = calidad.toUpperCase();
-        const calBadge = calidadUpper === 'EXCELENTE' ? 'success' : calidadUpper === 'MODERADO' ? 'warning' : 'danger';
+        const requestedReport = report.find(
+            item => Number(item.device_id) === selectedScienceDeviceId
+        );
+        const r = requestedReport || report[0];
+        selectedScienceDeviceId = Number(r.device_id);
+        const nodeSelectorHTML = report.length > 1
+            ? `
+                <label class="visually-hidden" for="science-node-select">Nodo analizado</label>
+                <select id="science-node-select"
+                        class="form-select form-select-sm bg-dark text-white border-secondary"
+                        onchange="selectScienceNode(this.value)"
+                        aria-label="Seleccionar nodo analizado">
+                    ${report.map(item => `
+                        <option value="${Number(item.device_id)}"
+                                ${Number(item.device_id) === selectedScienceDeviceId ? 'selected' : ''}>
+                            ${escapeHtml(item.node_name || `Nodo ${item.device_id}`)} · ${escapeHtml(item.zona || 'Sin ubicación')}
+                        </option>
+                    `).join('')}
+                </select>`
+            : '';
+        const metricNumber = key => {
+            if (r.metrics_available !== true) return null;
+            const raw = r[key];
+            if (raw === null || raw === undefined || raw === '') return null;
+            const value = Number(raw);
+            return Number.isFinite(value) ? value : null;
+        };
+        const metricText = (key, decimals = 3) => {
+            const value = metricNumber(key);
+            return value === null ? '—' : value.toFixed(decimals);
+        };
+        const metricsReady = r.metrics_available === true;
+        const interpretacion = 'DESCRIPTIVO';
+        const speciesCount = Number(r.riqueza) || 0;
+        const theoreticalShannonMax = speciesCount > 1
+            ? Math.log(speciesCount)
+            : null;
+        const shannonGaugeMax = theoreticalShannonMax || 1;
+        const ndsiValue = metricNumber('ndsi_avg');
+        const ndsiColor = ndsiValue === null
+            ? '#879389'
+            : ndsiValue >= 0 ? '#2f6f4e' : '#9c3f3f';
+        const ndsiMagnitude = ndsiValue === null ? 0 : Math.abs(ndsiValue);
+        const formatMetricDate = value => {
+            if (!value) return '';
+            const date = new Date(value);
+            return Number.isNaN(date.getTime())
+                ? ''
+                : date.toLocaleString('es-ES', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+        };
+        const metricPeriod = [
+            formatMetricDate(r.metric_period_start),
+            formatMetricDate(r.metric_period_end)
+        ].filter(Boolean).join(' – ');
+        const metricsNote = metricsReady
+            ? `${r.metric_samples} muestras del nodo · ${escapeHtml(metricPeriod)} · método ${escapeHtml(r.metrics_version || 'maad-v2')}`
+            : `Esperando nuevas muestras con el método corregido ${escapeHtml(r.metrics_version || 'maad-v2')}; la serie anterior no se mezcla.`;
 
         // ── Gauges biodiversidad — LAYOUT 3+2 
-        const g1 = buildGaugeSVG(r.shannon, 0, 5, '#405f82', "Shannon H'",
-            "Índice de Shannon-Wiener (H'): mide diversidad considerando riqueza y equitabilidad. >3 = Excelente, 1.5–3 = Moderado, <1.5 = Pobre.");
+        const g1 = buildGaugeSVG(r.shannon, 0, shannonGaugeMax, '#405f82', "Shannon H'",
+            `Diversidad del reparto de eventos BirdNET entre las especies detectadas. ${theoreticalShannonMax === null ? 'Con una sola especie H′ es 0.' : `Su máximo para este conjunto es ln(S) = ${theoreticalShannonMax.toFixed(3)}.`} No clasifica por sí solo la calidad del ecosistema.`);
         const g2 = buildGaugeSVG(r.simpson, 0, 1, '#326f72', "Simpson 1-D",
-            "Índice de Simpson (1-D): probabilidad de que dos individuos elegidos al azar pertenezcan a especies distintas. Próximo a 1 = alta diversidad.");
+            "Probabilidad de que dos eventos de detección tomados al azar correspondan a especies distintas.");
         const g3 = buildGaugeSVG(r.pielou, 0, 1, '#2f6f4e', "Pielou J'",
-            "Índice de equitabilidad de Pielou (J'): uniformidad en la distribución de individuos entre especies. 1 = perfectamente equitativo.");
-        const g4 = buildGaugeSVG(Math.min(r.riqueza, 30), 0, 30, '#a66f2f', "Riqueza S",
-            "Riqueza específica (S): número de especies únicas detectadas. Indicador primario de biodiversidad.");
-        const g5 = buildGaugeSVG(Math.min(r.abundancia, 999), 0, 999, '#6f7f5a', "Abundancia",
-            "Abundancia total (N): número total de detecciones acumuladas. Refleja la actividad acústica del ecosistema.");
+            "Uniformidad del reparto de eventos entre las especies detectadas. Con una sola especie no está definido.");
+        const g4 = buildGaugeSVG(Math.min(r.riqueza, 30), 0, 30, '#a66f2f', "Especies S",
+            "Número de especies distintas registradas por BirdNET tras aplicar las revisiones humanas. No es un inventario exhaustivo.");
+        const g5 = buildGaugeSVG(Math.min(r.abundancia, 999), 0, 999, '#6f7f5a', "Eventos N",
+            "Número de eventos acústicos de detección. Varios cantos pueden pertenecer al mismo ejemplar, por lo que N no equivale a individuos.");
 
         // Fila superior: 3 gauges | Fila inferior: 2 gauges centrados
         const gaugesBioHTML = `
@@ -2505,12 +2760,12 @@ async function renderScienceView(container) {
         </div>`;
 
         // ── Gauges entropía acústica — los 3 EN UNA SOLA FILA ────────────
-        const ge1 = buildGaugeSVG(r.ht_avg ?? 0, 0, 1, '#326f72', "Ht",
-            "Entropía temporal (Ht): mide cuánto varía la energía acústica en el tiempo. Valores altos = diversidad temporal de sonidos.");
-        const ge2 = buildGaugeSVG(r.hf_avg ?? 0, 0, 1, '#405f82', "Hf",
-            "Entropía espectral (Hf): distribución de energía entre bandas de frecuencia. Valores altos = uso espectral diverso.");
-        const ge3 = buildGaugeSVG(r.h_avg ?? 0, 0, 1, '#2f6f4e', "H",
-            "Entropía acústica compuesta (H = Ht × Hf): índice global de complejidad del paisaje sonoro. >0.6 = ecosistema sano.");
+        const ge1 = buildGaugeSVG(metricNumber('ht_avg'), 0, 1, '#326f72', "Ht",
+            "Dispersión temporal de la energía. Un fondo continuo también puede producir valores altos.");
+        const ge2 = buildGaugeSVG(metricNumber('hf_avg'), 0, 1, '#405f82', "Hf",
+            "Dispersión de la energía entre frecuencias; describe el audio registrado, no la salud del ecosistema.");
+        const ge3 = buildGaugeSVG(metricNumber('h_avg'), 0, 1, '#2f6f4e', "H",
+            "Entropía acústica compuesta H = Ht × Hf. Es un descriptor del paisaje sonoro sin umbral ecológico universal.");
 
         const gaugesEntropyHTML = `
         <div class="gauges-entropy-row">${ge1}${ge2}${ge3}</div>`;
@@ -2600,17 +2855,19 @@ async function renderScienceView(container) {
                     <i class="bi bi-binoculars-fill me-2 text-info"></i>Análisis Científico
                 </h3>
                 <p class="text-muted mb-0 small">
-                    <i class="bi bi-geo-alt-fill me-1"></i>${r.zona || 'Zona desconocida'}
+                    <i class="bi bi-geo-alt-fill me-1"></i>${escapeHtml(r.zona || 'Zona desconocida')}
                     &nbsp;·&nbsp;<i class="bi bi-activity me-1"></i>${r.abundancia} detecciones
                     &nbsp;·&nbsp;<i class="bi bi-list-stars me-1"></i>${r.riqueza} especies únicas
                 </p>
             </div>
             <div class="d-flex align-items-center gap-2 align-self-center">
+                ${nodeSelectorHTML}
                 <button class="btn btn-success btn-sm" onclick="downloadScienceCSV()">
                     <i class="bi bi-filetype-csv me-2"></i>Exportar índices
                 </button>
-                <span class="badge bg-${calBadge} px-3 py-2 fs-6">
-                    <i class="bi bi-stars me-1"></i>${calidadUpper}
+                <span class="badge bg-secondary px-3 py-2 fs-6"
+                      title="Lectura orientativa de los registros, no una calificación del ecosistema">
+                    <i class="bi bi-info-circle me-1"></i>${escapeHtml(interpretacion)}
                 </span>
             </div>
         </div>
@@ -2622,7 +2879,7 @@ async function renderScienceView(container) {
                 <div class="card border-0 bg-dark science-composite-card">
                     <div class="card-body science-card-body">
                         <div class="science-card-head">
-                            <p class="sci-section-title"><i class="bi bi-bar-chart-steps me-1"></i>Índices de Biodiversidad</p>
+                            <p class="sci-section-title"><i class="bi bi-bar-chart-steps me-1"></i>Diversidad de detecciones</p>
                         </div>
 
                         <div class="science-panel-section">
@@ -2635,10 +2892,14 @@ async function renderScienceView(container) {
                         <div class="science-panel-divider"></div>
 
                         <div class="science-panel-section">
-                            <p class="sci-section-title"><i class="bi bi-bar-chart-fill me-1"></i>Comparativa de diversidad</p>
+                            <p class="sci-section-title"><i class="bi bi-bar-chart-fill me-1"></i>Resumen de indicadores</p>
                             <div class="science-chart-frame">
                                 <canvas id="scienceBarChart"></canvas>
                             </div>
+                            <p class="text-muted mb-0 mt-2" style="font-size:0.68rem;">
+                                <i class="bi bi-info-circle me-1"></i>No compares la altura entre barras:
+                                usan escalas y periodos distintos; consulta cada valor por separado.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -2658,23 +2919,25 @@ async function renderScienceView(container) {
                                     <svg viewBox="0 0 56 56" width="56" height="56">
                                         <circle cx="28" cy="28" r="24" fill="none" stroke="#dfe5db" stroke-width="6"/>
                                         <circle cx="28" cy="28" r="24" fill="none"
-                                            stroke="${(r.ndsi_avg ?? 0) >= 0 ? '#2f6f4e' : '#9c3f3f'}"
+                                            stroke="${ndsiColor}"
                                             stroke-width="6"
-                                            stroke-dasharray="${Math.abs((r.ndsi_avg ?? 0)) * 75.4} 150.8"
+                                            stroke-dasharray="${ndsiMagnitude * 75.4} 150.8"
                                             stroke-dashoffset="37.7"
                                             stroke-linecap="round"
                                             transform="rotate(-90 28 28)"/>
                                     </svg>
                                 </div>
                                 <div class="soundscape-copy">
-                                    <div class="ndsi-badge" style="color:${(r.ndsi_avg ?? 0) >= 0 ? '#2f6f4e' : '#9c3f3f'};">
-                                        ${(r.ndsi_avg ?? 0).toFixed(3)}
+                                    <div class="ndsi-badge" style="color:${ndsiColor};">
+                                        ${metricText('ndsi_avg')}
                                     </div>
                                     <p>
-                                        ${(r.ndsi_avg ?? 0) > 0.5 ? 'Ambiente predominantemente natural' :
-                (r.ndsi_avg ?? 0) > 0 ? 'Balance naturaleza / antropogénico' :
-                    'Ruido antropogénico dominante'}
-                                        <br><span class="text-white-50">Rango: −1 (urbano) → +1 (natural)</span>
+                                        ${ndsiValue === null
+                ? 'Sin muestras comparables todavía'
+                : ndsiValue >= 0
+                    ? 'Mayor energía relativa entre 1 y 10 kHz'
+                    : 'Mayor energía relativa entre 0 y 1 kHz'}
+                                        <br><span class="text-white-50">Rango: −1 (0–1 kHz) → +1 (1–10 kHz)</span>
                                     </p>
                                 </div>
                             </div>
@@ -2692,27 +2955,28 @@ async function renderScienceView(container) {
                         <div class="science-panel-section">
                             <p class="sci-section-title"><i class="bi bi-mic-fill me-1"></i>Índices Bioacústicos</p>
                             <div class="index-bar-row">
-                                <span class="index-bar-label" data-gauge-tip="Acoustic Complexity Index: variabilidad espectral de la grabación. Valores altos indican gran actividad biótica.">ACI</span>
-                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aci_avg ?? 0) / 2000 * 100, 100)}%;background:#405f82;"></div></div>
-                                <span class="index-bar-val">${(r.aci_avg ?? 0).toFixed(1)}</span>
+                                <span class="index-bar-label" data-gauge-tip="ACI: variación temporal de amplitud por banda. Depende de duración, ruido y parámetros; no mide por sí solo biodiversidad.">ACI</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((metricNumber('aci_avg') || 0) / 2000 * 100, 100)}%;background:#405f82;"></div></div>
+                                <span class="index-bar-val">${metricText('aci_avg', 1)}</span>
                             </div>
                             <div class="index-bar-row">
-                                <span class="index-bar-label" data-gauge-tip="Acoustic Diversity Index: diversidad de bandas de frecuencia ocupadas. Mayor ADI → mayor biodiversidad.">ADI</span>
-                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.adi_avg ?? 0) / 3 * 100, 100)}%;background:#2f6f4e;"></div></div>
-                                <span class="index-bar-val">${(r.adi_avg ?? 0).toFixed(3)}</span>
+                                <span class="index-bar-label" data-gauge-tip="ADI: reparto de la ocupación acústica entre bandas de 250 Hz a 10 kHz. No equivale a diversidad de especies.">ADI</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((metricNumber('adi_avg') || 0) / Math.log(10) * 100, 100)}%;background:#2f6f4e;"></div></div>
+                                <span class="index-bar-val">${metricText('adi_avg')}</span>
                             </div>
                             <div class="index-bar-row">
-                                <span class="index-bar-label" data-gauge-tip="Acoustic Evenness Index: uniformidad del uso espectral. Valores bajos indican mayor riqueza sonora.">AEI</span>
-                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.aei_avg ?? 0) * 100, 100)}%;background:#a66f2f;"></div></div>
-                                <span class="index-bar-val">${(r.aei_avg ?? 0).toFixed(3)}</span>
+                                <span class="index-bar-label" data-gauge-tip="AEI: desigualdad de la ocupación entre bandas (Gini). Alto significa una ocupación más desigual, no mayor calidad.">AEI</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((metricNumber('aei_avg') || 0) * 100, 100)}%;background:#a66f2f;"></div></div>
+                                <span class="index-bar-val">${metricText('aei_avg')}</span>
                             </div>
                             <div class="index-bar-row">
-                                <span class="index-bar-label" data-gauge-tip="Bioacoustic Index: energía acústica en la banda de biofonia (2–8 kHz). Indica intensidad de la actividad biológica.">BIO</span>
-                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((r.bio_avg ?? 0) / 100 * 100, 100)}%;background:#6f7f5a;"></div></div>
-                                <span class="index-bar-val">${(r.bio_avg ?? 0).toFixed(2)}</span>
+                                <span class="index-bar-label" data-gauge-tip="BIO: energía relativa registrada entre 2 y 10 kHz. También puede incluir ruido no biológico en esa banda.">BIO</span>
+                                <div class="index-bar-track"><div class="index-bar-fill" style="width:${Math.min((metricNumber('bio_avg') || 0), 100)}%;background:#6f7f5a;"></div></div>
+                                <span class="index-bar-val">${metricText('bio_avg', 2)}</span>
                             </div>
                             <p class="text-muted mt-2 mb-0" style="font-size:0.68rem;">
-                                <i class="bi bi-info-circle me-1"></i>Media agregada de las muestras acústicas registradas.
+                                <i class="bi bi-info-circle me-1"></i>${metricsNote}
+                                Las longitudes son una guía visual, no umbrales ecológicos.
                             </p>
                         </div>
                     </div>
@@ -2727,7 +2991,10 @@ async function renderScienceView(container) {
                     <div class="card-body p-0 d-flex flex-column">
                         <div class="px-4 pt-3 pb-2">
                             <p class="sci-section-title mb-0">
-                                <i class="bi bi-map-fill me-1"></i>Cobertura Geoespacial del Nodo
+                                <i class="bi bi-map-fill me-1"></i>Ubicación del nodo y entorno de referencia
+                            </p>
+                            <p class="text-muted mb-0 mt-2" style="font-size:0.72rem;">
+                                El área acústica es orientativa y local; no representa una cobertura garantizada ni permite localizar cada ave.
                             </p>
                         </div>
                         <div id="biodiversityMap" style="flex:1;min-height:280px;border-bottom-left-radius:8px;border-bottom-right-radius:8px;"></div>
@@ -2742,15 +3009,15 @@ async function renderScienceView(container) {
             new Chart(barCtx.getContext('2d'), {
                 type: 'bar',
                 data: {
-                    labels: ["Shannon (H')", 'Simpson (1-D)', "Pielou (J')", 'Riqueza (norm.)', 'Entropía (H)'],
+                    labels: ["Shannon (H')", 'Simpson (1-D)', "Pielou (J')", 'Especies (S/30)', 'Entropía (H)'],
                     datasets: [{
                         label: 'Valor',
                         data: [
                             r.shannon,
                             r.simpson,
-                            r.pielou,
+                            r.pielou ?? null,
                             parseFloat((r.riqueza / 30).toFixed(3)),
-                            r.h_avg ?? 0
+                            metricNumber('h_avg')
                         ],
                         backgroundColor: [
                             'rgba(64,95,130,0.82)', 'rgba(50,111,114,0.82)',
@@ -2769,11 +3036,13 @@ async function renderScienceView(container) {
                             callbacks: {
                                 afterLabel: ctx => {
                                     const tips = [
-                                        'Rango típico: 0–5  |  >3 Excelente',
-                                        'Rango: 0–1  |  >0.7 Alta diversidad',
-                                        'Rango: 0–1  |  1 = Equitabilidad máxima',
-                                        'Riqueza / 30 (escala visual)',
-                                        'H = Ht × Hf  |  >0.6 Ecosistema sano',
+                                        theoreticalShannonMax === null
+                                            ? 'Con una sola especie H′ es 0'
+                                            : `Máximo del conjunto actual: ln(S) = ${theoreticalShannonMax.toFixed(3)}`,
+                                        'Distribución de eventos; rango 0–1',
+                                        'Equidad de eventos; no definida si S = 1',
+                                        'Especies detectadas / 30 (solo escala visual)',
+                                        'H = Ht × Hf; descriptor acústico sin umbral de salud',
                                     ];
                                     return tips[ctx.dataIndex] || '';
                                 }
@@ -2781,31 +3050,99 @@ async function renderScienceView(container) {
                         }
                     },
                     scales: {
-                        y: { min: 0, max: 5, grid: { color: '#dde3d8' }, ticks: { color: '#5f6f65', font: { size: 11 } } },
+                        y: { min: 0, max: Math.max(1, Math.ceil(shannonGaugeMax * 10) / 10), grid: { color: '#dde3d8' }, ticks: { color: '#5f6f65', font: { size: 11 } } },
                         x: { grid: { display: false }, ticks: { color: '#5f6f65', font: { size: 12 } } }
                     }
                 }
             });
         }
 
-        //Mapa Leaflet
-        fetch("/analytics/map")
+        // Mapa Leaflet: punto real del mismo nodo que muestran los índices.
+        fetch(`/analytics/map?device_id=${encodeURIComponent(r.device_id)}`)
             .then(res => res.json())
             .then(mapData => {
-                if (mapData.error) return;
-                const map = L.map('biodiversityMap').setView([mapData.lat, mapData.lon], 13);
+                const mapContainer = document.getElementById('biodiversityMap');
+                if (
+                    mapData.available === false
+                    || !Number.isFinite(Number(mapData.lat))
+                    || !Number.isFinite(Number(mapData.lon))
+                ) {
+                    mapContainer.innerHTML = `
+                        <div class="h-100 d-flex align-items-center justify-content-center p-4">
+                            <div class="alert alert-warning mb-0 text-center">
+                                <i class="bi bi-geo-alt me-2"></i>${escapeHtml(mapData.error || 'Ubicación del nodo no disponible.')}
+                            </div>
+                        </div>`;
+                    return;
+                }
+
+                const latLng = [Number(mapData.lat), Number(mapData.lon)];
+                const map = L.map('biodiversityMap').setView(latLng, 18);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '&copy; OpenStreetMap'
                 }).addTo(map);
-                const marker = L.marker([mapData.lat, mapData.lon]).addTo(map);
-                marker.bindPopup(`<b>${mapData.ciudad}</b><br>Biodiversidad H': <b>${mapData.shannon}</b>`).openPopup();
-                const circleColor = mapData.shannon > 1.5 ? '#2f6f4e' : '#9c3f3f';
-                L.circle([mapData.lat, mapData.lon], {
-                    color: circleColor, fillColor: circleColor,
-                    fillOpacity: 0.15, radius: mapData.radio_km * 1000
-                }).addTo(map);
+
+                const configuredRadius = Number(mapData.reference_radius_m);
+                const radiusM = Math.max(
+                    0,
+                    Number.isFinite(configuredRadius) ? configuredRadius : 0
+                );
+                const locationSourceLabels = {
+                    manual: 'coordenadas configuradas',
+                    gps: 'GPS',
+                    ip_geolocation: 'geolocalización IP aproximada',
+                    unknown: 'procedencia sin documentar'
+                };
+                const locationSource = locationSourceLabels[mapData.location_source]
+                    || 'procedencia sin documentar';
+                const rangeLine = radiusM > 0
+                    ? `Radio visual: ${radiusM.toFixed(0)} m · no calibrado`
+                    : 'Radio oculto: se requieren coordenadas manuales o GPS';
+                const mapEventCount = Number(mapData.event_count);
+                const mapSpeciesCount = Number(mapData.species_count);
+                const mapCountLines = (
+                    Number.isFinite(mapEventCount)
+                    && Number.isFinite(mapSpeciesCount)
+                )
+                    ? `Eventos registrados: <b>${mapEventCount}</b><br>
+                       Especies detectadas: <b>${mapSpeciesCount}</b><br>`
+                    : '';
+                const marker = L.marker(latLng).addTo(map);
+                marker.bindPopup(`
+                    <b>${escapeHtml(mapData.node_name || 'Nodo acústico')}</b><br>
+                    ${escapeHtml(mapData.ciudad || 'Sin ubicación nominal')}<br>
+                    ${mapCountLines}
+                    Shannon de eventos: <b>${mapData.shannon ?? '—'}</b><br>
+                    <span style="font-size:0.82em;">
+                        Ubicación: ${escapeHtml(locationSource)}<br>${rangeLine}
+                    </span>
+                `).openPopup();
+
+                if (radiusM > 0) {
+                    const circle = L.circle(latLng, {
+                        color: '#536f61',
+                        fillColor: '#7b9586',
+                        fillOpacity: 0.08,
+                        opacity: 0.9,
+                        dashArray: '7 7',
+                        weight: 2,
+                        radius: radiusM
+                    }).addTo(map);
+                    circle.bindTooltip(
+                        `${escapeHtml(mapData.range_label || 'Entorno local orientativo')} · ${radiusM.toFixed(0)} m`
+                    );
+                    map.fitBounds(circle.getBounds(), { padding: [38, 38], maxZoom: 18 });
+                }
             })
-            .catch(() => { });
+            .catch(() => {
+                const mapContainer = document.getElementById('biodiversityMap');
+                if (mapContainer) {
+                    mapContainer.innerHTML = `
+                        <div class="h-100 d-flex align-items-center justify-content-center p-4">
+                            <div class="alert alert-warning mb-0">No se pudo cargar el mapa del nodo.</div>
+                        </div>`;
+                }
+            });
 
     } catch (e) {
         container.innerHTML = `<div class="alert alert-danger mt-4">Error al cargar el análisis: ${e.message}</div>`;
@@ -2819,34 +3156,48 @@ function downloadScienceCSV() {
     }
 
     const rows = currentScienceReport.map(r => [
+        r.device_id ?? '',
+        r.node_name || '',
         r.zona || 'Zona desconocida',
-        r.calidad || '',
+        'DESCRIPTIVO',
         r.abundancia ?? 0,
         r.riqueza ?? 0,
         r.shannon ?? 0,
         r.simpson ?? 0,
-        r.pielou ?? 0,
+        r.pielou ?? '',
+        r.detection_period_start ?? '',
+        r.detection_period_end ?? '',
+        r.metrics_version ?? '',
+        r.metric_samples ?? 0,
+        r.metric_duration_seconds ?? 0,
         r.rms_avg ?? '',
-        r.aci_avg ?? 0,
-        r.adi_avg ?? 0,
-        r.aei_avg ?? 0,
-        r.bio_avg ?? 0,
-        r.ndsi_avg ?? 0,
-        r.ht_avg ?? 0,
-        r.hf_avg ?? 0,
-        r.h_avg ?? 0
+        r.aci_avg ?? '',
+        r.adi_avg ?? '',
+        r.aei_avg ?? '',
+        r.bio_avg ?? '',
+        r.ndsi_avg ?? '',
+        r.ht_avg ?? '',
+        r.hf_avg ?? '',
+        r.h_avg ?? ''
     ]);
 
     downloadTableCSV(
         `birdmonitor_indices_${new Date().toISOString().slice(0, 10)}.csv`,
         [
+            'ID_Nodo',
+            'Nodo',
             'Zona',
-            'Calidad_Shannon',
-            'Abundancia_N',
-            'Riqueza_S',
+            'Alcance_Interpretacion',
+            'Eventos_Deteccion_N',
+            'Especies_Detectadas_S',
             'Shannon_H',
             'Simpson_1-D',
             'Pielou_J',
+            'Inicio_Periodo_Detecciones',
+            'Fin_Periodo_Detecciones',
+            'Version_Metricas_Acusticas',
+            'Muestras_Acusticas',
+            'Duracion_Acustica_Segundos',
             'RMS_Medio',
             'ACI_Medio',
             'ADI_Medio',

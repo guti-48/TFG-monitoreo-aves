@@ -7,6 +7,8 @@ def test_registra_y_actualiza_dispositivo_sin_duplicarlo(client):
         "location": "Reserva Norte",
         "lat": 40.4168,
         "lon": -3.7038,
+        "location_source": "manual",
+        "location_accuracy_m": 10.0,
     }
 
     response = client.post("/devices/", json=payload)
@@ -19,6 +21,8 @@ def test_registra_y_actualiza_dispositivo_sin_duplicarlo(client):
         "location": "Reserva Sur",
         "lat": 40.4200,
         "lon": -3.7100,
+        "location_source": "gps",
+        "location_accuracy_m": 5.0,
     }
 
     update_response = client.post("/devices/", json=update_payload)
@@ -40,6 +44,8 @@ def test_registra_y_actualiza_dispositivo_sin_duplicarlo(client):
     assert matching_devices[0]["location"] == "Reserva Sur"
     assert matching_devices[0]["lat"] == 40.4200
     assert matching_devices[0]["lon"] == -3.7100
+    assert matching_devices[0]["location_source"] == "gps"
+    assert matching_devices[0]["location_accuracy_m"] == 5.0
 
 
 def test_deteccion_repetida_es_idempotente(client):
@@ -75,3 +81,26 @@ def test_deteccion_repetida_es_idempotente(client):
     assert len(matching_detections) == 1
     assert matching_detections[0]["confidence"] == payload["confidence"]
     assert matching_detections[0]["amplitude"] == payload["amplitude"]
+
+
+def test_dispositivo_rechaza_coordenadas_incompletas_o_fuera_de_rango(client):
+    incomplete = client.post(
+        "/devices/",
+        json={
+            "name": "raspberry-coords-incompletas",
+            "location": "Prueba",
+            "lat": 37.38,
+        },
+    )
+    assert incomplete.status_code == 422
+
+    invalid = client.post(
+        "/devices/",
+        json={
+            "name": "raspberry-coords-invalidas",
+            "location": "Prueba",
+            "lat": 137.38,
+            "lon": -5.98,
+        },
+    )
+    assert invalid.status_code == 422

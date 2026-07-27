@@ -20,6 +20,7 @@ def test_metrica_acustica_repetida_es_idempotente(client):
         "birdnet_model": "BirdNET-Analyzer",
         "birdnet_model_version": "2.4",
         "birdnetlib_version": "0.18.1",
+        "acoustic_metrics_version": "maad-v2",
         "aci": 504.4,
         "adi": 0.570,
         "aei": 0.810,
@@ -55,6 +56,7 @@ def test_metrica_acustica_repetida_es_idempotente(client):
     assert matching_metrics[0]["peak"] == payload["peak"]
     assert matching_metrics[0]["quality_status"] == "ok"
     assert matching_metrics[0]["birdnet_model_version"] == "2.4"
+    assert matching_metrics[0]["acoustic_metrics_version"] == "maad-v2"
 
 
 def test_metrica_de_nodo_antiguo_sigue_siendo_compatible(client):
@@ -80,3 +82,42 @@ def test_metrica_de_nodo_antiguo_sigue_siendo_compatible(client):
     assert response.status_code == 200
     assert response.json()["quality_status"] == "unknown"
     assert response.json()["peak"] == 0.0
+    assert response.json()["acoustic_metrics_version"] == "legacy-v1"
+
+
+def test_reintento_v2_actualiza_la_fila_legacy_del_mismo_audio(client):
+    payload = {
+        "timestamp": datetime(
+            2026, 5, 10, 16, 2, 0, tzinfo=timezone.utc
+        ).isoformat(),
+        "filename": "record_upgrade_v2.wav",
+        "device_name": "raspberry-test-metricas",
+        "sample_rate": 48000,
+        "duration": 60.0,
+        "rms": 0.01,
+        "aci": 10.0,
+        "adi": 0.5,
+        "aei": 0.83,
+        "bio": 1.0,
+        "ndsi": 0.0,
+        "ht": 0.5,
+        "hf": 0.5,
+        "h": 0.25,
+    }
+    legacy = client.post("/audio-metrics/", json=payload)
+    assert legacy.status_code == 200
+    assert legacy.json()["acoustic_metrics_version"] == "legacy-v1"
+
+    payload.update(
+        {
+            "acoustic_metrics_version": "maad-v2",
+            "aei": 0.32,
+            "h": 0.41,
+        }
+    )
+    upgraded = client.post("/audio-metrics/", json=payload)
+    assert upgraded.status_code == 200
+    assert upgraded.json()["id"] == legacy.json()["id"]
+    assert upgraded.json()["acoustic_metrics_version"] == "maad-v2"
+    assert upgraded.json()["aei"] == 0.32
+    assert upgraded.json()["h"] == 0.41

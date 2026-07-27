@@ -12,8 +12,7 @@ pydantic
 sqlalchemy
 pandas
 openpyxl==3.1.5
-geocoder
-scikit-maad
+scikit-maad==1.5.2
 python-multipart
 pytest
 httpx

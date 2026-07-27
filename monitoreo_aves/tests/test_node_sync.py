@@ -88,4 +88,54 @@ def test_metricas_envian_diagnostico_aunque_fallen_indices(monkeypatch):
 
     assert captured["payload"]["quality_status"] == "ok"
     assert captured["payload"]["birdnet_model_version"] == "2.4"
+    assert captured["payload"]["acoustic_metrics_version"] == "legacy-v1"
     assert captured["payload"]["aci"] == 0.0
+
+
+def test_metricas_v2_quedan_en_cola_si_backend_no_confirma_version(
+    monkeypatch,
+):
+    queued = {}
+
+    class OldBackendResponse:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"id": 1}
+
+    monkeypatch.setattr(
+        node_sync.requests,
+        "post",
+        lambda *args, **kwargs: OldBackendResponse(),
+    )
+    monkeypatch.setattr(
+        node_sync,
+        "guardarEventoOffline",
+        lambda event_type, payload, error: queued.update(
+            event_type=event_type,
+            payload=payload,
+            error=error,
+        ),
+    )
+
+    node_sync.enviarMetricasAcusticas(
+        {
+            "acoustic_metrics_version": "maad-v2",
+            "aci": 1.0,
+            "adi": 0.5,
+            "aei": 0.3,
+            "bio": 1.0,
+            "ndsi": 0.0,
+            "ht": 0.7,
+            "hf": 0.6,
+            "h": 0.42,
+        },
+        "record_v2.wav",
+        "2026-07-27T15:00:00",
+        0.01,
+    )
+
+    assert queued["event_type"] == "audio_metric"
+    assert queued["payload"]["acoustic_metrics_version"] == "maad-v2"
+    assert "sin soporte confirmado" in queued["error"]

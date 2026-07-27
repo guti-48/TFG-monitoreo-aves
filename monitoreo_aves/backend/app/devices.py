@@ -37,6 +37,12 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.g
         if device.lon is not None:
             db_device.lon = device.lon
 
+        if device.location_source is not None:
+            db_device.location_source = device.location_source
+            db_device.location_accuracy_m = device.location_accuracy_m
+        elif device.location_accuracy_m is not None:
+            db_device.location_accuracy_m = device.location_accuracy_m
+
         if db.is_modified(db_device):
             db.commit()
             db.refresh(db_device)
@@ -52,6 +58,8 @@ def create_device(device: schemas.DeviceCreate, db: Session = Depends(database.g
         ),
         lat=device.lat,
         lon=device.lon,
+        location_source=device.location_source or "unknown",
+        location_accuracy_m=device.location_accuracy_m,
     )
     db.add(new_device)
     db.commit()

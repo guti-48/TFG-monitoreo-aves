@@ -308,6 +308,9 @@ def enviarMetricasAcusticas(
         "birdnet_model": birdnet_info.get("model_name"),
         "birdnet_model_version": birdnet_info.get("model_version"),
         "birdnetlib_version": birdnet_info.get("birdnetlib_version"),
+        "acoustic_metrics_version": metricas.get(
+            "acoustic_metrics_version", "legacy-v1"
+        ),
         "aci": float(metricas.get("aci", 0.0)),
         "adi": float(metricas.get("adi", 0.0)),
         "aei": float(metricas.get("aei", 0.0)),
@@ -320,11 +323,33 @@ def enviarMetricasAcusticas(
 
     try:
         r = requests.post(f"{SERVER_URL}/audio-metrics/", json=datos, timeout=60)
-        if r.status_code == 200:
+        version_confirmada = True
+        if datos["acoustic_metrics_version"] == "maad-v2":
+            try:
+                version_confirmada = (
+                    r.json().get("acoustic_metrics_version") == "maad-v2"
+                )
+            except (AttributeError, TypeError, ValueError):
+                version_confirmada = False
+
+        if r.status_code == 200 and version_confirmada:
             print("Metricas acusticas enviadas al servidor.")
         else:
-            print(f"Servidor rechazo las metricas acusticas ({r.status_code}): {r.text}")
-            guardarEventoOffline("audio_metric", datos, f"HTTP {r.status_code}: {r.text}")
+            detalle = getattr(r, "text", "")
+            if r.status_code == 200:
+                detalle = (
+                    "backend sin soporte confirmado para "
+                    "acoustic_metrics_version=maad-v2"
+                )
+            print(
+                f"Servidor no confirmo las metricas acusticas "
+                f"({r.status_code}): {detalle}"
+            )
+            guardarEventoOffline(
+                "audio_metric",
+                datos,
+                f"HTTP {r.status_code}: {detalle}",
+            )
     except requests.exceptions.RequestException as e:
         print(f"Error enviando metricas acusticas: {e}")
         guardarEventoOffline("audio_metric", datos, str(e))
@@ -447,6 +472,19 @@ def sincronizarRespaldo():
                 elif event_type == "audio_metric":
                     response = requests.post(f"{SERVER_URL}/audio-metrics/", json=payload, timeout=60)
                     ok = response.status_code == 200
+                    if (
+                        ok
+                        and payload.get("acoustic_metrics_version") == "maad-v2"
+                    ):
+                        try:
+                            ok = (
+                                response.json().get(
+                                    "acoustic_metrics_version"
+                                )
+                                == "maad-v2"
+                            )
+                        except (AttributeError, TypeError, ValueError):
+                            ok = False
 
                 elif event_type == "file_upload":
                     ok = subirArchivos(normalizarFilenameBase(payload["filename"]))

@@ -14,6 +14,8 @@ class Device(Base):
     location = Column(String)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
+    location_source = Column(String, nullable=True)
+    location_accuracy_m = Column(Float, nullable=True)
 
     detections = relationship("Detection", back_populates="device")
     audio_metrics = relationship("AudioMetric", back_populates="device")
@@ -179,6 +181,7 @@ class AudioMetric(Base):
     birdnet_model = Column(String, nullable=True)
     birdnet_model_version = Column(String, nullable=True)
     birdnetlib_version = Column(String, nullable=True)
+    acoustic_metrics_version = Column(String, nullable=True, index=True)
 
     aci = Column(Float, default=0.0)
     adi = Column(Float, default=0.0)

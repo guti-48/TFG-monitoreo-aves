@@ -309,56 +309,77 @@ def calcularMetricasAcusticas(audio_path):
     """
     Calcula indices acusticos del paisaje sonoro para una grabacion WAV.
     Se ejecuta en el nodo Edge y no requiere subir el audio bruto para el analisis cientifico.
+
+    ACI, ADI, AEI y BIO usan amplitud. NDSI y Hf usan potencia, tal
+    como especifica scikit-maad. La version acompana a cada fila para no
+    mezclar estos resultados con la serie historica calculada con el metodo
+    anterior.
     """
     try:
         from maad import features, sound
 
         s, fs = sound.load(audio_path)
-        sxx, tn, fn, ext = sound.spectrogram(s, fs)
+        sxx_power, _, fn, _ = sound.spectrogram(s, fs, mode="psd")
+        sxx_amplitude = np.sqrt(np.maximum(sxx_power, 0.0))
+        fmax = min(10000.0, fs / 2.0)
 
-        _, _, aci = features.acoustic_complexity_index(sxx)
+        _, _, aci = features.acoustic_complexity_index(sxx_amplitude)
         aci_val = float(np.sum(aci))
 
-        adi_val = float(features.acoustic_diversity_index(sxx, fn))
+        adi_val = float(
+            features.acoustic_diversity_index(
+                sxx_amplitude,
+                fn,
+                fmin=250,
+                fmax=fmax,
+                bin_step=1000,
+                dB_threshold=-47,
+            )
+        )
+        aei_val = float(
+            features.acoustic_eveness_index(
+                sxx_amplitude,
+                fn,
+                fmin=250,
+                fmax=fmax,
+                bin_step=500,
+                dB_threshold=-47,
+            )
+        )
+        bio_val = float(
+            features.bioacoustics_index(
+                sxx_amplitude,
+                fn,
+                flim=(2000, fmax),
+            )
+        )
 
-        try:
-            aei_val = float(features.acoustic_evenness_index(sxx, fn))
-        except AttributeError:
-            aei_val = float(1.0 - (adi_val / 3.0)) if not np.isnan(adi_val) else 0.5
-
-        try:
-            bio_val = float(features.bioacoustics_index(sxx, fn))
-        except AttributeError:
-            bio_val = float(features.bioacoustic_index(sxx, fn))
-
-        ndsi_val, _, _, _ = features.soundscape_index(sxx, fn)
+        ndsi_val, _, _, _ = features.soundscape_index(
+            sxx_power,
+            fn,
+            flim_bioPh=(1000, fmax),
+            flim_antroPh=(0, 1000),
+        )
         ndsi_val = float(ndsi_val)
 
-        e_t = np.sum(sxx, axis=0)
-        if np.sum(e_t) > 0:
-            p_i = e_t / np.sum(e_t)
-            ht_val = float(-np.sum(p_i * np.log(p_i + 1e-12)) / np.log(len(p_i)))
-        else:
-            ht_val = 0.0
-
-        e_f = np.sum(sxx, axis=1)
-        if np.sum(e_f) > 0:
-            p_j = e_f / np.sum(e_f)
-            hf_val = float(-np.sum(p_j * np.log(p_j + 1e-12)) / np.log(len(p_j)))
-        else:
-            hf_val = 0.0
-
+        ht_val = float(features.temporal_entropy(s))
+        hf_val, _ = features.frequency_entropy(sxx_power)
+        hf_val = float(hf_val)
         h_val = float(ht_val * hf_val)
 
+        def valor_finito(value):
+            return float(value) if np.isfinite(value) else 0.0
+
         metricas = {
-            "aci": 0.0 if np.isnan(aci_val) else aci_val,
-            "adi": 0.0 if np.isnan(adi_val) else adi_val,
-            "aei": 0.0 if np.isnan(aei_val) else aei_val,
-            "bio": 0.0 if np.isnan(bio_val) else bio_val,
-            "ndsi": 0.0 if np.isnan(ndsi_val) else ndsi_val,
-            "ht": 0.0 if np.isnan(ht_val) else ht_val,
-            "hf": 0.0 if np.isnan(hf_val) else hf_val,
-            "h": 0.0 if np.isnan(h_val) else h_val,
+            "acoustic_metrics_version": "maad-v2",
+            "aci": valor_finito(aci_val),
+            "adi": valor_finito(adi_val),
+            "aei": valor_finito(aei_val),
+            "bio": valor_finito(bio_val),
+            "ndsi": valor_finito(ndsi_val),
+            "ht": valor_finito(ht_val),
+            "hf": valor_finito(hf_val),
+            "h": valor_finito(h_val),
         }
 
         print(

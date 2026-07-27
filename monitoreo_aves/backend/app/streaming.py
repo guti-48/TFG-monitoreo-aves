@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from .config import (
     CONFIGURED_STREAM_BASE_URL,
+    CONFIGURED_STREAM_RTSP_BASE_URL,
     DEFAULT_STREAM_PATH,
     STREAM_CONTROL_FILE,
     STREAM_PATH_TEMPLATE,
@@ -80,8 +81,17 @@ def _stream_base_url(request: Request | None = None) -> str:
     return f"{scheme}://{host}:8888"
 
 
+def _stream_rtsp_base_url(request: Request | None = None) -> str:
+    if CONFIGURED_STREAM_RTSP_BASE_URL:
+        return CONFIGURED_STREAM_RTSP_BASE_URL.rstrip("/")
+
+    host = request.url.hostname if request is not None else "127.0.0.1"
+    return f"rtsp://{host or '127.0.0.1'}:8554"
+
+
 def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
     base_url = _stream_base_url(request)
+    rtsp_base_url = _stream_rtsp_base_url(request)
     node_name = current.get("node_name", "birdmonitor")
     stream_path = _normalize_stream_path(
         current.get("stream_path") or _stream_path_for_node(node_name)
@@ -90,6 +100,7 @@ def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
     current["stream_path"] = stream_path
     current["hls_url"] = f"{base_url}/{stream_path}/index.m3u8"
     current["page_url"] = f"{base_url}/{stream_path}/"
+    current["rtsp_url"] = f"{rtsp_base_url}/{stream_path}"
     return current
 
 
