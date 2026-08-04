@@ -1,5 +1,5 @@
 def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path, monkeypatch):
-    from backend.app import streaming
+    from backend.app.features.streaming import routes as streaming
 
     stream_control_file = tmp_path / "stream_control.json"
     monkeypatch.setattr(streaming, "STREAM_CONTROL_FILE", stream_control_file)
@@ -16,10 +16,11 @@ def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path,
     assert default_response.json()["actual_running"] is False
     assert default_response.json()["stream_path"] == "raspberry-test-stream-audio"
     assert default_response.json()["hls_url"] == (
-        "http://testserver:8888/raspberry-test-stream-audio/index.m3u8"
+        "http://testserver/stream/hls/"
+        "raspberry-test-stream-audio/index.m3u8"
     )
     assert default_response.json()["page_url"] == (
-        "http://testserver:8888/raspberry-test-stream-audio/"
+        "http://testserver/stream/hls/raspberry-test-stream-audio/"
     )
     assert default_response.json()["rtsp_url"] == (
         "rtsp://testserver:8554/raspberry-test-stream-audio"
@@ -62,7 +63,7 @@ def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path,
     assert persisted_response.json()["actual_running"] is True
     assert persisted_response.json()["stream_path"] == "directo-principal"
     assert persisted_response.json()["hls_url"] == (
-        "http://testserver:8888/directo-principal/index.m3u8"
+        "http://testserver/stream/hls/directo-principal/index.m3u8"
     )
     assert persisted_response.json()["rtsp_url"] == (
         "rtsp://testserver:8554/directo-principal"
@@ -71,7 +72,7 @@ def test_control_streaming_guarda_estado_deseado_y_estado_real(client, tmp_path,
 
 
 def test_control_streaming_adapta_urls_al_host_del_cliente(client, tmp_path, monkeypatch):
-    from backend.app import streaming
+    from backend.app.features.streaming import routes as streaming
 
     monkeypatch.setattr(streaming, "STREAM_CONTROL_FILE", tmp_path / "stream_control.json")
     monkeypatch.setattr(streaming, "CONFIGURED_STREAM_BASE_URL", None)
@@ -85,11 +86,21 @@ def test_control_streaming_adapta_urls_al_host_del_cliente(client, tmp_path, mon
 
     assert response.status_code == 200
     assert response.json()["hls_url"] == (
-        "http://100.98.248.58:8888/birdmonitor-audio/index.m3u8"
+        "http://100.98.248.58:8000/stream/hls/"
+        "birdmonitor-audio/index.m3u8"
     )
     assert response.json()["page_url"] == (
-        "http://100.98.248.58:8888/birdmonitor-audio/"
+        "http://100.98.248.58:8000/stream/hls/birdmonitor-audio/"
     )
     assert response.json()["rtsp_url"] == (
         "rtsp://100.98.248.58:8554/birdmonitor-audio"
+    )
+
+
+def test_stream_path_elimina_segmentos_de_recorrido():
+    from backend.app.features.streaming import routes as streaming
+
+    assert (
+        streaming._normalize_stream_path("../aves/./directo")
+        == "aves/directo"
     )

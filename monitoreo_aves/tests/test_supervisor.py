@@ -11,16 +11,30 @@ class FakeResponse:
 
 
 def test_get_hls_health_validates_manifest(monkeypatch):
+    captured = {}
+
+    def fake_get(*args, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
     monkeypatch.setattr(
         supervisor.requests,
         "get",
-        lambda *args, **kwargs: FakeResponse(),
+        fake_get,
+    )
+    monkeypatch.setattr(
+        supervisor,
+        "backend_auth_headers",
+        lambda: {"Authorization": "Bearer nodo-test"},
     )
 
     available, detail = supervisor.get_hls_health("http://server:8888/audio/index.m3u8")
 
     assert available is True
     assert detail == ""
+    assert captured["headers"] == {
+        "Authorization": "Bearer nodo-test",
+    }
 
 
 def test_get_hls_health_reports_connection_error(monkeypatch):

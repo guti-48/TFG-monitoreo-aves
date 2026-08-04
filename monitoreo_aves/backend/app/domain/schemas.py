@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from datetime import datetime
 from typing import Optional, Literal
 
@@ -32,6 +32,8 @@ class DetectionReviewUpdate(BaseModel):
     reviewer: Optional[str] = None
 
 class DetectionReviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     detection_id: int
     status: ReviewStatus
@@ -40,9 +42,6 @@ class DetectionReviewResponse(BaseModel):
     reviewer: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 class LearningSuggestionResponse(BaseModel):
     rule_id: int
@@ -55,6 +54,8 @@ class LearningSuggestionResponse(BaseModel):
     reason: str
 
 class LearningRuleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     device_id: int
     original_species: str
@@ -70,14 +71,13 @@ class LearningRuleResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class LearningRebuildResponse(BaseModel):
     rules: int
     examples: int
 
 class DeviceCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     name: str
     location: str
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
@@ -97,10 +97,9 @@ class DeviceCreate(BaseModel):
             )
         return self
 
-    class Config:
-        from_attributes = True
-
 class DetectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     species: str
     confidence: float
@@ -112,10 +111,6 @@ class DetectionResponse(BaseModel):
     audio_end_seconds: Optional[float] = None
     review: Optional[DetectionReviewResponse] = None
     learned_suggestion: Optional[LearningSuggestionResponse] = None
-
-    class Config:
-        from_attributes = True
-
 
 class DetectionAudioDiagnostics(BaseModel):
     status: Literal["ok", "review"]
@@ -169,6 +164,8 @@ class AudioMetricCreate(BaseModel):
     h: float
 
 class AudioMetricResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     timestamp: datetime
     filename: str
@@ -195,6 +192,3 @@ class AudioMetricResponse(BaseModel):
     ht: float
     hf: float
     h: float
-
-    class Config:
-        from_attributes = True

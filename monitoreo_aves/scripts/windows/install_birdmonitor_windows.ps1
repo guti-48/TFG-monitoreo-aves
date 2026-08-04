@@ -27,6 +27,8 @@ if (-not $isAdmin) {
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path (Join-Path $ScriptDir "..\..")
+$ApplyNetworkMode = Join-Path $ScriptDir "apply_network_mode.ps1"
+$HiddenLauncher = Join-Path $ScriptDir "run_powershell_hidden.vbs"
 
 Write-Host "Proyecto detectado en:" -ForegroundColor Yellow
 Write-Host $ProjectDir
@@ -38,6 +40,9 @@ if (!(Test-Path (Join-Path $ProjectDir "backend"))) {
 
 if (!(Test-Path (Join-Path $ProjectDir "backend\app\main.py"))) {
     throw "No se ha encontrado backend/app/main.py. Revisa la estructura del proyecto."
+}
+if (-not (Test-Path -LiteralPath $HiddenLauncher)) {
+    throw "No se ha encontrado scripts\windows\run_powershell_hidden.vbs."
 }
 
 # =========================
@@ -79,37 +84,66 @@ $MediaMtxDir = Split-Path -Parent $MediaMtxExe
 # DETECTAR CONFIG MEDIAMTX
 # =========================
 
-$PossibleMediaMtxConfig = @(
-    (Join-Path $ProjectDir "tools\mediamtx\mediamtx.yml"),
-    (Join-Path $ProjectDir "mediamtx.yml"),
-    (Join-Path $MediaMtxDir "mediamtx.yml"),
-    "C:\mediamtx.yml"
-)
-
-$MediaMtxConfig = $null
-
-foreach ($path in $PossibleMediaMtxConfig) {
-    if (Test-Path $path) {
-        $MediaMtxConfig = Resolve-Path $path
-        break
-    }
+$SecureMediaMtxConfig = Join-Path `
+    $ProjectDir `
+    "tools\mediamtx\mediamtx.secure.yml"
+if (-not (Test-Path -LiteralPath $SecureMediaMtxConfig)) {
+    throw (
+        "Falta tools/mediamtx/mediamtx.secure.yml. " +
+        "BirdMonitor no arrancara con la configuracion publica antigua."
+    )
 }
-
-if ($null -eq $MediaMtxConfig) {
-    Write-Host "No se ha encontrado mediamtx.yml automaticamente." -ForegroundColor Yellow
-    $manualConfig = Read-Host "Introduce la ruta completa de mediamtx.yml"
-
-    if (!(Test-Path $manualConfig)) {
-        throw "No existe mediamtx.yml en la ruta indicada: $manualConfig"
-    }
-
-    $MediaMtxConfig = Resolve-Path $manualConfig
-}
+$MediaMtxConfig = Resolve-Path -LiteralPath $SecureMediaMtxConfig
 
 Write-Host "MediaMTX detectado:" -ForegroundColor Green
 Write-Host "EXE: $MediaMtxExe"
 Write-Host "YML: $MediaMtxConfig"
 Write-Host ""
+
+$BackendEnv = Join-Path $ProjectDir "backend\birdmonitor.env"
+if (-not (Test-Path -LiteralPath $BackendEnv)) {
+    throw (
+        "Falta backend/birdmonitor.env. Ejecuta primero " +
+        "scripts/configure_security.py y " +
+        "scripts/configure_stream_security.py."
+    )
+}
+
+$BackendEnvContent = Get-Content -LiteralPath $BackendEnv -Raw
+foreach ($RequiredKey in @(
+    "BIRDMONITOR_STREAM_PUBLISH_PASSWORD_HASH",
+    "BIRDMONITOR_STREAM_READER_PASSWORD",
+    "BIRDMONITOR_STREAM_PROXY_PASSWORD",
+    "BIRDMONITOR_NETWORK_MODE",
+    "BIRDMONITOR_SERVER_HOST"
+)) {
+    if ($BackendEnvContent -notmatch "(?m)^$RequiredKey=.+$") {
+        throw (
+            "Falta $RequiredKey. Ejecuta primero " +
+            "python scripts/configure_stream_security.py."
+        )
+    }
+}
+$EnvValues = @{}
+foreach ($RawLine in Get-Content -LiteralPath $BackendEnv) {
+    if ($RawLine -match "^\s*([^#][^=]*)=(.*)$") {
+        $EnvValues[$Matches[1].Trim()] = $Matches[2].Trim()
+    }
+}
+$NetworkMode = $EnvValues["BIRDMONITOR_NETWORK_MODE"]
+$ServerHost = $EnvValues["BIRDMONITOR_SERVER_HOST"]
+if ($NetworkMode -notin @("local", "tailscale")) {
+    throw (
+        "Ejecuta primero python scripts/configure_network_mode.py " +
+        "--mode local|tailscale."
+    )
+}
+if ($null -eq (Get-NetIPAddress `
+    -IPAddress $ServerHost `
+    -ErrorAction SilentlyContinue
+)) {
+    throw "La IP configurada $ServerHost no pertenece a este servidor."
+}
 
 # =========================
 # PREPARAR CARPETA LOCAL DE SCRIPTS
@@ -117,12 +151,37 @@ Write-Host ""
 
 $RuntimeDir = Join-Path $env:LOCALAPPDATA "BirdMonitor"
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+$RuntimeMediaMtxConfig = Join-Path `
+    $RuntimeDir `
+    "mediamtx.secure.runtime.yml"
+$SecureConfigContent = Get-Content `
+    -LiteralPath $SecureMediaMtxConfig `
+    -Raw
+$RtspAddressPattern = "(?m)^rtspAddress:\s*:8554\s*$"
+if (
+    [regex]::Matches(
+        $SecureConfigContent,
+        $RtspAddressPattern
+    ).Count -ne 1
+) {
+    throw "No se encontro una unica directiva rtspAddress en MediaMTX."
+}
+$RuntimeConfigContent = [regex]::Replace(
+    $SecureConfigContent,
+    $RtspAddressPattern,
+    "rtspAddress: ${ServerHost}:8554"
+)
+[IO.File]::WriteAllText(
+    $RuntimeMediaMtxConfig,
+    $RuntimeConfigContent,
+    (New-Object Text.UTF8Encoding($false))
+)
+$MediaMtxConfig = $RuntimeMediaMtxConfig
 
 $MediaMtxStartScript = Join-Path $RuntimeDir "start_mediamtx.ps1"
-$BackendStartScript = Join-Path $RuntimeDir "start_backend.bat"
+$BackendStartScript = Join-Path $ScriptDir "run_backend_hidden.ps1"
 $MediaMtxOutLog = Join-Path $RuntimeDir "mediamtx.out.log"
 $MediaMtxErrLog = Join-Path $RuntimeDir "mediamtx.err.log"
-$BackendLog = Join-Path $RuntimeDir "backend.log"
 
 $MediaMtxTaskName = "BirdMonitor MediaMTX"
 $BackendTaskName = "BirdMonitor Backend"
@@ -164,33 +223,12 @@ Write-Host "Creando script de arranque del backend FastAPI..." -ForegroundColor 
 
 $VenvPython = Join-Path $ProjectDir "venv\Scripts\python.exe"
 
-if (Test-Path $VenvPython) {
-    $PythonExe = (Resolve-Path $VenvPython).Path
-} else {
-    $PythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
-
-    if ($null -eq $PythonCommand) {
-        throw "No se ha encontrado venv\Scripts\python.exe ni python.exe en PATH."
-    }
-
-    $PythonExe = $PythonCommand.Source
+if (-not (Test-Path -LiteralPath $VenvPython)) {
+    throw "No se ha encontrado venv\Scripts\python.exe."
 }
-
-@"
-@echo off
-cd /d "$ProjectDir"
-
-if not defined BIRDMONITOR_BACKEND_HOST set "BIRDMONITOR_BACKEND_HOST=0.0.0.0"
-if not defined BIRDMONITOR_BACKEND_PORT set "BIRDMONITOR_BACKEND_PORT=8000"
-
-netstat -ano | findstr /R /C:":%BIRDMONITOR_BACKEND_PORT% .*LISTENING" >nul
-if %ERRORLEVEL%==0 (
-    echo Backend ya esta escuchando en el puerto %BIRDMONITOR_BACKEND_PORT%. >> "$BackendLog"
-    exit /b 0
-)
-
-"$PythonExe" -m uvicorn backend.app.main:app --host %BIRDMONITOR_BACKEND_HOST% --port %BIRDMONITOR_BACKEND_PORT% >> "$BackendLog" 2>&1
-"@ | Set-Content -Path $BackendStartScript -Encoding ASCII
+if (-not (Test-Path -LiteralPath $BackendStartScript)) {
+    throw "No se ha encontrado scripts\windows\run_backend_hidden.ps1."
+}
 
 # =========================
 # ELIMINAR TAREAS ANTIGUAS
@@ -206,26 +244,28 @@ Unregister-ScheduledTask -TaskName $BackendTaskName -Confirm:$false -ErrorAction
 # =========================
 
 $TaskUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-$Trigger = New-ScheduledTaskTrigger -AtStartup
+$Trigger = New-ScheduledTaskTrigger -AtLogOn -User $TaskUser
 $Principal = New-ScheduledTaskPrincipal `
     -UserId $TaskUser `
-    -LogonType S4U `
-    -RunLevel Highest
+    -LogonType Interactive `
+    -RunLevel Limited
 $Settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
     -MultipleInstances IgnoreNew
 
-Write-Host "Las tareas arrancaran con Windows como $TaskUser." -ForegroundColor Yellow
+Write-Host "Las tareas arrancaran al iniciar sesion como $TaskUser." -ForegroundColor Yellow
 Write-Host ""
 
 Write-Host "Creando tarea programada para MediaMTX..." -ForegroundColor Cyan
 
 $MediaMtxAction = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-ExecutionPolicy Bypass -File `"$MediaMtxStartScript`"" `
+    -Execute "wscript.exe" `
+    -Argument "`"$HiddenLauncher`" `"$MediaMtxStartScript`"" `
     -WorkingDirectory "$RuntimeDir"
 
 Register-ScheduledTask `
@@ -240,8 +280,8 @@ Register-ScheduledTask `
 Write-Host "Creando tarea programada para Backend FastAPI..." -ForegroundColor Cyan
 
 $BackendAction = New-ScheduledTaskAction `
-    -Execute "cmd.exe" `
-    -Argument "/c `"$BackendStartScript`"" `
+    -Execute "wscript.exe" `
+    -Argument "`"$HiddenLauncher`" `"$BackendStartScript`"" `
     -WorkingDirectory "$ProjectDir"
 
 Register-ScheduledTask `
@@ -250,7 +290,7 @@ Register-ScheduledTask `
     -Trigger $Trigger `
     -Principal $Principal `
     -Settings $Settings `
-    -Description "Arranca el backend FastAPI de BirdMonitor" `
+    -Description "Arranca en segundo plano el backend FastAPI de BirdMonitor" `
     -Force
 
 if ($null -eq (Get-ScheduledTask -TaskName $MediaMtxTaskName -ErrorAction SilentlyContinue)) {
@@ -291,10 +331,14 @@ Write-Host ""
 Write-Host "Tarea Backend:" -ForegroundColor Yellow
 Get-ScheduledTaskInfo -TaskName $BackendTaskName | Format-List LastRunTime,LastTaskResult
 
+Write-Host "Aplicando perfil de red y Firewall..." -ForegroundColor Cyan
+& $ApplyNetworkMode
+
 Write-Host ""
 Write-Host "Instalacion completada." -ForegroundColor Green
-Write-Host "Backend:  http://127.0.0.1:8000"
-Write-Host "MediaMTX: http://127.0.0.1:8888"
+Write-Host "Dashboard: http://${ServerHost}:8000"
+Write-Host "MediaMTX HLS interno: http://127.0.0.1:8888"
+Write-Host "Dashboard HLS protegido: /stream/hls/..."
 Write-Host ""
 Write-Host "Logs en:"
 Write-Host $RuntimeDir

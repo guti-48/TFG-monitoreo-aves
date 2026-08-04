@@ -1,5 +1,5 @@
 def test_subida_archivos_guarda_wav_y_png_en_carpetas_configuradas(client, tmp_path, monkeypatch):
-    from backend.app import uploads
+    from backend.app.features.uploads import routes as uploads
 
     records_dir = tmp_path / "records"
     spectrograms_dir = tmp_path / "spectrograms"
@@ -24,7 +24,7 @@ def test_subida_archivos_guarda_wav_y_png_en_carpetas_configuradas(client, tmp_p
 
 
 def test_subida_archivos_rechaza_extensiones_no_permitidas(client, tmp_path, monkeypatch):
-    from backend.app import uploads
+    from backend.app.features.uploads import routes as uploads
 
     records_dir = tmp_path / "records"
     spectrograms_dir = tmp_path / "spectrograms"

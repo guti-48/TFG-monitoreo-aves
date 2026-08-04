@@ -9,16 +9,15 @@ const NOISE_MAP = {
 };
 const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
 
-// Stream HLS servido por MediaMTX. Por defecto usa el mismo hostname del
-// dashboard, pero se puede sobrescribir con window.BIRDMONITOR_CONFIG.
+// HLS se consume por el proxy autenticado del backend. MediaMTX permanece
+// accesible solo desde el propio servidor.
 const BIRDMONITOR_CONFIG = window.BIRDMONITOR_CONFIG || {};
 const DEFAULT_STREAM_NODE_NAME = BIRDMONITOR_CONFIG.streamNodeName || "birdmonitor";
 const DEFAULT_STREAM_PATH = BIRDMONITOR_CONFIG.streamName || `${DEFAULT_STREAM_NODE_NAME}-audio`;
-const MEDIAMTX_HLS_PORT = BIRDMONITOR_CONFIG.mediaMtxHlsPort || 8888;
 const MEDIAMTX_RTSP_PORT = BIRDMONITOR_CONFIG.mediaMtxRtspPort || 8554;
 const LIVE_STREAM_BASE_URL = (
     BIRDMONITOR_CONFIG.liveStreamBaseUrl ||
-    `${window.location.protocol}//${window.location.hostname}:${MEDIAMTX_HLS_PORT}`
+    `${window.location.origin}/stream/hls`
 ).replace(/\/$/, "");
 const LIVE_STREAM_RTSP_BASE_URL = (
     BIRDMONITOR_CONFIG.liveStreamRtspBaseUrl ||
@@ -86,14 +85,6 @@ function getCurrentHlsUrl() {
     return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/index.m3u8`;
 }
 
-function getCurrentHlsPageUrl() {
-    if (!selectedStreamPathIsCustom && lastStreamData && lastStreamData.node_name === selectedStreamNodeName && lastStreamData.page_url) {
-        return lastStreamData.page_url;
-    }
-
-    return `${LIVE_STREAM_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}/`;
-}
-
 function getCurrentRtspUrl() {
     if (!selectedStreamPathIsCustom && lastStreamData && lastStreamData.node_name === selectedStreamNodeName && lastStreamData.rtsp_url) {
         return lastStreamData.rtsp_url;
@@ -153,13 +144,11 @@ function updateLiveStreamLabels(data = null) {
     const streamPath = normalizeStreamPath((data && data.stream_path) || selectedStreamPath);
     const hlsUrl = (data && data.hls_url) || getCurrentHlsUrl();
     const rtspUrl = (data && data.rtsp_url) || getCurrentRtspUrl();
-    const pageUrl = (data && data.page_url) || getCurrentHlsPageUrl();
 
     const title = document.getElementById('live-stream-title');
     const hlsLabel = document.getElementById('live-hls-url');
     const clientHlsLabel = document.getElementById('live-client-hls-url');
     const rtspLabel = document.getElementById('live-rtsp-url');
-    const mobilePlayerLink = document.getElementById('live-mobile-player-link');
     const pathInput = document.getElementById('live-stream-path-input');
     const nodeSelect = document.getElementById('live-node-select');
 
@@ -167,7 +156,6 @@ function updateLiveStreamLabels(data = null) {
     if (hlsLabel) hlsLabel.textContent = hlsUrl;
     if (clientHlsLabel) clientHlsLabel.textContent = hlsUrl;
     if (rtspLabel) rtspLabel.textContent = rtspUrl;
-    if (mobilePlayerLink) mobilePlayerLink.href = pageUrl;
     if (pathInput && pathInput.value !== streamPath) pathInput.value = streamPath;
     if (nodeSelect && nodeSelect.value !== selectedStreamNodeName) nodeSelect.value = selectedStreamNodeName;
 }
@@ -355,15 +343,6 @@ function renderLiveStreamView(container) {
                             <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
                                 <i class="bi bi-stop-circle me-2"></i>Desconectar este dispositivo
                             </button>
-                            <a
-                                id="live-mobile-player-link"
-                                class="btn btn-outline-success"
-                                href="${escapeHtml(getCurrentHlsPageUrl())}"
-                                target="_blank"
-                                rel="noopener"
-                            >
-                                <i class="bi bi-box-arrow-up-right me-2"></i>Reproductor móvil alternativo
-                            </a>
                             <button class="btn btn-outline-primary" onclick="copyLiveStreamUrl('rtsp')">
                                 <i class="bi bi-clipboard me-2"></i>Copiar URL para VLC
                             </button>
@@ -532,7 +511,10 @@ async function setLiveStreamEnabled(enabled) {
 
         const response = await fetch(STREAM_CONTROL_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-BirdMonitor-CSRF': '1'
+            },
             body: JSON.stringify({
                 node_name: selectedStreamNodeName,
                 stream_enabled: enabled,
@@ -703,7 +685,7 @@ async function initLiveStreamPlayer(autoplay = false) {
     const hlsUrl = getCurrentHlsUrl();
 
     setLiveStreamStatus('checking', 'Conectando...');
-    setLiveStreamMessage('Conectando con el flujo HLS de MediaMTX...');
+    setLiveStreamMessage('Conectando con el flujo HLS protegido...');
 
     const attachNativeHls = () => {
         audio.src = hlsUrl;
@@ -715,7 +697,7 @@ async function initLiveStreamPlayer(autoplay = false) {
         };
         audio.onerror = () => {
             setLiveStreamStatus('offline', 'Stream no disponible');
-            setLiveStreamMessage('El navegador no pudo abrir el HLS. Prueba el reproductor móvil alternativo.', true);
+            setLiveStreamMessage('El navegador no pudo abrir el HLS protegido. Recarga la sesión e inténtalo de nuevo.', true);
         };
 
         if (autoplay) {
@@ -776,7 +758,7 @@ async function initLiveStreamPlayer(autoplay = false) {
             }
 
             setLiveStreamStatus('offline', 'Stream no disponible');
-            setLiveStreamMessage('No se pudo cargar el HLS. Comprueba la red o abre el reproductor móvil alternativo.', true);
+            setLiveStreamMessage('No se pudo cargar el HLS protegido. Comprueba la red y la sesión.', true);
 
             if (hlsInstance) hlsInstance.destroy();
             hlsInstance = null;
@@ -792,7 +774,7 @@ async function initLiveStreamPlayer(autoplay = false) {
     }
 
     setLiveStreamStatus('warning', 'HLS no soportado');
-    setLiveStreamMessage('Este navegador no soporta HLS integrado. Usa el reproductor móvil alternativo.', true);
+    setLiveStreamMessage('Este navegador no soporta HLS integrado.', true);
 }
 
 function setLiveSpectrumState(text) {
@@ -1594,7 +1576,8 @@ async function patchDetectionReview(detectionId, payload) {
     const response = await fetch(`${DETECTION_REVIEW_BASE_URL}/${detectionId}/review`, {
         method: "PATCH",
         headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "X-BirdMonitor-CSRF": "1"
         },
         body: JSON.stringify(payload)
     });

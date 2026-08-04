@@ -18,7 +18,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from sqlalchemy.orm import Session, joinedload
 
-from . import database, models
+from ...core import database
+from ...domain import models
 
 
 router = APIRouter(prefix="/exports", tags=["exports"])

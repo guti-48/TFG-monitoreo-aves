@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from . import models
+from ...domain import models
 MIN_SUPPORT_TO_SUGGEST = 3
 MIN_SUPPORT_TO_AUTO_APPLY = 5
 CONFIDENCE_TOLERANCE = 0.05

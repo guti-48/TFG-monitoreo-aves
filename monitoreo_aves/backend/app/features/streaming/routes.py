@@ -2,21 +2,24 @@ import json
 import re
 from datetime import datetime, timezone
 from threading import Lock
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from .config import (
+from ...core.config import (
     CONFIGURED_STREAM_BASE_URL,
     CONFIGURED_STREAM_RTSP_BASE_URL,
     DEFAULT_STREAM_PATH,
     STREAM_CONTROL_FILE,
     STREAM_PATH_TEMPLATE,
 )
+from .security import get_stream_security_settings
 
 
 router = APIRouter()
 stream_lock = Lock()
+_TRANSIENT_STREAM_FIELDS = {"hls_url", "page_url", "rtsp_url"}
 
 
 class StreamControlUpdate(BaseModel):
@@ -41,6 +44,9 @@ def _normalize_stream_path(value: str | None) -> str:
     clean = (value or "").strip().strip("/")
     clean = re.sub(r"[^A-Za-z0-9_./-]+", "-", clean)
     clean = re.sub(r"/+", "/", clean).strip("/")
+    clean = "/".join(
+        part for part in clean.split("/") if part not in {"", ".", ".."}
+    )
     return clean or "birdmonitor-audio"
 
 
@@ -70,6 +76,12 @@ def _stream_path_for_node(node_name: str) -> str:
 
 
 def _stream_base_url(request: Request | None = None) -> str:
+    stream_security = get_stream_security_settings()
+    if stream_security.enabled:
+        if request is None:
+            return "http://127.0.0.1:8000/stream/hls"
+        return f"{str(request.base_url).rstrip('/')}/stream/hls"
+
     if CONFIGURED_STREAM_BASE_URL:
         return CONFIGURED_STREAM_BASE_URL.rstrip("/")
 
@@ -83,13 +95,44 @@ def _stream_base_url(request: Request | None = None) -> str:
 
 def _stream_rtsp_base_url(request: Request | None = None) -> str:
     if CONFIGURED_STREAM_RTSP_BASE_URL:
-        return CONFIGURED_STREAM_RTSP_BASE_URL.rstrip("/")
+        base_url = CONFIGURED_STREAM_RTSP_BASE_URL.rstrip("/")
+    else:
+        host = request.url.hostname if request is not None else "127.0.0.1"
+        base_url = f"rtsp://{host or '127.0.0.1'}:8554"
 
-    host = request.url.hostname if request is not None else "127.0.0.1"
-    return f"rtsp://{host or '127.0.0.1'}:8554"
+    stream_security = get_stream_security_settings()
+    role = getattr(
+        getattr(request, "state", None),
+        "security_role",
+        "",
+    )
+    if (
+        stream_security.enabled
+        and stream_security.configured
+        and role == "admin"
+    ):
+        parsed = urlsplit(base_url)
+        host = parsed.hostname or "127.0.0.1"
+        netloc = f"[{host}]" if ":" in host else host
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        user = quote(stream_security.reader_user, safe="")
+        password = quote(stream_security.reader_password, safe="")
+        return urlunsplit(
+            (
+                parsed.scheme or "rtsp",
+                f"{user}:{password}@{netloc}",
+                parsed.path.rstrip("/"),
+                "",
+                "",
+            )
+        ).rstrip("/")
+
+    return base_url
 
 
 def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
+    current = dict(current)
     base_url = _stream_base_url(request)
     rtsp_base_url = _stream_rtsp_base_url(request)
     node_name = current.get("node_name", "birdmonitor")
@@ -105,7 +148,7 @@ def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
 
 
 def _stream_default_state(node_name: str) -> dict:
-    return _apply_stream_urls({
+    return {
         "node_name": node_name,
         "stream_path": _stream_path_for_node(node_name),
         "stream_enabled": False,
@@ -113,7 +156,7 @@ def _stream_default_state(node_name: str) -> dict:
         "detail": "",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "last_status_at": None,
-    })
+    }
 
 
 def _load_stream_state() -> dict:
@@ -128,8 +171,16 @@ def _load_stream_state() -> dict:
 
 
 def _save_stream_state(state: dict) -> None:
+    state_to_store = {
+        node_name: {
+            key: value
+            for key, value in current.items()
+            if key not in _TRANSIENT_STREAM_FIELDS
+        }
+        for node_name, current in state.items()
+    }
     with open(STREAM_CONTROL_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+        json.dump(state_to_store, f, ensure_ascii=False, indent=2)
 
 
 @router.get("/stream/control")
@@ -144,9 +195,7 @@ def get_stream_control(request: Request, node_name: str = "birdmonitor"):
             state[node_name] = _stream_default_state(node_name)
             _save_stream_state(state)
 
-        state[node_name] = _apply_stream_urls(state[node_name], request)
-
-        return state[node_name]
+        return _apply_stream_urls(state[node_name], request)
 
 
 @router.post("/stream/control")
@@ -164,12 +213,10 @@ def set_stream_control(payload: StreamControlUpdate, request: Request):
         if payload.stream_path:
             current["stream_path"] = _normalize_stream_path(payload.stream_path)
         current["updated_at"] = datetime.now(timezone.utc).isoformat()
-        current = _apply_stream_urls(current, request)
-
         state[payload.node_name] = current
         _save_stream_state(state)
 
-        return current
+        return _apply_stream_urls(current, request)
 
 
 @router.post("/stream/status")
@@ -190,4 +237,4 @@ def set_stream_status(payload: StreamStatusUpdate):
         state[payload.node_name] = current
         _save_stream_state(state)
 
-        return current
+        return _apply_stream_urls(current)

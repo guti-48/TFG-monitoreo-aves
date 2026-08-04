@@ -5,13 +5,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_mediamtx_uses_one_second_fmp4_hls_segments():
-    config = (PROJECT_ROOT / "tools" / "mediamtx" / "mediamtx.yml").read_text(
-        encoding="utf-8"
-    )
+    config = (
+        PROJECT_ROOT
+        / "tools"
+        / "mediamtx"
+        / "mediamtx.secure.yml"
+    ).read_text(encoding="utf-8")
 
     assert "hlsAlwaysRemux: true" in config
     assert "hlsVariant: fmp4" in config
     assert "hlsSegmentDuration: 1s" in config
+    assert "hlsAddress: 127.0.0.1:8888" in config
+    assert "authMethod: http" in config
+    assert "rtspTransports: [tcp]" in config
+    assert "rtmp: false" in config
+    assert "webrtc: false" in config
+    assert "srt: false" in config
+    assert "moq: false" in config
 
 
 def test_embedded_player_limits_latency_and_recovers_live_edge():

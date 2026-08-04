@@ -3,7 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-STREAM_CONFIG="${MEDIAMTX_CONFIG:-$PROJECT_DIR/tools/mediamtx/mediamtx.yml}"
+STREAM_CONFIG_TEMPLATE="${MEDIAMTX_CONFIG:-$PROJECT_DIR/tools/mediamtx/mediamtx.secure.yml}"
+BACKEND_ENV="$PROJECT_DIR/backend/birdmonitor.env"
+RUNTIME_DIR="$HOME/Library/Application Support/BirdMonitor"
+STREAM_CONFIG="$RUNTIME_DIR/mediamtx.secure.runtime.yml"
 BACKEND_HOST="${BIRDMONITOR_BACKEND_HOST:-0.0.0.0}"
 BACKEND_PORT="${BIRDMONITOR_BACKEND_PORT:-8000}"
 
@@ -25,8 +28,36 @@ else
   exit 1
 fi
 
-if [[ ! -f "$STREAM_CONFIG" ]]; then
-  echo "No se ha encontrado mediamtx.yml. Define MEDIAMTX_CONFIG o colocalo en tools/mediamtx/mediamtx.yml."
+if [[ ! -f "$STREAM_CONFIG_TEMPLATE" ]]; then
+  echo "No se ha encontrado tools/mediamtx/mediamtx.secure.yml."
+  exit 1
+fi
+if [[ "$STREAM_CONFIG_TEMPLATE" != *"mediamtx.secure.yml" ]]; then
+  echo "BirdMonitor no arrancara con una configuracion MediaMTX no endurecida."
+  exit 1
+fi
+if [[ ! -f "$BACKEND_ENV" ]]; then
+  echo "Falta backend/birdmonitor.env."
+  echo "Ejecuta configure_security.py y configure_stream_security.py."
+  exit 1
+fi
+
+NETWORK_MODE="$(sed -n 's/^BIRDMONITOR_NETWORK_MODE=//p' "$BACKEND_ENV" | tail -n 1)"
+SERVER_HOST="$(sed -n 's/^BIRDMONITOR_SERVER_HOST=//p' "$BACKEND_ENV" | tail -n 1)"
+if [[ "$NETWORK_MODE" != "local" && "$NETWORK_MODE" != "tailscale" ]]; then
+  echo "Falta seleccionar el modo local o Tailscale."
+  exit 1
+fi
+if [[ ! "$SERVER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "BIRDMONITOR_SERVER_HOST debe ser una IPv4 valida."
+  exit 1
+fi
+mkdir -p "$RUNTIME_DIR"
+sed \
+  "s/^rtspAddress: :8554$/rtspAddress: ${SERVER_HOST}:8554/" \
+  "$STREAM_CONFIG_TEMPLATE" > "$STREAM_CONFIG"
+if ! grep -q "^rtspAddress: ${SERVER_HOST}:8554$" "$STREAM_CONFIG"; then
+  echo "No se pudo limitar RTSP a la IP del modo de red."
   exit 1
 fi
 STREAM_CONFIG_DIR="$(cd "$(dirname "$STREAM_CONFIG")" && pwd)"
@@ -49,7 +80,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Arrancando MediaMTX en puerto 8888..."
+echo "Arrancando MediaMTX: RTSP ${SERVER_HOST}:8554 y HLS interno 127.0.0.1:8888..."
 (cd "$STREAM_CONFIG_DIR" && exec "$MEDIAMTX_BIN" "$STREAM_CONFIG") &
 MEDIAMTX_PID=$!
 

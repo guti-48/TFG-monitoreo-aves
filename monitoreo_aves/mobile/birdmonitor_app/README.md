@@ -1,4 +1,12 @@
-# birdmonitor_app
+# birdmonitor_app — cliente legado
+
+El cliente oficial de BirdMonitor es el dashboard web responsive servido por
+FastAPI. Esta aplicación Flutter se conserva temporalmente como referencia,
+pero no recibe nuevas funciones ni debe utilizarse para despliegues nuevos.
+
+Centralizar la experiencia en el navegador evita mantener dos interfaces,
+reduce la superficie de ataque y permite aplicar autenticación, revisión,
+audio y exportaciones en un único cliente.
 
 A new Flutter project.
 

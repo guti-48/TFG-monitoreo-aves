@@ -14,7 +14,7 @@ PLIST_LABEL="com.birdmonitor.services"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_PATH="$PLIST_DIR/$PLIST_LABEL.plist"
 RUNTIME_DIR="$HOME/Library/Application Support/BirdMonitor"
-STREAM_CONFIG="${MEDIAMTX_CONFIG:-$PROJECT_DIR/tools/mediamtx/mediamtx.yml}"
+STREAM_CONFIG="${MEDIAMTX_CONFIG:-$PROJECT_DIR/tools/mediamtx/mediamtx.secure.yml}"
 LOCAL_MEDIAMTX="$PROJECT_DIR/tools/mediamtx/macos/mediamtx"
 
 wait_for_tcp_port() {
@@ -64,8 +64,39 @@ if [[ ! -f "$START_SCRIPT" ]]; then
 fi
 
 if [[ ! -f "$STREAM_CONFIG" ]]; then
-  echo "No se ha encontrado mediamtx.yml en $STREAM_CONFIG."
-  echo "Puedes definir MEDIAMTX_CONFIG=/ruta/a/mediamtx.yml antes de ejecutar el instalador."
+  echo "No se ha encontrado mediamtx.secure.yml en $STREAM_CONFIG."
+  exit 1
+fi
+
+if [[ "$STREAM_CONFIG" != *"mediamtx.secure.yml" ]]; then
+  echo "BirdMonitor no arrancara con una configuracion MediaMTX no endurecida."
+  exit 1
+fi
+
+BACKEND_ENV="$PROJECT_DIR/backend/birdmonitor.env"
+if [[ ! -f "$BACKEND_ENV" ]]; then
+  echo "Falta backend/birdmonitor.env."
+  echo "Ejecuta primero configure_security.py y configure_stream_security.py."
+  exit 1
+fi
+
+for required_key in \
+  BIRDMONITOR_STREAM_PUBLISH_PASSWORD_HASH \
+  BIRDMONITOR_STREAM_READER_PASSWORD \
+  BIRDMONITOR_STREAM_PROXY_PASSWORD \
+  BIRDMONITOR_NETWORK_MODE \
+  BIRDMONITOR_SERVER_HOST; do
+  if ! grep -q "^${required_key}=." "$BACKEND_ENV"; then
+    echo "Falta $required_key en backend/birdmonitor.env."
+    echo "Ejecuta python scripts/configure_stream_security.py."
+    exit 1
+  fi
+done
+
+NETWORK_MODE="$(sed -n 's/^BIRDMONITOR_NETWORK_MODE=//p' "$BACKEND_ENV" | tail -n 1)"
+SERVER_HOST="$(sed -n 's/^BIRDMONITOR_SERVER_HOST=//p' "$BACKEND_ENV" | tail -n 1)"
+if [[ "$NETWORK_MODE" != "local" && "$NETWORK_MODE" != "tailscale" ]]; then
+  echo "Ejecuta primero scripts/configure_network_mode.py."
   exit 1
 fi
 
@@ -126,8 +157,10 @@ wait_for_tcp_port "${BIRDMONITOR_BACKEND_PORT:-8000}" "Backend" 30 || true
 
 echo ""
 echo "Instalacion completada."
-echo "Backend:  http://127.0.0.1:8000"
-echo "MediaMTX: http://127.0.0.1:8888"
+echo "Modo de red: $NETWORK_MODE"
+echo "Backend:  http://$SERVER_HOST:8000"
+echo "MediaMTX HLS interno: http://127.0.0.1:8888"
+echo "HLS autenticado:     http://127.0.0.1:8000/stream/hls/..."
 echo "Logs:     $RUNTIME_DIR"
 echo ""
 echo "Para comprobar el estado:"

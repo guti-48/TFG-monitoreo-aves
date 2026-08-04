@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
-from . import learning, models
+from ...domain import models
+from ..learning import service as learning
 
 
 def serializar_review(review: models.DetectionReview | None) -> dict | None:

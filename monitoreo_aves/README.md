@@ -4,6 +4,15 @@ Este proyecto consiste en el diseño, desarrollo e implementación de un sistema
 
 El sistema utiliza nodos de computación en el borde (Edge Computing) basados en Raspberry Pi para procesar audio en tiempo real, implementando una arquitectura híbrida que permite el almacenamiento local de datos científicos (incluyendo análisis de contaminación acústica) y la contribución simultánea a redes de ciencia ciudadana (BirdWeather).
 
+La evolución de autenticación, privacidad y endurecimiento del sistema se
+documenta en [`docs/INFORME_SEGURIDAD.md`](docs/INFORME_SEGURIDAD.md).
+La organización interna del backend se describe en
+[`docs/ARQUITECTURA_CODIGO.md`](docs/ARQUITECTURA_CODIGO.md).
+La instalación segura se divide en dos perfiles:
+[`red local`](docs/INSTALACION_LOCAL.md) y
+[`Tailscale`](docs/INSTALACION_TAILSCALE.md). La política y las limitaciones
+de seguridad se recogen en [`SECURITY.md`](SECURITY.md).
+
 ## Guia de instalacion y configuracion
 
 El proyecto queda preparado para clonarse y ejecutarse con un servidor central en Windows o macOS. La Raspberry Pi actua como nodo Edge y debe apuntar a la IP real del servidor central, normalmente una IP LAN o una IP/hostname de Tailscale.
@@ -11,13 +20,15 @@ El proyecto queda preparado para clonarse y ejecutarse con un servidor central e
 ### Arquitectura de despliegue
 
 ```text
-Raspberry Pi / nodo Edge                  Servidor central                 Clientes
-┌────────────────────────┐               ┌────────────────────┐           ┌─────────────────────┐
-│ microfono → ALSA       │               │ FastAPI       :8000│──────────▶│ navegador / movil   │
-│   ├─ mainNode / BirdNET│── datos ─────▶│ base de datos      │           │ dashboard      :8000│
-│   └─ birdstream/FFmpeg │── RTSP ──────▶│ MediaMTX      :8554│── HLS ───▶│ escucha HLS    :8888│
-│ supervisor.py          │               │                  │ └── RTSP ──▶│ VLC             :8554│
-└────────────────────────┘               └────────────────────┘           └─────────────────────┘
+Raspberry Pi / nodo Edge              Servidor central                       Clientes
+┌────────────────────────┐           ┌─────────────────────────────┐         ┌────────────────────┐
+│ microfono → ALSA       │           │ FastAPI :8000               │────────▶│ navegador / móvil  │
+│ ├─ mainNode / BirdNET  │── datos ─▶│ ├─ API, archivos y sesión  │         │ dashboard :8000    │
+│ └─ FFmpeg autenticado  │── RTSP ──▶│ └─ proxy HLS autenticado   │────────▶│ escucha HLS        │
+│ supervisor.py          │           │ MediaMTX                    │         │ VLC RTSP con clave │
+└────────────────────────┘           │ ├─ RTSP :8554 autenticado   │         └────────────────────┘
+                                     │ └─ HLS 127.0.0.1:8888      │
+                                     └─────────────────────────────┘
 ```
 
 La Raspberry captura y analiza el microfono, y publica **una sola señal** RTSP.
@@ -28,11 +39,12 @@ la captura, BirdNET ni el proceso FFmpeg de la Raspberry.
 Reglas importantes de red:
 
 * `127.0.0.1` y `localhost` solo sirven desde la misma maquina.
-* El servidor escucha en `0.0.0.0`; normalmente no tienes que escribir su propia IP en el backend.
-* Desde la Raspberry, la app movil u otro ordenador, usa la IP LAN o Tailscale del servidor.
-* Si cambias el servidor de Windows a Mac, cambia la IP en la Raspberry y en la app movil, no en todos los archivos del backend.
+* El backend escucha en `0.0.0.0`, pero el middleware y el Firewall sólo aceptan el modo de red elegido.
+* Desde la Raspberry u otro ordenador usa exactamente la IP LAN o Tailscale configurada con `configure_network_mode.py`.
+* RTSP se liga a esa IP exacta; HLS sólo escucha en `127.0.0.1` y sale mediante el dashboard autenticado.
+* Si cambias el servidor o el modo de red, vuelve a ejecutar el configurador y el aplicador de red; no edites múltiples archivos a mano.
 * Varios clientes pueden abrir el mismo dashboard a la vez: Mac, Windows, movil o tablet solo necesitan entrar a `http://IP_DEL_SERVIDOR:8000`.
-* Para VLC se usa `rtsp://IP_DEL_SERVIDOR:8554/NOMBRE_DEL_STREAM`; nunca la IP de la Raspberry.
+* Para VLC se usa la URL RTSP con credenciales que muestra el dashboard tras iniciar sesión; nunca la IP de la Raspberry.
 
 ### Servidor central y clientes
 
@@ -49,19 +61,24 @@ Movil     -> http://IP_TAILSCALE_SERVIDOR:8000   # navegador, con Tailscale acti
 
 Si el servidor central es el Mac, Windows tambien puede entrar al dashboard del Mac. Si el servidor central es Windows, el Mac puede entrar al dashboard de Windows. Lo importante es que todos apunten al mismo backend si quieres ver la misma base de datos y controlar la misma Raspberry.
 
-No hace falta instalar la app móvil para escuchar. El dashboard web es responsive
-y constituye el cliente móvil principal. Al entrar desde la misma Wi-Fi se usa
-la IP LAN del servidor; desde otra red se usa su IP Tailscale y el móvil también
-debe tener Tailscale conectado.
+No hace falta instalar una app móvil. El dashboard web responsive constituye el
+cliente oficial tanto en ordenador como en móvil y concentra revisión, escucha,
+analítica y exportaciones. El antiguo cliente Flutter se conserva únicamente
+como referencia durante la transición y no se amplía con nuevas funciones.
+Al entrar desde la misma Wi-Fi se usa la IP LAN del servidor; desde otra red se
+usa su IP Tailscale y el móvil también debe tener Tailscale conectado.
 
 Para un stream llamado `birdmonitor-audio`, las direcciones son:
 
 ```text
 Dashboard y escucha móvil:  http://IP_DEL_SERVIDOR:8000
-Reproductor HLS alternativo: http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/
-Manifiesto HLS:              http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
-VLC / RTSP:                  rtsp://IP_DEL_SERVIDOR:8554/birdmonitor-audio
+Manifiesto HLS protegido:    http://IP_DEL_SERVIDOR:8000/stream/hls/birdmonitor-audio/index.m3u8
+VLC / RTSP:                  URL autenticada mostrada por el dashboard
 ```
+
+El puerto HLS 8888 no se abre a otros dispositivos: MediaMTX sólo lo escucha
+en `127.0.0.1` y FastAPI entrega los segmentos después de comprobar la sesión.
+RTSP exige credenciales diferentes para publicación y lectura.
 
 El botón **Desconectar este dispositivo** solo para el reproductor de ese
 navegador. **Detener emisión para todos**, situado dentro del control global,
@@ -115,6 +132,97 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Seguridad inicial obligatoria
+
+Antes de reiniciar el backend por primera vez, crea la cuenta administradora y
+el token exclusivo de la Raspberry:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_security.py
+```
+
+En macOS o Linux:
+
+```bash
+./venv/bin/python scripts/configure_security.py
+```
+
+El asistente solicita una contraseña de al menos 12 caracteres y muestra una
+sola vez `BIRDMONITOR_NODE_API_TOKEN`. Añade esa línea al archivo
+`hardware/raspberry_pi/birdmonitor.env` de la Raspberry antes de reiniciar el
+nodo. El servidor guarda únicamente hashes de contraseña y token dentro de
+`backend/birdmonitor.env`, archivo excluido de Git.
+
+Después, el navegador redirige a `/login`; todas las rutas del dashboard,
+audios, exportaciones y operaciones administrativas requieren una sesión. El
+token del nodo solo puede registrar el dispositivo, enviar detecciones y
+métricas, subir evidencias y comunicar el estado del stream.
+
+Elige de forma explícita cómo se conectarán los dispositivos. Para una red
+doméstica privada:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_network_mode.py `
+  --mode local `
+  --server-host IP_LAN_SERVIDOR
+```
+
+Para ubicaciones distintas:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_network_mode.py `
+  --mode tailscale `
+  --server-host IP_TAILSCALE_SERVIDOR
+```
+
+Después genera las identidades independientes del streaming:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_stream_security.py
+```
+
+El comando muestra una sola vez la contraseña que FFmpeg usará para publicar.
+En la Raspberry se instala sin escribirla en el historial, indicando el mismo
+modo y la misma IP:
+
+```bash
+sudo python3 scripts/raspberry_pi/configure_stream_publisher.py \
+  --network-mode local|tailscale \
+  --server-host IP_DEL_SERVIDOR
+```
+
+Por último, aplica MediaMTX, el enlace a la interfaz y las reglas de Firewall
+desde PowerShell como administrador:
+
+```powershell
+.\scripts\windows\apply_network_mode.ps1
+```
+
+El recorrido completo y las comprobaciones están en
+[`docs/INSTALACION.md`](docs/INSTALACION.md).
+
+Si el dashboard se publica con HTTPS, ejecuta el asistente con `--https` para
+marcar la cookie como exclusiva de conexiones cifradas:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_security.py --https
+```
+
+No abras el puerto 8000 en el router. Para acceso desde fuera de la red local,
+usa Tailscale o una VPN equivalente.
+
+Si una instalación anterior deja la tarea `BirdMonitor Backend` en estado
+`Queued`, reconstruye únicamente esa tarea desde PowerShell como administrador:
+
+```powershell
+.\scripts\windows\repair_backend_task.ps1
+```
+
+El reparador no modifica MediaMTX, la base de datos ni los audios. Elimina la
+instancia anterior antes de registrar el backend con privilegios limitados y
+evita acumular arranques simultáneos. También permite que el servidor funcione
+cuando Windows está usando batería, sin detenerlo al desconectar el cargador.
+
 ### 3. Colocar MediaMTX
 
 MediaMTX no debe subirse a Git como binario. Cada persona debe descargar el binario de su sistema y colocarlo en la ruta esperada:
@@ -123,13 +231,16 @@ MediaMTX no debe subirse a Git como binario. Cada persona debe descargar el bina
 monitoreo_aves/
 └── tools/
     └── mediamtx/
-        ├── mediamtx.yml
+        ├── mediamtx.secure.yml
         ├── mediamtx.exe              # Windows
         └── macos/
             └── mediamtx              # macOS darwin
 ```
 
-El archivo `tools/mediamtx/mediamtx.yml` sí forma parte de la configuracion del proyecto. Los binarios, logs y claves generadas quedan ignorados por `.gitignore`.
+El archivo `tools/mediamtx/mediamtx.secure.yml` sí forma parte de la
+configuración del proyecto. No contiene secretos: MediaMTX delega la
+autorización en el backend local. Los binarios, logs, credenciales y claves
+generadas quedan ignorados por `.gitignore`.
 
 Si macOS bloquea el binario descargado, se puede quitar la cuarentena localmente:
 
@@ -157,12 +268,11 @@ La IP que normalmente hay que cambiar es la del servidor central vista desde cad
 | Diagnostico del microfono | `BIRDMONITOR_MIC_MIN_RMS`, `BIRDMONITOR_MIC_MAX_CLIPPING_RATIO`, `BIRDMONITOR_MIC_MAX_DC_OFFSET`, `BIRDMONITOR_MIC_CLIPPING_LEVEL` | Los valores por defecto detectan senal baja, clipping y desplazamiento DC sin modificar el WAV |
 | Entorno acústico del mapa | `BIRDMONITOR_ACOUSTIC_REFERENCE_RADIUS_M` | `25` m por defecto, siempre rotulado como referencia no calibrada; usa `0` para ocultar el círculo |
 | BirdWeather | `BIRDWEATHER_TOKEN_FILE` | Ruta local del token, por ejemplo `/etc/birdmonitor/birdweather_token` |
-| Servicio de streaming de la Raspberry | Archivo o servicio `birdstream.service` que publique audio por RTSP hacia MediaMTX | Debe apuntar a `rtsp://IP_DEL_SERVIDOR:8554/PATH`, normalmente `birdmonitor-audio` |
-| Dashboard web | Normalmente no se edita: `frontend/js/dashboard.js` carga `/devices/` y permite seleccionar nodo y path MediaMTX desde la vista de directo | Si entras en `http://IP_SERVIDOR:8000`, usara `http://IP_SERVIDOR:8888` |
-| Dashboard con MediaMTX en otro host/puerto | `frontend/index.html`, antes de cargar `frontend/js/dashboard.js`, definiendo `window.BIRDMONITOR_CONFIG` | `liveStreamBaseUrl`, `liveStreamRtspBaseUrl`, `streamName`, `streamNodeName` |
-| Rutas HLS por nodo | `BIRDMONITOR_STREAM_PATH` o `BIRDMONITOR_STREAM_PATH_TEMPLATE`, leidas por `backend/app/config.py` | Ruta fija o plantilla, por ejemplo `{node_name}-audio` |
-| Backend si MediaMTX no esta en el mismo host | `BIRDMONITOR_STREAM_BASE_URL` | `http://IP_DEL_SERVIDOR:8888` |
-| RTSP si MediaMTX no esta en el mismo host | `BIRDMONITOR_STREAM_RTSP_BASE_URL` | `rtsp://IP_DEL_SERVIDOR:8554` |
+| Servicio de streaming de la Raspberry | `scripts/raspberry_pi/configure_stream_publisher.py` adapta `birdstream.service` | Publicación RTSP autenticada hacia `IP_DEL_SERVIDOR:8554`, normalmente con path `birdmonitor-audio` |
+| Dashboard web | Normalmente no se edita: `frontend/js/dashboard.js` selecciona nodo y path desde la vista de directo | HLS se consume por `/stream/hls/...` en el mismo puerto 8000 y exige sesión |
+| Rutas HLS por nodo | `BIRDMONITOR_STREAM_PATH` o `BIRDMONITOR_STREAM_PATH_TEMPLATE`, leídas por `backend/app/core/config.py` | Ruta fija o plantilla, por ejemplo `{node_name}-audio` |
+| HLS interno de MediaMTX | `BIRDMONITOR_MEDIAMTX_HLS_INTERNAL_URL` en `backend/birdmonitor.env` | `http://127.0.0.1:8888`; no se expone al navegador |
+| Base RTSP anunciada | `BIRDMONITOR_STREAM_RTSP_BASE_URL` | `rtsp://IP_DEL_SERVIDOR:8554`; el backend añade la credencial sólo para el administrador |
 | Origenes web externos | `BIRDMONITOR_CORS_ORIGINS` | Lista separada por comas |
 | Arranque del backend | `BIRDMONITOR_BACKEND_HOST`, `BIRDMONITOR_BACKEND_PORT` | `0.0.0.0`, `8000` |
 | App movil | Pantalla de conexion de la app | `http://IP_DEL_SERVIDOR:8000`; no usar `127.0.0.1` en un movil real |
@@ -190,12 +300,14 @@ birdmonitor-norte-audio
 birdmonitor-sur-audio
 ```
 
-La vista web carga los nodos registrados y permite seleccionar el nodo y el path de MediaMTX desde la pantalla de escucha en directo. Si quieres fijar un valor por defecto sin tocar `dashboard.js`, puedes definir antes de cargar el script:
+La vista web carga los nodos registrados y permite seleccionar el nodo y el
+path de MediaMTX desde la pantalla de escucha en directo. Si quieres fijar un
+valor por defecto sin tocar `dashboard.js`, puedes definir antes de cargar el
+script:
 
 ```html
 <script>
 window.BIRDMONITOR_CONFIG = {
-  liveStreamBaseUrl: "http://IP_DEL_SERVIDOR:8888",
   liveStreamRtspBaseUrl: "rtsp://IP_DEL_SERVIDOR:8554",
   streamName: "birdmonitor-norte-audio",
   streamNodeName: "birdmonitor-norte"
@@ -211,7 +323,9 @@ Requisitos:
 * Entorno virtual creado en `monitoreo_aves/venv`.
 * Dependencias instaladas con `pip install -r requirements.txt`.
 * `mediamtx.exe` disponible en `tools/mediamtx/`, en la raiz del proyecto o en `C:\`.
-* `tools/mediamtx/mediamtx.yml` disponible como configuracion versionada del proyecto.
+* `tools/mediamtx/mediamtx.secure.yml` disponible como configuración versionada.
+* `backend/birdmonitor.env` configurado mediante los asistentes de seguridad,
+  modo de red y streaming.
 
 Instalar y arrancar servicios:
 
@@ -222,13 +336,15 @@ powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\install_birdmonit
 El instalador:
 
 * Detecta la ruta del proyecto.
-* Busca `mediamtx.exe` y `mediamtx.yml`.
+* Busca `mediamtx.exe` y `mediamtx.secure.yml`.
 * Crea scripts internos en `%LOCALAPPDATA%\BirdMonitor`.
 * Crea las tareas programadas `BirdMonitor MediaMTX` y `BirdMonitor Backend`.
 * Sustituye automaticamente tareas anteriores con esos mismos nombres; no es necesario borrarlas a mano.
-* Programa ambas tareas para arrancar con Windows, aunque todavia no se haya abierto sesion.
+* Programa ambas tareas para arrancar al iniciar sesión el usuario que realizó
+  la instalación, sin guardar su contraseña de Windows.
 * Reintenta el arranque si uno de los procesos termina con error.
-* Arranca MediaMTX en `8888` y FastAPI en `8000`.
+* Arranca FastAPI en `8000`, RTSP autenticado en `8554` y HLS interno en
+  `127.0.0.1:8888`.
 
 Hay que ejecutar el instalador una vez en cada ordenador servidor y volver a ejecutarlo si cambia la ruta del repositorio, del entorno virtual o de MediaMTX. Actualizar el codigo con Git no registra por si solo las tareas de Windows.
 
@@ -238,7 +354,14 @@ Comprobar estado:
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
 ```
 
-Aplicar cambios del backend o de `mediamtx.yml` sin detener procesos ajenos:
+Aplicar por primera vez o cambiar el perfil de red y streaming:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\apply_network_mode.ps1
+```
+
+Aplicar cambios posteriores del backend o de MediaMTX sin detener procesos
+ajenos:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\restart_birdmonitor_streaming.ps1
@@ -263,7 +386,7 @@ Requisitos:
 * Repositorio fuera de `Desktop`, `Documents` y `Downloads`, por ejemplo en `~/Projects`.
 * Entorno virtual creado en `monitoreo_aves/venv`.
 * Dependencias instaladas con `pip install -r requirements.txt`.
-* `tools/mediamtx/macos/mediamtx` y `tools/mediamtx/mediamtx.yml` disponibles.
+* `tools/mediamtx/macos/mediamtx` y `tools/mediamtx/mediamtx.secure.yml` disponibles.
 
 Instalar y arrancar servicios:
 
@@ -332,14 +455,12 @@ http://IP_DEL_SERVIDOR:8000
 Stream HLS esperado:
 
 ```text
-http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
+http://IP_DEL_SERVIDOR:8000/stream/hls/birdmonitor-audio/index.m3u8
 ```
 
-En la app movil, introduce la URL del backend en la pantalla de conexion. Ejemplo:
-
-```text
-http://100.80.10.25:8000
-```
+El navegador mostrará `/login` antes de cargar el dashboard. No es necesario
+instalar un cliente adicional. Abrir directamente el manifiesto sin la cookie
+de sesión devuelve `401`.
 
 ### 9. Raspberry Pi y varios nodos
 
@@ -381,6 +502,7 @@ Ejemplo de variables para `birdmonitor.env`:
 
 ```bash
 BIRDMONITOR_SERVER_URL=http://IP_DEL_SERVIDOR:8000
+BIRDMONITOR_NODE_API_TOKEN=TOKEN_GENERADO_EN_EL_SERVIDOR
 BIRDMONITOR_NODE_NAME=birdmonitor-01
 BIRDMONITOR_NODE_LOCATION=Sevilla
 BIRDMONITOR_NODE_LAT=37.3891
@@ -393,6 +515,19 @@ BIRDMONITOR_STREAM_HEALTH_TIMEOUT=5
 ```
 
 El supervisor no se limita al estado de systemd: tambien comprueba que el manifiesto HLS responda. Si `birdstream.service` figura activo pero deja de publicar despues de reiniciar el servidor central o perder la red, lo reinicia tras el numero de fallos consecutivos configurado.
+
+Para adaptar una unidad `birdstream.service` ya existente a la publicación
+autenticada, ejecuta el instalador y pega la contraseña mostrada por
+`configure_stream_security.py` cuando la solicite:
+
+```bash
+sudo python3 scripts/raspberry_pi/configure_stream_publisher.py \
+  --network-mode local|tailscale \
+  --server-host IP_DEL_SERVIDOR
+```
+
+El secreto queda fuera del repositorio y con permisos `600`. El instalador crea
+una copia de seguridad y restaura la unidad anterior si el reinicio falla.
 
 Comandos utiles con `systemd`:
 
@@ -411,8 +546,7 @@ journalctl -u birdstream.service -f
 Windows:
 
 ```powershell
-netstat -ano | findstr :8000
-netstat -ano | findstr :8888
+.\scripts\windows\check_birdmonitor_windows.ps1
 ```
 
 macOS:
@@ -425,14 +559,13 @@ lsof -nP -iTCP:8888 -sTCP:LISTEN
 Backend:
 
 ```text
-http://127.0.0.1:8000/devices/
+http://127.0.0.1:8000/health
 ```
 
-HLS:
-
-```text
-http://127.0.0.1:8888/birdmonitor-audio/index.m3u8
-```
+La comprobación debe confirmar que 8000 responde, que 8554 está disponible y
+que 8888 escucha sólo en loopback. El manifiesto HLS se valida internamente con
+la credencial del proxy; desde un cliente se prueba iniciando sesión y abriendo
+la vista **Escucha en directo**.
 
 ## Estado del Proyecto
 
@@ -540,12 +673,12 @@ ssh pi@NOMBRE_RASPBERRY
 monitoreo_aves/
 ├── backend/                        # Módulo Servidor
 │   ├── app/
-│   │   ├── main.py                 # Definición de API REST y endpoints (Uploads/JSON)
-│   │   ├── models.py               # Modelos de BBDD (SQLAlchemy)
-│   │   ├── schemas.py              # Esquemas de validación (Pydantic)
-│   │   └── database.py             # Configuración SQL
+│   │   ├── main.py                 # Composición y arranque de FastAPI
+│   │   ├── core/                   # Configuración, base de datos y seguridad
+│   │   ├── domain/                 # Modelos SQLAlchemy y esquemas Pydantic
+│   │   └── features/               # Routers y servicios por funcionalidad
 │   ├── analisisBiodiversidad.py    # Motor matemático (Bioacústica + Ecología)
-│   └── birdmonitor.db              # Base de datos local (Autogenerado)
+│   └── birdmonitor.env.example     # Plantilla de secretos del servidor
 │
 ├── frontend/                       # Módulo de Interfaz Web
 │   ├── css/                        # Hojas de estilo y UI oscura
@@ -560,5 +693,8 @@ monitoreo_aves/
 │   ├── analyzer.py                 # Abstracción para el modelo IA
 │   └── mainNode.py                 # Orquestador del nodo y gestor Offline
 │
+├── scripts/                        # Instalación, reparación y configuración
+├── tools/mediamtx/                 # Configuración endurecida de MediaMTX
+├── docs/                           # Memoria técnica, seguridad y arquitectura
 └── requirements.txt                # Dependencias (FastAPI, scikit-maad...)
 ```

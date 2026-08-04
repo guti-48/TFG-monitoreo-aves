@@ -3,9 +3,36 @@ import sys
 from pathlib import Path
 
 
-APP_DIR = Path(__file__).resolve().parent
+APP_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = APP_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
+BACKEND_ENV_FILE = BACKEND_DIR / "birdmonitor.env"
+
+
+def load_local_env(path: Path) -> None:
+    """Carga variables locales sin sobrescribir el entorno del proceso."""
+    if not path.is_file():
+        return
+
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key:
+                os.environ.setdefault(key, value)
+    except OSError as exc:
+        print(f"No se pudo cargar {path}: {exc}")
+
+
+load_local_env(BACKEND_ENV_FILE)
 
 for path in (PROJECT_ROOT, BACKEND_DIR):
     path_str = str(path)

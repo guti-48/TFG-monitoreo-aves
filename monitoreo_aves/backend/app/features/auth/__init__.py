@@ -1,0 +1,1 @@
+"""Inicio y cierre de sesión de administración."""

@@ -6,6 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+os.environ["BIRDMONITOR_SECURITY_MODE"] = "disabled"
+os.environ["BIRDMONITOR_NETWORK_MODE"] = "disabled"
+# Las pruebas no deben heredar direcciones de una instalacion real desde
+# backend/birdmonitor.env. Las URL se construyen con el host del TestClient.
+os.environ["BIRDMONITOR_STREAM_BASE_URL"] = ""
+os.environ["BIRDMONITOR_STREAM_RTSP_BASE_URL"] = ""
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HARDWARE_DIR = PROJECT_ROOT / "hardware" / "raspberry_pi"
 
@@ -25,7 +32,8 @@ def test_db_path(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def client(test_db_path):
-    from backend.app import database, models
+    from backend.app.core import database
+    from backend.app.domain import models
     from backend import analisisBiodiversidad
     from backend.app.main import app, asegurar_esquema_runtime
 

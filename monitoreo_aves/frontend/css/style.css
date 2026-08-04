@@ -165,6 +165,17 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.sidebar-footer form {
+  margin: 0;
+}
+
+.sidebar-logout {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
 .sidebar-version {
   padding: 8px 11px 0;
   color: #aab7a7;

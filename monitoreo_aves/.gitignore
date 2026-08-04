@@ -23,6 +23,7 @@ hardware/raspberry_pi/records/
 hardware/raspberry_pi/spectrograms/
 hardware/raspberry_pi/backup_data.csv
 hardware/raspberry_pi/birdmonitor.env
+backend/birdmonitor.env
 hardware/raspberry_pi/birdweather_token
 hardware/raspberry_pi/birdweather_token.txt
 tools/mediamtx/macos/mediamtx
@@ -32,5 +33,3 @@ tools/mediamtx/auto.crt
 tools/mediamtx/auto.key
 tools/mediamtx/mediamtx.log
 tools/mediamtx/*.tar.gz
-*.crt
-*.key

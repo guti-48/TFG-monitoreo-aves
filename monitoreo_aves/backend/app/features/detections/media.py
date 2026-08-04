@@ -6,7 +6,7 @@ import numpy as np
 import soundfile as sf
 from scipy import signal
 
-from .config import SERVER_AUDIO_DIR, SPECTOGRAM_DIR
+from ...core.config import SERVER_AUDIO_DIR, SPECTOGRAM_DIR
 
 
 REVIEW_WINDOW_SECONDS = 20.0

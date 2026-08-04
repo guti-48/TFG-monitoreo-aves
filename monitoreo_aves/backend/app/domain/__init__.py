@@ -1,0 +1,1 @@
+"""Modelos persistentes y contratos de datos de BirdMonitor."""

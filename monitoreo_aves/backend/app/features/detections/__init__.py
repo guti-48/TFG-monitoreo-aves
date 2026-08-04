@@ -1,0 +1,1 @@
+"""Detecciones, revisión humana y medios de comprobación."""

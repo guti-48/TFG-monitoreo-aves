@@ -35,6 +35,14 @@ cargar_env_local()
 
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
 SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
+NODE_API_TOKEN = os.getenv("BIRDMONITOR_NODE_API_TOKEN", "").strip()
+
+
+def getBackendAuthHeaders():
+    """Cabecera Bearer del nodo; vacia durante una migracion sin token."""
+    if not NODE_API_TOKEN:
+        return {}
+    return {"Authorization": f"Bearer {NODE_API_TOKEN}"}
 
 NODE_LOCATION = os.getenv("BIRDMONITOR_NODE_LOCATION", "").strip()
 NODE_LAT = os.getenv("BIRDMONITOR_NODE_LAT", "").strip()

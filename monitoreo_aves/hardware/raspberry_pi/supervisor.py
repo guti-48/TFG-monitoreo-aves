@@ -37,6 +37,7 @@ cargarEnvLocal(LOCAL_ENV_FILE)
 
 NODE_NAME = os.getenv("BIRDMONITOR_NODE_NAME", "birdmonitor")
 SERVER_URL = os.getenv("BIRDMONITOR_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
+NODE_API_TOKEN = os.getenv("BIRDMONITOR_NODE_API_TOKEN", "").strip()
 
 SERVICE_NAME = os.getenv("BIRDMONITOR_STREAM_SERVICE", "birdstream.service")
 
@@ -54,6 +55,12 @@ HLS_HEALTH_TIMEOUT = leer_entero_entorno("BIRDMONITOR_STREAM_HEALTH_TIMEOUT", 5)
 
 CONTROL_URL = f"{SERVER_URL}/stream/control"
 STATUS_URL = f"{SERVER_URL}/stream/status"
+
+
+def backend_auth_headers() -> dict[str, str]:
+    if not NODE_API_TOKEN:
+        return {}
+    return {"Authorization": f"Bearer {NODE_API_TOKEN}"}
 
 
 def log(msg: str) -> None:
@@ -98,6 +105,7 @@ def get_control_state():
         response = requests.get(
             CONTROL_URL,
             params={"node_name": NODE_NAME},
+            headers=backend_auth_headers(),
             timeout=10
         )
         response.raise_for_status()
@@ -113,7 +121,11 @@ def get_hls_health(hls_url: str) -> tuple[bool, str]:
         return False, "el backend no proporciono una URL HLS"
 
     try:
-        response = requests.get(hls_url, timeout=HLS_HEALTH_TIMEOUT)
+        response = requests.get(
+            hls_url,
+            headers=backend_auth_headers(),
+            timeout=HLS_HEALTH_TIMEOUT,
+        )
 
         if response.status_code != 200:
             return False, f"HLS respondio HTTP {response.status_code}"
@@ -135,6 +147,7 @@ def report_status(running: bool, detail: str = "") -> None:
                 "running": running,
                 "detail": detail
             },
+            headers=backend_auth_headers(),
             timeout=10
         )
     except Exception as e:

@@ -1,0 +1,52 @@
+# Configuracion endurecida de MediaMTX para BirdMonitor.
+# Las credenciales se validan en el backend local; este archivo no contiene
+# secretos y puede permanecer versionado.
+
+logLevel: info
+logDestinations: [stdout]
+logStructured: false
+
+authMethod: http
+authHTTPAddress: http://127.0.0.1:8000/internal/mediamtx/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+api: false
+metrics: false
+pprof: false
+playback: false
+
+# La Raspberry publica por RTSP autenticado. Solo se habilita TCP para reducir
+# puertos y simplificar el despliegue a traves de Tailscale.
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: :8554
+rtspAuthMethods: [basic]
+
+# Protocolos no utilizados por BirdMonitor.
+rtmp: false
+webrtc: false
+srt: false
+moq: false
+
+# HLS nunca queda expuesto a la LAN o al tailnet. FastAPI lo consume por
+# loopback y lo entrega al navegador a traves de /stream/hls/.
+hls: true
+hlsAddress: 127.0.0.1:8888
+hlsAllowOrigins: []
+hlsAlwaysRemux: true
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50M
+hlsMuxerCloseAfter: 60s
+
+pathDefaults:
+  source: publisher
+  overridePublisher: false
+
+paths:
+  all_others:

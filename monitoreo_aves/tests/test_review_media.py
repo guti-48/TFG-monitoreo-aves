@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from backend.app import review_media
+from backend.app.features.detections import media as review_media
 
 
 def _write_test_wav(path, duration_seconds=30, sample_rate=8000):

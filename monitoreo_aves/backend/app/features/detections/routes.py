@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 
-from . import database, learning, models, review_media, schemas
+from ...core import database
+from ...domain import models, schemas
+from ..learning import service as learning
+from . import media as review_media
 from .serializers import serializar_deteccion
 
 

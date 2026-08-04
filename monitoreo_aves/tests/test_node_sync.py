@@ -30,13 +30,23 @@ def test_deteccion_envia_tiempos_al_backend(monkeypatch):
     class SuccessfulResponse:
         status_code = 200
 
-    def fake_post(url, json, timeout):
-        captured.update(url=url, payload=json, timeout=timeout)
+    def fake_post(url, json, headers, timeout):
+        captured.update(
+            url=url,
+            payload=json,
+            headers=headers,
+            timeout=timeout,
+        )
         return SuccessfulResponse()
 
     monkeypatch.setattr(node_sync.requests, "post", fake_post)
     monkeypatch.setattr(node_sync, "subirArchivos", lambda filename: True)
     monkeypatch.setattr(node_sync, "sincronizarRespaldo", lambda: None)
+    monkeypatch.setattr(
+        node_sync,
+        "getBackendAuthHeaders",
+        lambda: {"Authorization": "Bearer token-test"},
+    )
 
     node_sync.enviarDatosServidor(
         species="Barn Swallow",
@@ -51,6 +61,7 @@ def test_deteccion_envia_tiempos_al_backend(monkeypatch):
     assert captured["payload"]["filename"] == "record_2026-07-22_14-30-00.wav"
     assert captured["payload"]["audio_start_seconds"] == 16.5
     assert captured["payload"]["audio_end_seconds"] == 19.5
+    assert captured["headers"]["Authorization"] == "Bearer token-test"
 
 
 def test_metricas_envian_diagnostico_aunque_fallen_indices(monkeypatch):
@@ -59,8 +70,13 @@ def test_metricas_envian_diagnostico_aunque_fallen_indices(monkeypatch):
     class SuccessfulResponse:
         status_code = 200
 
-    def fake_post(url, json, timeout):
-        captured.update(url=url, payload=json, timeout=timeout)
+    def fake_post(url, json, headers, timeout):
+        captured.update(
+            url=url,
+            payload=json,
+            headers=headers,
+            timeout=timeout,
+        )
         return SuccessfulResponse()
 
     monkeypatch.setattr(node_sync.requests, "post", fake_post)

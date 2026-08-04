@@ -1,0 +1,1 @@
+"""Funcionalidades HTTP organizadas por dominio de negocio."""

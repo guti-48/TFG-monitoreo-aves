@@ -7,6 +7,22 @@ $MediaMtxTaskName = "BirdMonitor MediaMTX"
 $BackendPort = 8000
 $HlsPort = 8888
 $StreamPath = "birdmonitor-audio"
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
+$BackendEnv = Join-Path $ProjectDir "backend\birdmonitor.env"
+$EnvValues = @{}
+foreach ($RawLine in Get-Content -LiteralPath $BackendEnv) {
+    if ($RawLine -match "^\s*([^#][^=]*)=(.*)$") {
+        $EnvValues[$Matches[1].Trim()] = $Matches[2].Trim()
+    }
+}
+$ProxyCredentials = (
+    $EnvValues["BIRDMONITOR_STREAM_PROXY_USER"] + ":" +
+    $EnvValues["BIRDMONITOR_STREAM_PROXY_PASSWORD"]
+)
+$ProxyAuthorization = "Basic " + [Convert]::ToBase64String(
+    [Text.Encoding]::ASCII.GetBytes($ProxyCredentials)
+)
 
 
 function Get-ListenerProcessIds {
@@ -49,12 +65,17 @@ function Stop-MediaMtxListener {
 function Wait-HttpEndpoint {
     param(
         [string]$Url,
-        [int]$Attempts = 30
+        [int]$Attempts = 30,
+        [hashtable]$Headers = @{}
     )
 
     for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
         try {
-            $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3
+            $response = Invoke-WebRequest `
+                -Uri $Url `
+                -Headers $Headers `
+                -UseBasicParsing `
+                -TimeoutSec 3
             if ($response.StatusCode -eq 200) {
                 return $true
             }
@@ -85,10 +106,13 @@ Write-Host "Arrancando MediaMTX y FastAPI con la configuracion actualizada..." -
 Start-ScheduledTask -TaskName $MediaMtxTaskName
 Start-ScheduledTask -TaskName $BackendTaskName
 
-$backendUrl = "http://127.0.0.1:$BackendPort/stream/control?node_name=birdmonitor"
+$backendUrl = "http://127.0.0.1:$BackendPort/health"
 $hlsUrl = "http://127.0.0.1:$HlsPort/$StreamPath/index.m3u8"
 $backendReady = Wait-HttpEndpoint -Url $backendUrl
-$hlsReady = Wait-HttpEndpoint -Url $hlsUrl -Attempts 45
+$hlsReady = Wait-HttpEndpoint `
+    -Url $hlsUrl `
+    -Attempts 45 `
+    -Headers @{ Authorization = $ProxyAuthorization }
 
 if (-not $backendReady) {
     throw "FastAPI no ha vuelto a responder en $backendUrl."
@@ -98,11 +122,9 @@ if (-not $hlsReady) {
     throw "FastAPI responde, pero HLS no esta disponible en $hlsUrl. Revisa birdstream.service en la Raspberry."
 }
 
-$streamState = Invoke-RestMethod -Uri $backendUrl -TimeoutSec 5
-
 Write-Host ""
 Write-Host "BirdMonitor esta operativo." -ForegroundColor Green
-Write-Host "HLS:  $($streamState.hls_url)"
-Write-Host "RTSP: $($streamState.rtsp_url)"
+Write-Host "HLS dashboard: /stream/hls/$StreamPath/index.m3u8"
+Write-Host "RTSP: protegido con credenciales de lectura."
 Write-Host ""
 Write-Host "Desde el movil abre el dashboard con la IP LAN o Tailscale del servidor." -ForegroundColor Green

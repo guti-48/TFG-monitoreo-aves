@@ -17,6 +17,7 @@ from node_config import (
     RETENTION_DAYS,
     SAMPLE_RATE,
     SERVER_URL,
+    getBackendAuthHeaders,
 )
 
 
@@ -43,7 +44,12 @@ def subirArchivos(filename_base: str) -> bool:
             print(" -> No hay archivos locales para subir.")
             return True
 
-        r = requests.post(url_archivos, files=archivos, timeout=60)
+        r = requests.post(
+            url_archivos,
+            files=archivos,
+            headers=getBackendAuthHeaders(),
+            timeout=60,
+        )
         if r.status_code == 200:
             print(" -> Archivos subidos correctamente.")
             return True
@@ -238,7 +244,12 @@ def enviarDatosServidor(
         datos["audio_end_seconds"] = float(audio_end_seconds)
 
     try:
-        r = requests.post(f"{SERVER_URL}/detections/", json=datos, timeout=60)
+        r = requests.post(
+            f"{SERVER_URL}/detections/",
+            json=datos,
+            headers=getBackendAuthHeaders(),
+            timeout=60,
+        )
         if r.status_code == 200:
             if subirArchivos(filename):
                 sincronizarRespaldo()
@@ -322,7 +333,12 @@ def enviarMetricasAcusticas(
     }
 
     try:
-        r = requests.post(f"{SERVER_URL}/audio-metrics/", json=datos, timeout=60)
+        r = requests.post(
+            f"{SERVER_URL}/audio-metrics/",
+            json=datos,
+            headers=getBackendAuthHeaders(),
+            timeout=60,
+        )
         version_confirmada = True
         if datos["acoustic_metrics_version"] == "maad-v2":
             try:
@@ -466,11 +482,21 @@ def sincronizarRespaldo():
                         datos_json["audio_end_seconds"] = float(
                             payload["audio_end_seconds"]
                         )
-                    response = requests.post(f"{SERVER_URL}/detections/", json=datos_json, timeout=60)
+                    response = requests.post(
+                        f"{SERVER_URL}/detections/",
+                        json=datos_json,
+                        headers=getBackendAuthHeaders(),
+                        timeout=60,
+                    )
                     ok = response.status_code == 200 and subirArchivos(filename_base)
 
                 elif event_type == "audio_metric":
-                    response = requests.post(f"{SERVER_URL}/audio-metrics/", json=payload, timeout=60)
+                    response = requests.post(
+                        f"{SERVER_URL}/audio-metrics/",
+                        json=payload,
+                        headers=getBackendAuthHeaders(),
+                        timeout=60,
+                    )
                     ok = response.status_code == 200
                     if (
                         ok

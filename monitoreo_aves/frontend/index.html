@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="assets/birdmonitor-ostrero.png">
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=1026">
+    <link rel="stylesheet" href="css/style.css?v=1027">
 </head>
 
 <body>
@@ -54,10 +54,12 @@
             </nav>
 
             <div class="sidebar-footer">
-                <a href="#" class="nav-link">
-                    <i class="bi bi-gear"></i>
-                    <span>Ajustes</span>
-                </a>
+                <form action="/auth/logout" method="post">
+                    <button type="submit" class="nav-link sidebar-logout">
+                        <i class="bi bi-box-arrow-left"></i>
+                        <span>Cerrar sesión</span>
+                    </button>
+                </form>
                 <div class="sidebar-version">v2.1 · Sevilla, ES</div>
             </div>
         </aside>
@@ -85,6 +87,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"></script>
-    <script src="js/dashboard.js?v=1034"></script>
+    <script src="js/dashboard.js?v=1036"></script>
 </body>
 </html>

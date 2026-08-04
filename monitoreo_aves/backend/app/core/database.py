@@ -1,12 +1,11 @@
 import os
+
+from .config import APP_DIR
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 #Aqui creamos el motor de la base de datos
-BACKEND_DIR = os.path.join(BASE_DIR)
-DB_PATH = os.getenv("BIRDMONITOR_DB_PATH", os.path.join(BACKEND_DIR, "birdmonitor.db"))
+DB_PATH = os.getenv("BIRDMONITOR_DB_PATH", str(APP_DIR / "birdmonitor.db"))
 
 SQALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 

@@ -24,6 +24,7 @@ from node_config import (
     UMBRAL_HUMANOS,
     UMBRAL_MOTORES,
     UMBRAL_RUIDO_ALTO,
+    getBackendAuthHeaders,
 )
 from birdweather_client import enviarDatosBirdWeather
 from node_location import obtenerUbicacionNodo
@@ -91,6 +92,7 @@ if __name__ == "__main__":
                     "location_source": ubicacion_nodo.get("source", "unknown"),
                     "location_accuracy_m": ubicacion_nodo.get("accuracy_m"),
                 },
+                headers=getBackendAuthHeaders(),
                 timeout=10,
             )
         except:
