@@ -27,6 +27,7 @@ NODE_PERMISSIONS = {
     ("POST", "/detections/"),
     ("POST", "/audio-metrics/"),
     ("POST", "/upload/"),
+    ("POST", "/node/deployments/activate"),
     ("GET", "/stream/control"),
     ("POST", "/stream/status"),
 }

@@ -22,10 +22,9 @@ def _radio_referencia_m():
     return round(max(0.0, min(value, 200.0)), 1)
 
 
-def conectar_db():
-    '''Nos conectaremos a la base de datos y descargaremos las detecciones de esta'''
+def conectar_db(site_id=None, deployment_id=None, device_id=None):
+    """Carga detecciones con su sitio y despliegue sin mezclar campañas."""
     conexion = sqlite3.connect(DB_PATH)
-    # Leemos las detecciones y unimos con el nombre del dispositivo
     query = """
     SELECT
         d.timestamp,
@@ -41,14 +40,33 @@ def conectar_db():
         d.confidence,
         dev.id AS device_id,
         dev.name AS device_name,
-        dev.location AS zona,
-        dev.lat,
-        dev.lon
+        s.id AS site_id,
+        s.code AS site_code,
+        s.name AS site_name,
+        s.name AS zona,
+        s.lat,
+        s.lon,
+        p.id AS deployment_id,
+        p.public_id AS deployment_public_id
     FROM detections d
     JOIN devices dev ON d.device_id = dev.id
+    JOIN deployments p ON d.deployment_id = p.id
+    JOIN sites s ON p.site_id = s.id
     LEFT JOIN detection_reviews r ON r.detection_id = d.id
+    WHERE 1 = 1
     """
-    res = pd.read_sql_query(query, conexion)
+    params = []
+    if site_id is not None:
+        query += " AND s.id = ?"
+        params.append(int(site_id))
+    if deployment_id is not None:
+        query += " AND p.id = ?"
+        params.append(int(deployment_id))
+    if device_id is not None:
+        query += " AND dev.id = ?"
+        params.append(int(device_id))
+
+    res = pd.read_sql_query(query, conexion, params=params)
     conexion.close()
     return res
 
@@ -142,7 +160,11 @@ def _metricas_no_disponibles(legacy_samples=0):
     }
 
 
-def calcular_indices_acusticos_desde_db(device_id):
+def calcular_indices_acusticos_desde_db(
+    device_id,
+    site_id=None,
+    deployment_id=None,
+):
     """
     Calcula las últimas 100 medias del mismo nodo y método.
 
@@ -152,17 +174,28 @@ def calcular_indices_acusticos_desde_db(device_id):
     """
     try:
         with sqlite3.connect(DB_PATH) as conexion:
+            filters = ["am.device_id = ?"]
+            params = [int(device_id)]
+            if site_id is not None:
+                filters.append("p.site_id = ?")
+                params.append(int(site_id))
+            if deployment_id is not None:
+                filters.append("am.deployment_id = ?")
+                params.append(int(deployment_id))
+            where_sql = " AND ".join(filters)
+
             legacy_samples = conexion.execute(
-                """
+                f"""
                 SELECT COUNT(*)
-                FROM audio_metrics
-                WHERE device_id = ?
-                  AND COALESCE(acoustic_metrics_version, 'legacy-v1') != ?
+                FROM audio_metrics am
+                JOIN deployments p ON am.deployment_id = p.id
+                WHERE {where_sql}
+                  AND COALESCE(am.acoustic_metrics_version, 'legacy-v1') != ?
                 """,
-                (int(device_id), ACOUSTIC_METRICS_VERSION),
+                (*params, ACOUSTIC_METRICS_VERSION),
             ).fetchone()[0]
             df = pd.read_sql_query(
-                """
+                f"""
                 SELECT
                     am.timestamp,
                     am.duration,
@@ -176,13 +209,14 @@ def calcular_indices_acusticos_desde_db(device_id):
                     am.hf,
                     am.h
                 FROM audio_metrics am
-                WHERE am.device_id = ?
+                JOIN deployments p ON am.deployment_id = p.id
+                WHERE {where_sql}
                   AND am.acoustic_metrics_version = ?
                 ORDER BY am.timestamp DESC
                 LIMIT 100
                 """,
                 conexion,
-                params=(int(device_id), ACOUSTIC_METRICS_VERSION),
+                params=(*params, ACOUSTIC_METRICS_VERSION),
             )
     except Exception as e:
         print(f"No se pudieron leer métricas acústicas desde la base de datos: {e}")
@@ -219,19 +253,36 @@ def calcular_indices_acusticos_desde_db(device_id):
     }
 
 
-def calcular_indices_acusticos(device_id):
-    return calcular_indices_acusticos_desde_db(device_id)
+def calcular_indices_acusticos(device_id, site_id=None, deployment_id=None):
+    return calcular_indices_acusticos_desde_db(
+        device_id,
+        site_id=site_id,
+        deployment_id=deployment_id,
+    )
 
 
-def obtener_reporte_biodiversidad():
+def obtener_reporte_biodiversidad(
+    site_id=None,
+    deployment_id=None,
+    device_id=None,
+):
     """Genera un resumen independiente para cada nodo de grabación."""
-    df = _limpiar_detecciones(conectar_db())
+    df = _limpiar_detecciones(
+        conectar_db(
+            site_id=site_id,
+            deployment_id=deployment_id,
+            device_id=device_id,
+        )
+    )
 
     if df.empty:
         return []
 
     informe_final = []
-    for device_id, datos_nodo in df.groupby('device_id', sort=True):
+    for (current_site_id, current_device_id), datos_nodo in df.groupby(
+        ['site_id', 'device_id'],
+        sort=True,
+    ):
         indices = calculo_de_indices(datos_nodo)
         if indices:
             primera = datos_nodo.iloc[0]
@@ -240,7 +291,15 @@ def obtener_reporte_biodiversidad():
             ).dropna()
             indices.update(
                 {
-                    'device_id': int(device_id),
+                    'device_id': int(current_device_id),
+                    'site_id': int(current_site_id),
+                    'site_code': primera['site_code'],
+                    'site_name': primera['site_name'],
+                    'deployment_id': (
+                        int(primera['deployment_id'])
+                        if deployment_id is not None
+                        else None
+                    ),
                     'node_name': primera['device_name'],
                     'zona': primera['zona'] or 'Sin ubicación configurada',
                     'detection_period_start': (
@@ -255,13 +314,19 @@ def obtener_reporte_biodiversidad():
                     ),
                 }
             )
-            indices.update(calcular_indices_acusticos(device_id))
+            indices.update(
+                calcular_indices_acusticos(
+                    current_device_id,
+                    site_id=current_site_id,
+                    deployment_id=deployment_id,
+                )
+            )
             informe_final.append(indices)
 
     return informe_final
 
 
-def obetenerDatosMapa(device_id=None):
+def _obetenerDatosMapa_legacy(device_id=None):
     """Devuelve el punto real del nodo y un entorno visual no calibrado."""
     try:
         with sqlite3.connect(DB_PATH) as conexion:
@@ -365,9 +430,199 @@ def obetenerDatosMapa(device_id=None):
         ),
     }
 
-def obetenerActividadDiaria(fecha_str):
+def obetenerDatosMapa(device_id=None, site_id=None, deployment_id=None):
+    """Devuelve el sitio solicitado y un entorno visual no calibrado."""
+    try:
+        with sqlite3.connect(DB_PATH) as conexion:
+            deployment_row = None
+            if deployment_id is not None:
+                deployment_row = conexion.execute(
+                    """
+                    SELECT p.id, p.device_id, p.site_id, d.name
+                    FROM deployments p
+                    JOIN devices d ON d.id = p.device_id
+                    WHERE p.id = ?
+                    LIMIT 1
+                    """,
+                    (int(deployment_id),),
+                ).fetchone()
+            elif site_id is not None:
+                deployment_row = conexion.execute(
+                    """
+                    SELECT p.id, p.device_id, p.site_id, d.name
+                    FROM deployments p
+                    JOIN devices d ON d.id = p.device_id
+                    WHERE p.site_id = ?
+                    ORDER BY (p.ended_at IS NULL) DESC, p.started_at DESC
+                    LIMIT 1
+                    """,
+                    (int(site_id),),
+                ).fetchone()
+            elif device_id is not None:
+                deployment_row = conexion.execute(
+                    """
+                    SELECT p.id, p.device_id, p.site_id, d.name
+                    FROM deployments p
+                    JOIN devices d ON d.id = p.device_id
+                    WHERE p.device_id = ?
+                    ORDER BY (p.ended_at IS NULL) DESC, p.started_at DESC
+                    LIMIT 1
+                    """,
+                    (int(device_id),),
+                ).fetchone()
+            else:
+                deployment_row = conexion.execute(
+                    """
+                    SELECT p.id, p.device_id, p.site_id, d.name
+                    FROM deployments p
+                    JOIN devices d ON d.id = p.device_id
+                    ORDER BY (p.ended_at IS NULL) DESC, p.started_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if deployment_id is not None and deployment_row is None:
+                return {
+                    "available": False,
+                    "error": "El despliegue solicitado no existe.",
+                }
+            if (
+                deployment_row is not None
+                and site_id is not None
+                and int(deployment_row[2]) != int(site_id)
+            ):
+                return {
+                    "available": False,
+                    "error": "El despliegue no pertenece al sitio solicitado.",
+                }
+            if (
+                deployment_row is not None
+                and device_id is not None
+                and int(deployment_row[1]) != int(device_id)
+            ):
+                return {
+                    "available": False,
+                    "error": "El despliegue no pertenece al nodo solicitado.",
+                }
+
+            selected_site_id = (
+                int(site_id)
+                if site_id is not None
+                else (int(deployment_row[2]) if deployment_row else None)
+            )
+            site_row = None
+            if selected_site_id is not None:
+                site_row = conexion.execute(
+                    """
+                    SELECT
+                        id, code, name, lat, lon,
+                        location_source, location_accuracy_m
+                    FROM sites
+                    WHERE id = ?
+                    LIMIT 1
+                    """,
+                    (selected_site_id,),
+                ).fetchone()
+    except Exception as exc:
+        print(f"No se pudieron leer coordenadas del sitio desde DB: {exc}")
+        return {
+            "available": False,
+            "error": "No se pudo consultar la ubicacion configurada del sitio.",
+        }
+
+    if not site_row:
+        if device_id is not None and site_id is None and deployment_id is None:
+            return _obetenerDatosMapa_legacy(device_id=device_id)
+        return {
+            "available": False,
+            "error": "El sitio no existe o no tiene un despliegue seleccionable.",
+        }
+
+    (
+        selected_site_id,
+        site_code,
+        location,
+        lat,
+        lon,
+        location_source,
+        location_accuracy_m,
+    ) = site_row
+    selected_deployment_id = int(deployment_row[0]) if deployment_row else None
+    selected_device_id = int(deployment_row[1]) if deployment_row else None
+    node_name = deployment_row[3] if deployment_row else "Sin nodo asociado"
+
+    if lat is None or lon is None:
+        return {
+            "available": False,
+            "device_id": selected_device_id,
+            "site_id": int(selected_site_id),
+            "site_code": site_code,
+            "node_name": node_name,
+            "error": "Configura latitud y longitud para mostrar este sitio.",
+        }
+
+    datos_sitio = _limpiar_detecciones(
+        conectar_db(
+            site_id=selected_site_id,
+            deployment_id=deployment_id,
+            device_id=device_id,
+        )
+    )
+    indices = calculo_de_indices(datos_sitio)
+    requested_radius_m = _radio_referencia_m()
+    location_source = location_source or "unknown"
+    location_is_precise = location_source in {"manual", "gps"}
+    radius_m = requested_radius_m if location_is_precise else 0.0
+
+    return {
+        "available": True,
+        "device_id": selected_device_id,
+        "site_id": int(selected_site_id),
+        "site_code": site_code,
+        "deployment_id": selected_deployment_id,
+        "node_name": node_name,
+        "ciudad": location or "Sin ubicacion nominal",
+        "lat": float(lat),
+        "lon": float(lon),
+        "location_source": location_source,
+        "location_accuracy_m": (
+            float(location_accuracy_m)
+            if location_accuracy_m is not None
+            else None
+        ),
+        "location_is_precise": location_is_precise,
+        "shannon": indices['shannon'] if indices else None,
+        "event_count": indices['abundancia'] if indices else 0,
+        "species_count": indices['riqueza'] if indices else 0,
+        "reference_radius_m": radius_m,
+        "requested_reference_radius_m": requested_radius_m,
+        "reference_area_hectares": round(np.pi * radius_m ** 2 / 10000, 2),
+        "radio_km": radius_m / 1000,
+        "range_basis": "uncalibrated_local_reference",
+        "range_label": (
+            "Entorno local orientativo; radio no calibrado"
+            if location_is_precise
+            else "Circulo oculto: coordenadas sin precision documentada"
+        ),
+        "disclaimer": (
+            "El circulo es una referencia visual no calibrada; el alcance real "
+            "depende de la especie, el ruido, el habitat y el microfono."
+        ),
+    }
+
+
+def obetenerActividadDiaria(
+    fecha_str,
+    site_id=None,
+    deployment_id=None,
+    device_id=None,
+):
     '''Agruparemos las actividades de la avifauna por horas del dia para ver su actividad y sus horas mas propensas a salir'''
-    df = conectar_db()
+    df = conectar_db(
+        site_id=site_id,
+        deployment_id=deployment_id,
+        device_id=device_id,
+    )
 
     if df.empty:
         return [{"hora": h, "total_detecciones": 0, "confianza_media": 0.0, "especies_activas": 0, "lista_especies": []} for h in range(24)]

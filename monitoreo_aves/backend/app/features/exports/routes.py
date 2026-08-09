@@ -6,7 +6,6 @@ from io import BytesIO
 from math import log
 import re
 from statistics import mean
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -76,6 +75,15 @@ def _safe_text(value: object | None) -> str:
     return text
 
 
+def _event_location(item) -> str:
+    deployment = getattr(item, "deployment", None)
+    site = deployment.site if deployment is not None else None
+    if site is not None and site.name:
+        return site.name
+    device = getattr(item, "device", None)
+    return device.location if device and device.location else "Desconocida"
+
+
 def _clean_species_name(value: str | None) -> str:
     if not value:
         return "Desconocido"
@@ -137,13 +145,27 @@ def _date_range(
     return start, end
 
 
-def _apply_filters(query, model, start, end, device_id):
+def _apply_filters(
+    query,
+    model,
+    start,
+    end,
+    device_id,
+    site_id=None,
+    deployment_id=None,
+):
     if start is not None:
         query = query.filter(model.timestamp >= start)
     if end is not None:
         query = query.filter(model.timestamp < end)
     if device_id is not None:
         query = query.filter(model.device_id == device_id)
+    if site_id is not None:
+        query = query.filter(
+            model.deployment.has(models.Deployment.site_id == site_id)
+        )
+    if deployment_id is not None:
+        query = query.filter(model.deployment_id == deployment_id)
     return query
 
 
@@ -345,7 +367,9 @@ def _build_detection_sheet(
     for detection in detections:
         timestamp = _excel_datetime(detection.timestamp)
         review = detection.review
-        metric = audio_by_event.get((detection.device_id, detection.filename))
+        metric = audio_by_event.get(
+            (detection.deployment_id, detection.filename)
+        )
         rows.append(
             [
                 detection.id,
@@ -353,7 +377,7 @@ def _build_detection_sheet(
                 timestamp.date() if timestamp else None,
                 timestamp.time() if timestamp else None,
                 detection.device.name if detection.device else detection.device_id,
-                detection.device.location if detection.device else "Desconocida",
+                _event_location(detection),
                 _clean_species_name(detection.species),
                 _effective_species(detection),
                 detection.confidence,
@@ -439,11 +463,12 @@ def _build_detection_sheet(
                 ),
             )
 
-            filename = detections[row_number - 5].filename
+            detection = detections[row_number - 5]
+            filename = detection.filename
             if filename:
                 link_cell = worksheet.cell(row_number, 19)
                 link_cell.hyperlink = (
-                    f"{base_url}/records/{quote(filename, safe='')}"
+                    f"{base_url}/detections/{detection.id}/audio"
                 )
                 link_cell.style = "Hyperlink"
 
@@ -615,56 +640,61 @@ def _build_biodiversity_sheet(
     valid_detections: list[models.Detection],
     audio_metrics: list[models.AudioMetric],
 ):
-    detections_by_device: dict[int, list[models.Detection]] = defaultdict(list)
-    metrics_by_device: dict[int, list[models.AudioMetric]] = defaultdict(list)
-    device_labels: dict[int, tuple[str, str]] = {}
+    detections_by_context: dict[
+        tuple[int | None, int], list[models.Detection]
+    ] = defaultdict(list)
+    metrics_by_context: dict[
+        tuple[int | None, int], list[models.AudioMetric]
+    ] = defaultdict(list)
+    context_labels: dict[tuple[int | None, int], tuple[str, str]] = {}
 
     for detection in valid_detections:
         device_id = int(detection.device_id)
+        context = (
+            detection.deployment.site_id if detection.deployment else None,
+            device_id,
+        )
         node_name = (
             detection.device.name
             if detection.device and detection.device.name
             else f"Nodo {device_id}"
         )
-        location = (
-            detection.device.location
-            if detection.device and detection.device.location
-            else "Desconocida"
-        )
-        device_labels[device_id] = (node_name, location)
-        detections_by_device[device_id].append(detection)
+        location = _event_location(detection)
+        context_labels[context] = (node_name, location)
+        detections_by_context[context].append(detection)
 
     for metric in audio_metrics:
         if metric.acoustic_metrics_version != "maad-v2":
             continue
         device_id = int(metric.device_id)
+        context = (
+            metric.deployment.site_id if metric.deployment else None,
+            device_id,
+        )
         node_name = (
             metric.device.name
             if metric.device and metric.device.name
             else f"Nodo {device_id}"
         )
-        location = (
-            metric.device.location
-            if metric.device and metric.device.location
-            else "Desconocida"
-        )
-        device_labels[device_id] = (node_name, location)
-        metrics_by_device[device_id].append(metric)
+        location = _event_location(metric)
+        context_labels[context] = (node_name, location)
+        metrics_by_context[context].append(metric)
 
-    device_ids = sorted(
-        set(detections_by_device) | set(metrics_by_device),
-        key=lambda device_id: (
-            device_labels[device_id][0].casefold(),
-            device_id,
+    contexts = sorted(
+        set(detections_by_context) | set(metrics_by_context),
+        key=lambda context: (
+            context_labels[context][1].casefold(),
+            context_labels[context][0].casefold(),
+            context[1],
         ),
     )
     rows: list[list[object]] = []
-    for device_id in device_ids:
-        node_name, location = device_labels[device_id]
+    for context in contexts:
+        node_name, location = context_labels[context]
         event_count, species_count, shannon, simpson, pielou, scope = (
-            _biodiversity_indices(detections_by_device[device_id])
+            _biodiversity_indices(detections_by_context[context])
         )
-        metrics = metrics_by_device[device_id]
+        metrics = metrics_by_context[context]
         rows.append(
             [
                 node_name,
@@ -787,7 +817,7 @@ def _build_audio_quality_sheet(
                 timestamp.date() if timestamp else None,
                 timestamp.time() if timestamp else None,
                 metric.device.name if metric.device else metric.device_id,
-                metric.device.location if metric.device else "Desconocida",
+                _event_location(metric),
                 metric.filename,
                 metric.sample_rate,
                 metric.duration,
@@ -905,7 +935,7 @@ def _build_reviews_sheet(
                 detection.id,
                 _excel_datetime(detection.timestamp),
                 detection.device.name if detection.device else detection.device_id,
-                detection.device.location if detection.device else "Desconocida",
+                _event_location(detection),
                 _clean_species_name(detection.species),
                 detection.confidence,
                 REVIEW_LABELS.get(review.status, review.status),
@@ -991,6 +1021,8 @@ def _build_metadata_sheet(
     date_from: date | None,
     date_to: date | None,
     device_id: int | None,
+    site: models.Site | None,
+    deployment: models.Deployment | None,
 ):
     worksheet = workbook.create_sheet("Metadatos")
     _style_title(
@@ -1049,6 +1081,26 @@ def _build_metadata_sheet(
                 else "Todos los nodos"
             ),
             "Nodo aplicado al informe.",
+        ],
+        [
+            "Filtro de sitio",
+            (
+                f"{site.name} ({site.code}, ID {site.id})"
+                if site
+                else "Todos los sitios"
+            ),
+            "Ubicacion geografica aplicada en el servidor.",
+        ],
+        [
+            "Filtro de despliegue",
+            (
+                f"{deployment.public_id} (ID {deployment.id})"
+                if deployment
+                else "Todos los despliegues del sitio"
+                if site
+                else "Todos los despliegues"
+            ),
+            "Campana concreta aplicada al informe.",
         ],
         [
             "Detecciones exportadas",
@@ -1148,19 +1200,30 @@ def _build_metadata_sheet(
         else devices
     )
     for device in filtered_devices:
+        location_name = site.name if site is not None else device.location
+        location_lat = site.lat if site is not None else device.lat
+        location_lon = site.lon if site is not None else device.lon
+        location_source = (
+            site.location_source if site is not None else device.location_source
+        )
+        location_accuracy = (
+            site.location_accuracy_m
+            if site is not None
+            else device.location_accuracy_m
+        )
         coordinates = (
-            f"{device.lat:.6f}, {device.lon:.6f}"
-            if device.lat is not None and device.lon is not None
+            f"{location_lat:.6f}, {location_lon:.6f}"
+            if location_lat is not None and location_lon is not None
             else "No registradas"
         )
         worksheet.append(
             [
                 device.id,
                 _safe_text(device.name),
-                _safe_text(device.location),
+                _safe_text(location_name),
                 coordinates,
-                device.location_source or "unknown",
-                device.location_accuracy_m,
+                location_source or "unknown",
+                location_accuracy,
             ]
         )
 
@@ -1392,6 +1455,8 @@ def build_monitoring_workbook(
     date_from: date | None = None,
     date_to: date | None = None,
     device_id: int | None = None,
+    site: models.Site | None = None,
+    deployment: models.Deployment | None = None,
 ) -> BytesIO:
     workbook = Workbook()
     workbook.calculation.fullCalcOnLoad = True
@@ -1412,7 +1477,7 @@ def build_monitoring_workbook(
         if _is_valid_bird_detection(detection)
     ]
     audio_by_event = {
-        (metric.device_id, metric.filename): metric for metric in audio_metrics
+        (metric.deployment_id, metric.filename): metric for metric in audio_metrics
     }
 
     _build_detection_sheet(
@@ -1437,6 +1502,8 @@ def build_monitoring_workbook(
         date_from,
         date_to,
         device_id,
+        site,
+        deployment,
     )
 
     period = _format_period(
@@ -1479,15 +1546,50 @@ def download_excel_report(
     date_from: date | None = None,
     date_to: date | None = None,
     device_id: int | None = None,
+    site_id: int | None = None,
+    deployment_id: int | None = None,
     db: Session = Depends(database.get_db),
 ):
     start, end = _date_range(date_from, date_to)
+
+    selected_site = (
+        db.query(models.Site).filter(models.Site.id == site_id).first()
+        if site_id is not None
+        else None
+    )
+    if site_id is not None and selected_site is None:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    selected_deployment = (
+        db.query(models.Deployment)
+        .options(joinedload(models.Deployment.site))
+        .filter(models.Deployment.id == deployment_id)
+        .first()
+        if deployment_id is not None
+        else None
+    )
+    if deployment_id is not None and selected_deployment is None:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    if (
+        selected_deployment is not None
+        and selected_site is not None
+        and selected_deployment.site_id != selected_site.id
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="El despliegue no pertenece al sitio solicitado",
+        )
+    if selected_site is None and selected_deployment is not None:
+        selected_site = selected_deployment.site
 
     detection_query = (
         db.query(models.Detection)
         .options(
             joinedload(models.Detection.device),
             joinedload(models.Detection.review),
+            joinedload(models.Detection.deployment).joinedload(
+                models.Deployment.site
+            ),
         )
         .order_by(models.Detection.timestamp.asc())
     )
@@ -1497,12 +1599,19 @@ def download_excel_report(
         start,
         end,
         device_id,
+        site_id,
+        deployment_id,
     )
     detections = detection_query.all()
 
     metric_query = (
         db.query(models.AudioMetric)
-        .options(joinedload(models.AudioMetric.device))
+        .options(
+            joinedload(models.AudioMetric.device),
+            joinedload(models.AudioMetric.deployment).joinedload(
+                models.Deployment.site
+            ),
+        )
         .order_by(models.AudioMetric.timestamp.asc())
     )
     metric_query = _apply_filters(
@@ -1511,12 +1620,26 @@ def download_excel_report(
         start,
         end,
         device_id,
+        site_id,
+        deployment_id,
     )
     audio_metrics = metric_query.all()
 
     devices_query = db.query(models.Device).order_by(models.Device.name.asc())
     if device_id is not None:
         devices_query = devices_query.filter(models.Device.id == device_id)
+    if site_id is not None:
+        devices_query = devices_query.filter(
+            models.Device.deployments.any(
+                models.Deployment.site_id == site_id
+            )
+        )
+    if deployment_id is not None:
+        devices_query = devices_query.filter(
+            models.Device.deployments.any(
+                models.Deployment.id == deployment_id
+            )
+        )
     devices = devices_query.all()
 
     output = build_monitoring_workbook(
@@ -1527,6 +1650,8 @@ def download_excel_report(
         date_from=date_from,
         date_to=date_to,
         device_id=device_id,
+        site=selected_site,
+        deployment=selected_deployment,
     )
 
     filename = f"birdmonitor_informe_{datetime.now().date().isoformat()}.xlsx"

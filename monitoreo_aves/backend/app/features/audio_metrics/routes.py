@@ -1,11 +1,28 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session, joinedload
 
 from ...core import database
 from ...domain import models, schemas
+from ..locations import service as locations
 
 
 router = APIRouter()
+
+
+def _serialize_metric(metric: models.AudioMetric) -> dict:
+    deployment = metric.deployment
+    site = deployment.site if deployment else None
+    return {
+        column.name: getattr(metric, column.name)
+        for column in models.AudioMetric.__table__.columns
+    } | {
+        "deployment_public_id": deployment.public_id if deployment else None,
+        "site_id": site.id if site else None,
+        "site_code": site.code if site else None,
+        "site_name": site.name if site else None,
+    }
 
 
 @router.post("/audio-metrics/", response_model=schemas.AudioMetricResponse)
@@ -13,20 +30,19 @@ def create_audio_metric(
     metric: schemas.AudioMetricCreate,
     db: Session = Depends(database.get_db),
 ):
-    db_device = db.query(models.Device).filter(
-        models.Device.name == metric.device_name
-    ).first()
-
-    if not db_device:
-        db_device = models.Device(name=metric.device_name, location="Desconocida")
-        db.add(db_device)
-        db.commit()
-        db.refresh(db_device)
+    db_device = locations.get_or_create_device(db, metric.device_name)
+    deployment = locations.resolve_event_deployment(
+        db,
+        device=db_device,
+        observed_at=metric.timestamp,
+        site_code=metric.site_code,
+        deployment_public_id=metric.deployment_public_id,
+    )
 
     existing_metric = (
         db.query(models.AudioMetric)
         .filter(
-            models.AudioMetric.device_id == db_device.id,
+            models.AudioMetric.deployment_id == deployment.id,
             models.AudioMetric.timestamp == metric.timestamp,
             models.AudioMetric.filename == metric.filename,
         )
@@ -62,7 +78,7 @@ def create_audio_metric(
             existing_metric.h = metric.h
             db.commit()
             db.refresh(existing_metric)
-        return existing_metric
+        return _serialize_metric(existing_metric)
 
     new_metric = models.AudioMetric(
         timestamp=metric.timestamp,
@@ -90,24 +106,56 @@ def create_audio_metric(
         hf=metric.hf,
         h=metric.h,
         device_id=db_device.id,
+        deployment_id=deployment.id,
     )
 
     db.add(new_metric)
     db.commit()
     db.refresh(new_metric)
-    return new_metric
+    return _serialize_metric(new_metric)
 
 
 @router.get("/audio-metrics/", response_model=list[schemas.AudioMetricResponse])
 def read_audio_metrics(
-    skip: int = 0,
-    limit: int = 500,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=500, ge=1, le=2000),
+    site_id: int | None = Query(default=None, ge=1),
+    deployment_id: int | None = Query(default=None, ge=1),
+    device_id: int | None = Query(default=None, ge=1),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     db: Session = Depends(database.get_db),
 ):
-    return (
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=422,
+            detail="date_from no puede ser posterior a date_to",
+        )
+
+    query = (
         db.query(models.AudioMetric)
-        .order_by(models.AudioMetric.timestamp.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
+        .options(
+            joinedload(models.AudioMetric.deployment).joinedload(
+                models.Deployment.site
+            )
+        )
     )
+    if site_id is not None:
+        query = query.filter(
+            models.AudioMetric.deployment.has(
+                models.Deployment.site_id == site_id
+            )
+        )
+    if deployment_id is not None:
+        query = query.filter(models.AudioMetric.deployment_id == deployment_id)
+    if device_id is not None:
+        query = query.filter(models.AudioMetric.device_id == device_id)
+    if date_from is not None:
+        query = query.filter(models.AudioMetric.timestamp >= date_from)
+    if date_to is not None:
+        query = query.filter(models.AudioMetric.timestamp <= date_to)
+
+    metrics = query.order_by(models.AudioMetric.timestamp.desc()).offset(
+        skip
+    ).limit(limit).all()
+    return [_serialize_metric(metric) for metric in metrics]

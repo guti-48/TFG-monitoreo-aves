@@ -1,6 +1,10 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Optional, Literal
+from uuid import UUID
+
+
+LocationSource = Literal["manual", "gps", "ip_geolocation", "unknown"]
 
 #### Esquemas para detecciones ####
 
@@ -11,6 +15,11 @@ class DetectionCreate(BaseModel):
     filename: str
     device_name: str
     amplitude: float
+    site_code: Optional[str] = Field(
+        default=None,
+        pattern=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    )
+    deployment_public_id: Optional[UUID] = None
     audio_start_seconds: Optional[float] = Field(default=None, ge=0)
     audio_end_seconds: Optional[float] = Field(default=None, ge=0)
 
@@ -58,6 +67,7 @@ class LearningRuleResponse(BaseModel):
 
     id: int
     device_id: int
+    site_id: Optional[int] = None
     original_species: str
     learned_status: ReviewStatus
     corrected_species: Optional[str] = None
@@ -82,9 +92,7 @@ class DeviceCreate(BaseModel):
     location: str
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lon: Optional[float] = Field(default=None, ge=-180, le=180)
-    location_source: Optional[
-        Literal["manual", "gps", "ip_geolocation", "unknown"]
-    ] = None
+    location_source: Optional[LocationSource] = None
     location_accuracy_m: Optional[float] = Field(default=None, ge=0)
 
     @model_validator(mode="after")
@@ -97,6 +105,145 @@ class DeviceCreate(BaseModel):
             )
         return self
 
+
+class SiteCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(
+        pattern=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+        min_length=1,
+        max_length=63,
+    )
+    name: str = Field(min_length=1, max_length=200)
+    municipality: Optional[str] = Field(default=None, max_length=120)
+    region: Optional[str] = Field(default=None, max_length=120)
+    country_code: str = Field(default="ES", pattern=r"^[A-Z]{2}$")
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lon: Optional[float] = Field(default=None, ge=-180, le=180)
+    location_source: LocationSource = "unknown"
+    location_accuracy_m: Optional[float] = Field(default=None, ge=0)
+    timezone: str = Field(default="Europe/Madrid", min_length=1, max_length=80)
+
+    @field_validator(
+        "code",
+        "name",
+        "municipality",
+        "region",
+        "timezone",
+        mode="before",
+    )
+    @classmethod
+    def strip_site_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def normalize_country_code(cls, value):
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_site_coordinates(self):
+        if (self.lat is None) != (self.lon is None):
+            raise ValueError("lat y lon deben proporcionarse juntas")
+        if self.location_accuracy_m is not None and self.lat is None:
+            raise ValueError(
+                "location_accuracy_m requiere coordenadas lat y lon"
+            )
+        return self
+
+
+class SiteUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    municipality: Optional[str] = Field(default=None, max_length=120)
+    region: Optional[str] = Field(default=None, max_length=120)
+    country_code: Optional[str] = Field(default=None, pattern=r"^[A-Z]{2}$")
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lon: Optional[float] = Field(default=None, ge=-180, le=180)
+    location_source: Optional[LocationSource] = None
+    location_accuracy_m: Optional[float] = Field(default=None, ge=0)
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    archived: Optional[bool] = None
+
+    @field_validator(
+        "name",
+        "municipality",
+        "region",
+        "timezone",
+        mode="before",
+    )
+    @classmethod
+    def strip_site_update_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def normalize_site_update_country(cls, value):
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_updated_coordinates(self):
+        lat_set = "lat" in self.model_fields_set
+        lon_set = "lon" in self.model_fields_set
+        if lat_set != lon_set:
+            raise ValueError("lat y lon deben actualizarse juntas")
+        return self
+
+
+class SiteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    municipality: Optional[str] = None
+    region: Optional[str] = None
+    country_code: str
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    location_source: LocationSource
+    location_accuracy_m: Optional[float] = None
+    timezone: str
+    created_at: datetime
+    updated_at: datetime
+    archived_at: Optional[datetime] = None
+    deployment_count: int = 0
+    active_deployment_count: int = 0
+    detection_count: int = 0
+    audio_metric_count: int = 0
+
+
+class DeploymentActivate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_name: str = Field(min_length=1, max_length=120)
+    deployment_public_id: UUID
+    site: SiteCreate
+    started_at: datetime
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("device_name", "notes", mode="before")
+    @classmethod
+    def strip_deployment_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class DeploymentResponse(BaseModel):
+    id: int
+    public_id: UUID
+    device_id: int
+    device_name: str
+    site_id: int
+    site_code: str
+    site_name: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+    notes: Optional[str] = None
+
 class DetectionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -106,6 +253,11 @@ class DetectionResponse(BaseModel):
     timestamp: datetime
     filename: str
     device_id: int
+    deployment_id: Optional[int] = None
+    deployment_public_id: Optional[UUID] = None
+    site_id: Optional[int] = None
+    site_code: Optional[str] = None
+    site_name: Optional[str] = None
     amplitude: float
     audio_start_seconds: Optional[float] = None
     audio_end_seconds: Optional[float] = None
@@ -140,6 +292,11 @@ class AudioMetricCreate(BaseModel):
     timestamp: datetime
     filename: str
     device_name: str
+    site_code: Optional[str] = Field(
+        default=None,
+        pattern=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    )
+    deployment_public_id: Optional[UUID] = None
     sample_rate: int
     duration: float
     rms: float
@@ -170,6 +327,11 @@ class AudioMetricResponse(BaseModel):
     timestamp: datetime
     filename: str
     device_id: int
+    deployment_id: Optional[int] = None
+    deployment_public_id: Optional[UUID] = None
+    site_id: Optional[int] = None
+    site_code: Optional[str] = None
+    site_name: Optional[str] = None
     sample_rate: int
     duration: float
     rms: float

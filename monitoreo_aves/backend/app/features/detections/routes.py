@@ -1,14 +1,14 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
-from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, joinedload
 
 from ...core import database
 from ...domain import models, schemas
 from ..learning import service as learning
+from ..locations import service as locations
 from . import media as review_media
 from .serializers import serializar_deteccion
 
@@ -51,20 +51,19 @@ def create_detection(
 ):
     _validate_audio_timing(detection)
 
-    db_device = db.query(models.Device).filter(
-        models.Device.name == detection.device_name
-    ).first()
-
-    if not db_device:
-        db_device = models.Device(name=detection.device_name, location="Desconocida")
-        db.add(db_device)
-        db.commit()
-        db.refresh(db_device)
+    db_device = locations.get_or_create_device(db, detection.device_name)
+    deployment = locations.resolve_event_deployment(
+        db,
+        device=db_device,
+        observed_at=detection.timestamp,
+        site_code=detection.site_code,
+        deployment_public_id=detection.deployment_public_id,
+    )
 
     existing_detection = (
         db.query(models.Detection)
         .filter(
-            models.Detection.device_id == db_device.id,
+            models.Detection.deployment_id == deployment.id,
             models.Detection.timestamp == detection.timestamp,
             models.Detection.species == detection.species,
             models.Detection.filename == detection.filename,
@@ -99,6 +98,7 @@ def create_detection(
         timestamp=detection.timestamp,
         filename=detection.filename,
         device_id=db_device.id,
+        deployment_id=deployment.id,
         amplitude=detection.amplitude,
         audio_start_seconds=detection.audio_start_seconds,
         audio_end_seconds=detection.audio_end_seconds,
@@ -112,18 +112,48 @@ def create_detection(
 
 @router.get("/detections/", response_model=list[schemas.DetectionResponse])
 def read_detections(
-    skip: int = 0,
-    limit: int = 500,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=500, ge=1, le=2000),
+    site_id: int | None = Query(default=None, ge=1),
+    deployment_id: int | None = Query(default=None, ge=1),
+    device_id: int | None = Query(default=None, ge=1),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     db: Session = Depends(database.get_db),
 ):
-    detections = (
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=422,
+            detail="date_from no puede ser posterior a date_to",
+        )
+
+    query = (
         db.query(models.Detection)
-        .options(joinedload(models.Detection.review))
-        .order_by(models.Detection.timestamp.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
+        .options(
+            joinedload(models.Detection.review),
+            joinedload(models.Detection.deployment).joinedload(
+                models.Deployment.site
+            ),
+        )
     )
+    if site_id is not None:
+        query = query.filter(
+            models.Detection.deployment.has(
+                models.Deployment.site_id == site_id
+            )
+        )
+    if deployment_id is not None:
+        query = query.filter(models.Detection.deployment_id == deployment_id)
+    if device_id is not None:
+        query = query.filter(models.Detection.device_id == device_id)
+    if date_from is not None:
+        query = query.filter(models.Detection.timestamp >= date_from)
+    if date_to is not None:
+        query = query.filter(models.Detection.timestamp <= date_to)
+
+    detections = query.order_by(models.Detection.timestamp.desc()).offset(
+        skip
+    ).limit(limit).all()
     return [serializar_deteccion(detection, db) for detection in detections]
 
 
@@ -138,7 +168,10 @@ def get_detection_review_media(
     detection = _get_detection_or_404(detection_id, db)
 
     try:
-        audio_path = review_media.resolve_audio_path(detection.filename)
+        audio_path = review_media.resolve_audio_path(
+            detection.filename,
+            detection.deployment,
+        )
         duration = review_media.get_audio_duration(audio_path)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -153,7 +186,7 @@ def get_detection_review_media(
     diagnostics = review_media.analyze_review_audio(audio_path, window)
 
     return {
-        "audio_url": f"/records/{quote(audio_path.name)}",
+        "audio_url": f"/detections/{detection_id}/audio",
         "spectrogram_url": (
             f"/detections/{detection_id}/review-spectrogram"
             f"?v={review_media.REVIEW_RENDER_VERSION}"
@@ -181,7 +214,10 @@ def get_detection_review_spectrogram(
     detection = _get_detection_or_404(detection_id, db)
 
     try:
-        audio_path = review_media.resolve_audio_path(detection.filename)
+        audio_path = review_media.resolve_audio_path(
+            detection.filename,
+            detection.deployment,
+        )
         duration = review_media.get_audio_duration(audio_path)
         window = review_media.build_review_window(
             duration,
@@ -285,13 +321,45 @@ def get_detection_review(
 
 
 @router.get("/species/options")
-def get_species_options(db: Session = Depends(database.get_db)):
-    species_rows = (
+def get_species_options(
+    site_id: int | None = Query(default=None, ge=1),
+    deployment_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(database.get_db),
+):
+    query = (
         db.query(models.Detection.species)
         .filter(models.Detection.species.isnot(None))
-        .distinct()
-        .order_by(models.Detection.species.asc())
-        .all()
     )
+    if site_id is not None:
+        query = query.filter(
+            models.Detection.deployment.has(
+                models.Deployment.site_id == site_id
+            )
+        )
+    if deployment_id is not None:
+        query = query.filter(models.Detection.deployment_id == deployment_id)
+    species_rows = query.distinct().order_by(models.Detection.species.asc()).all()
 
     return [row[0] for row in species_rows if row[0]]
+
+
+@router.get("/detections/{detection_id}/audio")
+def get_detection_audio(
+    detection_id: int,
+    db: Session = Depends(database.get_db),
+):
+    detection = _get_detection_or_404(detection_id, db)
+    try:
+        audio_path = review_media.resolve_audio_path(
+            detection.filename,
+            detection.deployment,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return FileResponse(
+        audio_path,
+        media_type="audio/wav",
+        filename=audio_path.name,
+        headers={"Cache-Control": "private, no-store"},
+    )

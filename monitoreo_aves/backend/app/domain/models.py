@@ -1,7 +1,33 @@
-from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import relationship
 from ..core.database import Base
 from datetime import datetime, timezone
+
+
+class SchemaMigration(Base):
+    """Registro de migraciones de datos aplicadas de forma idempotente."""
+
+    __tablename__ = "schema_migrations"
+
+    version = Column(String, primary_key=True)
+    applied_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    description = Column(String, nullable=False)
 
 '''
 Esta clase representa los nodos/dispositivos registrados en la base de datos.
@@ -19,6 +45,113 @@ class Device(Base):
 
     detections = relationship("Detection", back_populates="device")
     audio_metrics = relationship("AudioMetric", back_populates="device")
+    deployments = relationship("Deployment", back_populates="device")
+
+
+class Site(Base):
+    """Lugar geográfico estable que puede reutilizarse en varias campañas."""
+
+    __tablename__ = "sites"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_sites_code"),
+        CheckConstraint(
+            "(lat IS NULL AND lon IS NULL) OR "
+            "(lat IS NOT NULL AND lon IS NOT NULL)",
+            name="ck_sites_coordinate_pair",
+        ),
+        CheckConstraint(
+            "lat IS NULL OR (lat >= -90 AND lat <= 90)",
+            name="ck_sites_latitude_range",
+        ),
+        CheckConstraint(
+            "lon IS NULL OR (lon >= -180 AND lon <= 180)",
+            name="ck_sites_longitude_range",
+        ),
+        CheckConstraint(
+            "location_accuracy_m IS NULL OR location_accuracy_m >= 0",
+            name="ck_sites_location_accuracy",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(63), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    municipality = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    country_code = Column(String(2), nullable=False, default="ES")
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
+    location_source = Column(String, nullable=False, default="unknown")
+    location_accuracy_m = Column(Float, nullable=True)
+    timezone = Column(String, nullable=False, default="Europe/Madrid")
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    archived_at = Column(DateTime, nullable=True)
+
+    deployments = relationship("Deployment", back_populates="site")
+    learning_rules = relationship("LearningRule", back_populates="site")
+
+
+class Deployment(Base):
+    """Periodo durante el cual un dispositivo permanece instalado en un sitio."""
+
+    __tablename__ = "deployments"
+    __table_args__ = (
+        UniqueConstraint("public_id", name="uq_deployments_public_id"),
+        CheckConstraint(
+            "ended_at IS NULL OR ended_at >= started_at",
+            name="ck_deployments_time_order",
+        ),
+        Index(
+            "uq_deployments_active_device",
+            "device_id",
+            unique=True,
+            sqlite_where=text("ended_at IS NULL"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    public_id = Column(String(36), nullable=False, index=True)
+    device_id = Column(
+        Integer,
+        ForeignKey("devices.id"),
+        nullable=False,
+        index=True,
+    )
+    site_id = Column(
+        Integer,
+        ForeignKey("sites.id"),
+        nullable=False,
+        index=True,
+    )
+    started_at = Column(DateTime, nullable=False, index=True)
+    ended_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    notes = Column(String, nullable=True)
+
+    device = relationship("Device", back_populates="deployments")
+    site = relationship("Site", back_populates="deployments")
+    detections = relationship("Detection", back_populates="deployment")
+    audio_metrics = relationship("AudioMetric", back_populates="deployment")
 
 '''
 Esta clase representa la tabla para almacenar detecciones biológicas o acústicas relevantes.
@@ -26,7 +159,13 @@ Esta clase representa la tabla para almacenar detecciones biológicas o acústic
 class Detection(Base):
     __tablename__ = "detections"
     __table_args__ = (
-        UniqueConstraint("device_id", "timestamp", "species", "filename", name="uq_detection_event"),
+        UniqueConstraint(
+            "deployment_id",
+            "timestamp",
+            "species",
+            "filename",
+            name="uq_detection_deployment_event",
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -40,6 +179,13 @@ class Detection(Base):
 
     device_id = Column(Integer, ForeignKey("devices.id"))
     device = relationship("Device", back_populates="detections")
+    deployment_id = Column(
+        Integer,
+        ForeignKey("deployments.id"),
+        nullable=True,
+        index=True,
+    )
+    deployment = relationship("Deployment", back_populates="detections")
 
     review = relationship(
         "DetectionReview",
@@ -94,6 +240,7 @@ class LearningRule(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    site_id = Column(Integer, ForeignKey("sites.id"), nullable=True, index=True)
     original_species = Column(String, nullable=False, index=True)
     learned_status = Column(String, nullable=False, index=True)
     corrected_species = Column(String, nullable=True, index=True)
@@ -116,6 +263,7 @@ class LearningRule(Base):
     )
 
     device = relationship("Device")
+    site = relationship("Site", back_populates="learning_rules")
     examples = relationship(
         "LearningExample",
         back_populates="rule",
@@ -160,7 +308,12 @@ class LearningExample(Base):
 class AudioMetric(Base):
     __tablename__ = "audio_metrics"
     __table_args__ = (
-        UniqueConstraint("device_id", "timestamp", "filename", name="uq_audio_metric_event"),
+        UniqueConstraint(
+            "deployment_id",
+            "timestamp",
+            "filename",
+            name="uq_audio_metric_deployment_event",
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -194,3 +347,10 @@ class AudioMetric(Base):
 
     device_id = Column(Integer, ForeignKey("devices.id"))
     device = relationship("Device", back_populates="audio_metrics")
+    deployment_id = Column(
+        Integer,
+        ForeignKey("deployments.id"),
+        nullable=True,
+        index=True,
+    )
+    deployment = relationship("Deployment", back_populates="audio_metrics")

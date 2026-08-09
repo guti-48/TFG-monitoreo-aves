@@ -44,7 +44,7 @@ class ReviewAudioDiagnostics:
     high_pass_hz: float
 
 
-def resolve_audio_path(filename: str) -> Path:
+def resolve_audio_path(filename: str, deployment=None) -> Path:
     safe_name = Path(filename or "").name
     if not safe_name:
         raise FileNotFoundError("La deteccion no tiene un archivo WAV asociado")
@@ -53,17 +53,23 @@ def resolve_audio_path(filename: str) -> Path:
         safe_name = f"{Path(safe_name).stem}.wav"
 
     audio_dir = SERVER_AUDIO_DIR.resolve()
-    audio_path = (audio_dir / safe_name).resolve()
+    candidate_dirs = []
+    if deployment is not None and getattr(deployment, "site", None) is not None:
+        candidate_dirs.append(
+            audio_dir / deployment.site.code / deployment.public_id
+        )
+    candidate_dirs.append(audio_dir)
 
-    try:
-        audio_path.relative_to(audio_dir)
-    except ValueError as exc:
-        raise FileNotFoundError("Ruta de audio no permitida") from exc
+    for candidate_dir in candidate_dirs:
+        audio_path = (candidate_dir / safe_name).resolve()
+        try:
+            audio_path.relative_to(audio_dir)
+        except ValueError as exc:
+            raise FileNotFoundError("Ruta de audio no permitida") from exc
+        if audio_path.is_file():
+            return audio_path
 
-    if not audio_path.is_file():
-        raise FileNotFoundError(f"No se encontro el audio {safe_name}")
-
-    return audio_path
+    raise FileNotFoundError(f"No se encontro el audio {safe_name}")
 
 
 def get_audio_duration(audio_path: Path) -> float:

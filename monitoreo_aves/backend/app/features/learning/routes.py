@@ -12,6 +12,7 @@ router = APIRouter()
 @router.get("/learning/rules", response_model=list[schemas.LearningRuleResponse])
 def read_learning_rules(
     active_only: bool = False,
+    site_id: int | None = None,
     db: Session = Depends(database.get_db),
 ):
     query = db.query(models.LearningRule).order_by(
@@ -22,6 +23,8 @@ def read_learning_rules(
 
     if active_only:
         query = query.filter(models.LearningRule.active.is_(True))
+    if site_id is not None:
+        query = query.filter(models.LearningRule.site_id == site_id)
 
     return query.all()
 

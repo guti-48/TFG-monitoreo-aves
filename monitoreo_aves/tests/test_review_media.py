@@ -68,7 +68,7 @@ def test_review_media_recorta_20_segundos_y_genera_espectrograma(
     assert media["review_start_seconds"] == 3.5
     assert media["review_end_seconds"] == 23.5
     assert media["review_duration_seconds"] == 20.0
-    assert media["audio_url"] == f"/records/{filename}"
+    assert media["audio_url"] == f"/detections/{detection['id']}/audio"
     assert "clean_audio_url" not in media
     assert "clean_audio_description" not in media
     assert media["spectrogram_url"] == (

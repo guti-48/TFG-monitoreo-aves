@@ -33,6 +33,7 @@ def learning_confidence(support_count: int) -> float:
 def _find_rule(
     db: Session,
     device_id: int,
+    site_id: Optional[int],
     original_species: str,
     learned_status: str,
     corrected_species: Optional[str],
@@ -45,6 +46,11 @@ def _find_rule(
             models.LearningRule.learned_status == learned_status,
         )
     )
+
+    if site_id is None:
+        query = query.filter(models.LearningRule.site_id.is_(None))
+    else:
+        query = query.filter(models.LearningRule.site_id == site_id)
 
     if corrected_species is None:
         query = query.filter(models.LearningRule.corrected_species.is_(None))
@@ -59,9 +65,15 @@ def _get_or_create_rule(
     learned_status: str,
     corrected_species: Optional[str],
 ) -> models.LearningRule:
+    site_id = (
+        detection.deployment.site_id
+        if detection.deployment is not None
+        else None
+    )
     rule = _find_rule(
         db,
         detection.device_id,
+        site_id,
         detection.species,
         learned_status,
         corrected_species,
@@ -73,6 +85,7 @@ def _get_or_create_rule(
     now = datetime.now(timezone.utc)
     rule = models.LearningRule(
         device_id=detection.device_id,
+        site_id=site_id,
         original_species=detection.species,
         learned_status=learned_status,
         corrected_species=corrected_species,
@@ -182,6 +195,11 @@ def find_suggestion(db: Session, detection: models.Detection) -> Optional[dict]:
 
     confidence_min = detection.confidence - CONFIDENCE_TOLERANCE
     confidence_max = detection.confidence + CONFIDENCE_TOLERANCE
+    site_id = (
+        detection.deployment.site_id
+        if detection.deployment is not None
+        else None
+    )
 
     query = (
         db.query(models.LearningRule)
@@ -193,6 +211,11 @@ def find_suggestion(db: Session, detection: models.Detection) -> Optional[dict]:
             models.LearningRule.max_confidence >= confidence_min,
         )
     )
+
+    if site_id is None:
+        query = query.filter(models.LearningRule.site_id.is_(None))
+    else:
+        query = query.filter(models.LearningRule.site_id == site_id)
 
     if detection.amplitude is not None:
         amplitude_min = detection.amplitude - AMPLITUDE_TOLERANCE

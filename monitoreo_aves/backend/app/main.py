@@ -4,9 +4,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import database
 from .core.config import FRONTEND_DIR, SERVER_AUDIO_DIR, SPECTOGRAM_DIR, get_cors_origins
+from .core.migrations import ensure_database_schema
 from .core.network import get_network_settings, network_middleware
 from .core.security import get_security_settings, security_middleware
-from .domain import models
 from .features.analytics.routes import router as analytics_router
 from .features.audio_metrics.routes import router as audio_metrics_router
 from .features.auth.routes import router as auth_router
@@ -14,6 +14,7 @@ from .features.detections.routes import router as detections_router
 from .features.devices.routes import router as devices_router
 from .features.exports.routes import router as exports_router
 from .features.learning.routes import router as learning_router
+from .features.locations.routes import router as locations_router
 from .features.streaming.routes import router as streaming_router
 from .features.streaming.security import (
     get_stream_security_settings,
@@ -21,69 +22,8 @@ from .features.streaming.security import (
 )
 from .features.uploads.routes import router as uploads_router
 
-models.Base.metadata.create_all(bind=database.engine)
-
-
 def asegurar_esquema_runtime() -> None:
-    with database.engine.begin() as conn:
-        columnas_devices = {
-            row[1]
-            for row in conn.exec_driver_sql("PRAGMA table_info(devices)").fetchall()
-        }
-
-        if "lat" not in columnas_devices:
-            conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN lat FLOAT")
-
-        if "lon" not in columnas_devices:
-            conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN lon FLOAT")
-
-        if "location_source" not in columnas_devices:
-            conn.exec_driver_sql(
-                "ALTER TABLE devices ADD COLUMN location_source VARCHAR"
-            )
-
-        if "location_accuracy_m" not in columnas_devices:
-            conn.exec_driver_sql(
-                "ALTER TABLE devices ADD COLUMN location_accuracy_m FLOAT"
-            )
-
-        columnas_detections = {
-            row[1]
-            for row in conn.exec_driver_sql("PRAGMA table_info(detections)").fetchall()
-        }
-
-        if "audio_start_seconds" not in columnas_detections:
-            conn.exec_driver_sql(
-                "ALTER TABLE detections ADD COLUMN audio_start_seconds FLOAT"
-            )
-
-        if "audio_end_seconds" not in columnas_detections:
-            conn.exec_driver_sql(
-                "ALTER TABLE detections ADD COLUMN audio_end_seconds FLOAT"
-            )
-
-        columnas_audio_metrics = {
-            row[1]
-            for row in conn.exec_driver_sql("PRAGMA table_info(audio_metrics)").fetchall()
-        }
-        nuevas_columnas_audio = {
-            "peak": "FLOAT",
-            "clipping_ratio": "FLOAT",
-            "dc_offset": "FLOAT",
-            "noise_floor_rms": "FLOAT",
-            "quality_status": "VARCHAR",
-            "quality_detail": "VARCHAR",
-            "mic_device": "VARCHAR",
-            "birdnet_model": "VARCHAR",
-            "birdnet_model_version": "VARCHAR",
-            "birdnetlib_version": "VARCHAR",
-            "acoustic_metrics_version": "VARCHAR",
-        }
-        for nombre, tipo in nuevas_columnas_audio.items():
-            if nombre not in columnas_audio_metrics:
-                conn.exec_driver_sql(
-                    f"ALTER TABLE audio_metrics ADD COLUMN {nombre} {tipo}"
-                )
+    ensure_database_schema(database.engine)
 
 
 asegurar_esquema_runtime()
@@ -106,6 +46,7 @@ app.include_router(stream_security_router)
 app.include_router(streaming_router)
 app.include_router(uploads_router)
 app.include_router(devices_router)
+app.include_router(locations_router)
 app.include_router(exports_router)
 app.include_router(detections_router)
 app.include_router(learning_router)

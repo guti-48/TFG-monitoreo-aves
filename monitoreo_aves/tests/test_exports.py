@@ -149,7 +149,7 @@ def test_informe_excel_contiene_datos_graficos_y_trazabilidad(client):
     assert exported_row[9].value == "Corregida"
     assert exported_row[16].value == "ok"
     assert exported_row[18].hyperlink.target == (
-        "http://testserver/records/excel_report_test.wav"
+        f"http://testserver/detections/{detection['id']}/audio"
     )
 
     audio_sheet = workbook["Calidad del audio"]

@@ -21,6 +21,8 @@ def serializar_review(review: models.DetectionReview | None) -> dict | None:
 
 
 def serializar_deteccion(detection: models.Detection, db: Session) -> dict:
+    deployment = detection.deployment
+    site = deployment.site if deployment else None
     return {
         "id": detection.id,
         "species": detection.species,
@@ -28,6 +30,11 @@ def serializar_deteccion(detection: models.Detection, db: Session) -> dict:
         "timestamp": detection.timestamp,
         "filename": detection.filename,
         "device_id": detection.device_id,
+        "deployment_id": detection.deployment_id,
+        "deployment_public_id": deployment.public_id if deployment else None,
+        "site_id": site.id if site else None,
+        "site_code": site.code if site else None,
+        "site_name": site.name if site else None,
         "amplitude": detection.amplitude,
         "audio_start_seconds": detection.audio_start_seconds,
         "audio_end_seconds": detection.audio_end_seconds,

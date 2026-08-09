@@ -152,6 +152,42 @@ def test_token_nodo_solo_accede_a_rutas_de_ingesta(
     assert forbidden_admin.status_code == 403
 
 
+def test_token_nodo_activa_su_despliegue_pero_no_administra_sitios(
+    client,
+    monkeypatch,
+):
+    configure_security(monkeypatch)
+    client.cookies.clear()
+    headers = {"Authorization": f"Bearer {NODE_TOKEN}"}
+
+    activation = client.post(
+        "/node/deployments/activate",
+        headers=headers,
+        json={
+            "device_name": "nodo-token-location-test",
+            "deployment_public_id": "34000000-0000-4000-8000-000000000001",
+            "site": {
+                "code": "fase3-token-site",
+                "name": "Sitio del token de nodo",
+                "country_code": "ES",
+                "lat": 37.38,
+                "lon": -6.0,
+                "location_source": "manual",
+                "timezone": "Europe/Madrid",
+            },
+            "started_at": "2026-08-09T12:00:00+00:00",
+        },
+    )
+    assert activation.status_code == 200
+
+    forbidden_site_admin = client.post(
+        "/sites/",
+        headers=headers,
+        json={"code": "token-no-admin", "name": "No permitido"},
+    )
+    assert forbidden_site_admin.status_code == 403
+
+
 def test_modo_requerido_sin_secretos_falla_cerrado(client, monkeypatch):
     monkeypatch.setenv("BIRDMONITOR_SECURITY_MODE", "required")
     for variable in (
