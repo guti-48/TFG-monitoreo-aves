@@ -47,6 +47,43 @@ def getBackendAuthHeaders():
 NODE_LOCATION = os.getenv("BIRDMONITOR_NODE_LOCATION", "").strip()
 NODE_LAT = os.getenv("BIRDMONITOR_NODE_LAT", "").strip()
 NODE_LON = os.getenv("BIRDMONITOR_NODE_LON", "").strip()
+SITE_CODE = os.getenv("BIRDMONITOR_SITE_CODE", "").strip().lower()
+SITE_NAME = os.getenv(
+    "BIRDMONITOR_SITE_NAME",
+    NODE_LOCATION,
+).strip()
+SITE_MUNICIPALITY = os.getenv("BIRDMONITOR_SITE_MUNICIPALITY", "").strip()
+SITE_REGION = os.getenv("BIRDMONITOR_SITE_REGION", "").strip()
+SITE_COUNTRY_CODE = os.getenv(
+    "BIRDMONITOR_SITE_COUNTRY_CODE",
+    "ES",
+).strip().upper()
+SITE_TIMEZONE = os.getenv(
+    "BIRDMONITOR_SITE_TIMEZONE",
+    "Europe/Madrid",
+).strip()
+SITE_LOCATION_SOURCE = os.getenv(
+    "BIRDMONITOR_SITE_LOCATION_SOURCE",
+    "manual",
+).strip().lower()
+SITE_LOCATION_ACCURACY_M = os.getenv(
+    "BIRDMONITOR_SITE_LOCATION_ACCURACY_M",
+    "",
+).strip()
+DEPLOYMENT_ID = os.getenv("BIRDMONITOR_DEPLOYMENT_ID", "").strip()
+DEPLOYMENT_STARTED_AT = os.getenv(
+    "BIRDMONITOR_DEPLOYMENT_STARTED_AT",
+    "",
+).strip()
+DEPLOYMENT_NOTES = os.getenv("BIRDMONITOR_DEPLOYMENT_NOTES", "").strip()
+LEGACY_SITE_CODE = os.getenv(
+    "BIRDMONITOR_LEGACY_SITE_CODE",
+    "",
+).strip().lower()
+LEGACY_DEPLOYMENT_ID = os.getenv(
+    "BIRDMONITOR_LEGACY_DEPLOYMENT_ID",
+    "",
+).strip()
 AUTO_GEOLOCATION = os.getenv("BIRDMONITOR_AUTO_GEOLOCATION", "0") == "1"
 GEO_CACHE_FILE = os.path.join(CURRENT_DIR, "node_location_cache.json")
 
@@ -162,6 +199,10 @@ OUTPUT_FOLDER_AUDIO = os.path.join(BASER_DIR, "records")
 OUTPUT_FOLDER_IMG = os.path.join(BASER_DIR, "spectrograms")
 CSV_BACKUP = os.path.join(BASER_DIR, "backup_data.csv")
 OUTBOX_DB = os.path.join(BASER_DIR, "offline_outbox.db")
+DEPLOYMENT_STATE_FILE = os.getenv(
+    "BIRDMONITOR_DEPLOYMENT_STATE_FILE",
+    os.path.join(BASER_DIR, "deployment_state.json"),
+).strip()
 
 os.makedirs(OUTPUT_FOLDER_AUDIO, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER_IMG, exist_ok=True)

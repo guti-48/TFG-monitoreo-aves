@@ -51,6 +51,7 @@ def test_rechaza_api_anonima_y_permite_sesion_administradora(
         follow_redirects=False,
     )
     assert login.status_code == 303
+    assert login.headers["location"] == "/?location_setup=1"
     assert "birdmonitor_session" in login.cookies
 
     authenticated = client.get("/devices/")
@@ -186,6 +187,96 @@ def test_token_nodo_activa_su_despliegue_pero_no_administra_sitios(
         json={"code": "token-no-admin", "name": "No permitido"},
     )
     assert forbidden_site_admin.status_code == 403
+
+    allowed_legacy_lookup = client.get(
+        "/node/deployments/legacy-context",
+        headers=headers,
+        params={"device_name": "nodo-inexistente-token"},
+    )
+    assert allowed_legacy_lookup.status_code == 404
+
+
+def test_cambio_remoto_ubicacion_separa_permisos_admin_y_nodo(
+    client,
+    monkeypatch,
+):
+    configure_security(monkeypatch)
+    monkeypatch.setenv("BIRDMONITOR_PRIMARY_NODE_NAME", "birdmonitor")
+    client.cookies.clear()
+
+    login = client.post(
+        "/auth/login",
+        data={"username": ADMIN_USERNAME, "password": ADMIN_PASSWORD},
+    )
+    assert login.status_code == 200
+
+    device_response = client.post(
+        "/devices/",
+        headers={"X-BirdMonitor-CSRF": "1"},
+        json={"name": "birdmonitor", "location": "Sin asignar"},
+    )
+    assert device_response.status_code == 200
+    device = next(
+        item for item in client.get("/devices/").json()
+        if item["name"] == "birdmonitor"
+    )
+    site = client.post(
+        "/sites/",
+        headers={"X-BirdMonitor-CSRF": "1"},
+        json={
+            "code": "security-remote-location",
+            "name": "Sitio seguro remoto",
+            "country_code": "ES",
+            "lat": 42.57,
+            "lon": -1.28,
+            "location_source": "manual",
+            "timezone": "Europe/Madrid",
+        },
+    ).json()
+    payload = {
+        "target_site_id": site["id"],
+        "confirm_site_code": site["code"],
+    }
+
+    without_csrf = client.post(
+        f"/devices/{device['id']}/location-commands",
+        json=payload,
+    )
+    assert without_csrf.status_code == 403
+    created = client.post(
+        f"/devices/{device['id']}/location-commands",
+        headers={"X-BirdMonitor-CSRF": "1"},
+        json=payload,
+    )
+    assert created.status_code == 200
+
+    client.cookies.clear()
+    node_headers = {"Authorization": f"Bearer {NODE_TOKEN}"}
+    delivered = client.get(
+        "/node/location-command",
+        headers=node_headers,
+        params={"device_name": "birdmonitor"},
+    )
+    assert delivered.status_code == 200
+    assert delivered.json()["public_id"] == created.json()["public_id"]
+
+    premature_ack = client.post(
+        "/node/location-command/ack",
+        headers=node_headers,
+        json={
+            "command_public_id": created.json()["public_id"],
+            "status": "applied",
+            "deployment_started_at": "2026-08-23T15:00:00+00:00",
+        },
+    )
+    assert premature_ack.status_code == 409
+
+    forbidden_admin_action = client.post(
+        f"/devices/{device['id']}/location-commands",
+        headers=node_headers,
+        json=payload,
+    )
+    assert forbidden_admin_action.status_code == 403
 
 
 def test_modo_requerido_sin_secretos_falla_cerrado(client, monkeypatch):

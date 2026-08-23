@@ -114,9 +114,25 @@ $EscapedConfig = $RuntimeConfig.Replace("'", "''")
 $EscapedWorkingDir = (Split-Path -Parent $MediaMtxExe).Replace("'", "''")
 $EscapedOutLog = $OutLog.Replace("'", "''")
 $EscapedErrLog = $ErrLog.Replace("'", "''")
+$EscapedServerHost = $ServerHost.Replace("'", "''")
 
 @"
 `$ErrorActionPreference = "Stop"
+`$AddressDeadline = (Get-Date).AddMinutes(3)
+while (`$null -eq (Get-NetIPAddress `
+    -IPAddress '$EscapedServerHost' `
+    -ErrorAction SilentlyContinue
+)) {
+    if ((Get-Date) -ge `$AddressDeadline) {
+        Write-Error (
+            "La IP segura $EscapedServerHost no esta disponible " +
+            "despues de esperar a la red."
+        )
+        exit 2
+    }
+    Start-Sleep -Seconds 2
+}
+
 `$Existing = Get-Process mediamtx -ErrorAction SilentlyContinue
 if (`$Existing) {
     Wait-Process -Id `$Existing.Id

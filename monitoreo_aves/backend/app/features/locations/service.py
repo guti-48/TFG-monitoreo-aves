@@ -5,7 +5,7 @@ import os
 import re
 import unicodedata
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -227,12 +227,325 @@ def deployment_response(deployment: models.Deployment) -> dict:
     }
 
 
+def _primary_node_name() -> str:
+    return os.getenv(
+        "BIRDMONITOR_PRIMARY_NODE_NAME",
+        "birdmonitor",
+    ).strip() or "birdmonitor"
+
+
+def _get_device_or_404(db: Session, device_id: int) -> models.Device:
+    device = db.query(models.Device).filter(models.Device.id == device_id).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
+
+def _assert_primary_node(device: models.Device) -> None:
+    if device.name != _primary_node_name():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El control remoto solo esta habilitado para el nodo principal "
+                f"{_primary_node_name()}"
+            ),
+        )
+
+
+def location_command_response(command: models.NodeLocationCommand) -> dict:
+    device = command.device
+    return {
+        "id": command.id,
+        "public_id": command.public_id,
+        "device_id": command.device_id,
+        "device_name": device.name,
+        "target_site_id": command.target_site_id,
+        "target_site_code": command.target_site_code,
+        "target_site_name": command.target_site_name,
+        "target_site_municipality": command.target_site_municipality,
+        "target_site_region": command.target_site_region,
+        "target_site_country_code": command.target_site_country_code,
+        "target_site_lat": command.target_site_lat,
+        "target_site_lon": command.target_site_lon,
+        "target_site_location_source": command.target_site_location_source,
+        "target_site_location_accuracy_m": (
+            command.target_site_location_accuracy_m
+        ),
+        "target_site_timezone": command.target_site_timezone,
+        "deployment_public_id": command.deployment_public_id,
+        "status": command.status,
+        "requested_by": command.requested_by,
+        "requested_at": command.requested_at,
+        "delivered_at": command.delivered_at,
+        "deployment_started_at": (
+            _comparable_datetime(command.deployment_started_at)
+            if command.deployment_started_at is not None
+            else None
+        ),
+        "applied_at": command.applied_at,
+        "failed_at": command.failed_at,
+        "cancelled_at": command.cancelled_at,
+        "delivery_count": command.delivery_count,
+        "notes": command.notes,
+        "error_detail": command.error_detail,
+        "created_at": command.created_at,
+        "updated_at": command.updated_at,
+    }
+
+
+def _command_query(db: Session):
+    return db.query(models.NodeLocationCommand).options(
+        joinedload(models.NodeLocationCommand.device),
+        joinedload(models.NodeLocationCommand.target_site),
+    )
+
+
+def request_location_command(
+    db: Session,
+    *,
+    device_id: int,
+    payload: schemas.NodeLocationCommandCreate,
+    requested_by: str,
+) -> models.NodeLocationCommand:
+    device = _get_device_or_404(db, device_id)
+    _assert_primary_node(device)
+    site = get_site_or_404(db, payload.target_site_id)
+
+    if site.archived_at is not None:
+        raise HTTPException(status_code=409, detail="El sitio esta archivado")
+    if site.code != payload.confirm_site_code:
+        raise HTTPException(
+            status_code=422,
+            detail="La confirmacion no coincide con el codigo del sitio",
+        )
+    if site.lat is None or site.lon is None:
+        raise HTTPException(
+            status_code=409,
+            detail="El sitio necesita latitud y longitud antes de asignarlo",
+        )
+
+    active = db.query(models.Deployment).filter(
+        models.Deployment.device_id == device.id,
+        models.Deployment.ended_at.is_(None),
+    ).first()
+    if active is not None and active.site_id == site.id:
+        raise HTTPException(
+            status_code=409,
+            detail="El nodo ya tiene activo el sitio seleccionado",
+        )
+
+    open_command = _command_query(db).filter(
+        models.NodeLocationCommand.device_id == device.id,
+        models.NodeLocationCommand.status.in_(("pending", "delivered")),
+    ).first()
+    if open_command is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ya existe una orden de ubicacion pendiente: "
+                f"{open_command.public_id}"
+            ),
+        )
+
+    now = _utc_now()
+    command = models.NodeLocationCommand(
+        public_id=str(uuid4()),
+        device_id=device.id,
+        target_site_id=site.id,
+        target_site_code=site.code,
+        target_site_name=site.name,
+        target_site_municipality=site.municipality,
+        target_site_region=site.region,
+        target_site_country_code=site.country_code,
+        target_site_lat=site.lat,
+        target_site_lon=site.lon,
+        target_site_location_source=site.location_source,
+        target_site_location_accuracy_m=site.location_accuracy_m,
+        target_site_timezone=site.timezone,
+        deployment_public_id=str(uuid4()),
+        status="pending",
+        requested_by=(requested_by or "admin")[:120],
+        requested_at=now,
+        notes=payload.notes,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(command)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo crear la orden por un conflicto concurrente",
+        ) from exc
+    return _command_query(db).filter(
+        models.NodeLocationCommand.id == command.id
+    ).one()
+
+
+def list_location_commands(
+    db: Session,
+    *,
+    device_id: int,
+    limit: int = 20,
+) -> list[models.NodeLocationCommand]:
+    device = _get_device_or_404(db, device_id)
+    _assert_primary_node(device)
+    return _command_query(db).filter(
+        models.NodeLocationCommand.device_id == device.id
+    ).order_by(
+        models.NodeLocationCommand.requested_at.desc(),
+        models.NodeLocationCommand.id.desc(),
+    ).limit(limit).all()
+
+
+def deliver_location_command(
+    db: Session,
+    *,
+    device_name: str,
+) -> models.NodeLocationCommand | None:
+    if device_name != _primary_node_name():
+        raise HTTPException(status_code=403, detail="Nodo no autorizado")
+    device = db.query(models.Device).filter(
+        models.Device.name == device_name
+    ).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    command = _command_query(db).filter(
+        models.NodeLocationCommand.device_id == device.id,
+        models.NodeLocationCommand.status.in_(("pending", "delivered")),
+    ).order_by(models.NodeLocationCommand.requested_at.asc()).first()
+    if command is None:
+        return None
+
+    now = _utc_now()
+    command.status = "delivered"
+    command.delivered_at = command.delivered_at or now
+    command.delivery_count = int(command.delivery_count or 0) + 1
+    command.updated_at = now
+    db.commit()
+    return _command_query(db).filter(
+        models.NodeLocationCommand.id == command.id
+    ).one()
+
+
+def acknowledge_location_command(
+    db: Session,
+    payload: schemas.NodeLocationCommandAck,
+) -> models.NodeLocationCommand:
+    command = _command_query(db).filter(
+        models.NodeLocationCommand.public_id == str(payload.command_public_id)
+    ).first()
+    if command is None:
+        raise HTTPException(status_code=404, detail="Location command not found")
+    _assert_primary_node(command.device)
+
+    if command.status == payload.status:
+        return command
+    if command.status not in {"pending", "delivered"}:
+        raise HTTPException(
+            status_code=409,
+            detail=f"La orden ya esta cerrada con estado {command.status}",
+        )
+
+    now = _utc_now()
+    if payload.status == "applied":
+        deployment = db.query(models.Deployment).filter(
+            models.Deployment.public_id == command.deployment_public_id,
+            models.Deployment.device_id == command.device_id,
+            models.Deployment.site_id == command.target_site_id,
+            models.Deployment.ended_at.is_(None),
+        ).first()
+        if deployment is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El despliegue solicitado no esta activo; el nodo debe "
+                    "activarlo antes de confirmar la orden"
+                ),
+            )
+        expected_started_at = command.deployment_started_at or deployment.started_at
+        if _comparable_datetime(expected_started_at) != _comparable_datetime(
+            payload.deployment_started_at
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="La fecha confirmada no coincide con el despliegue activo",
+            )
+        command.status = "applied"
+        command.deployment_started_at = payload.deployment_started_at
+        command.applied_at = now
+        command.error_detail = None
+    else:
+        command.status = "failed"
+        command.failed_at = now
+        command.error_detail = payload.error_detail
+
+    command.updated_at = now
+    db.commit()
+    return _command_query(db).filter(
+        models.NodeLocationCommand.id == command.id
+    ).one()
+
+
+def cancel_location_command(
+    db: Session,
+    *,
+    device_id: int,
+    command_id: int,
+) -> models.NodeLocationCommand:
+    device = _get_device_or_404(db, device_id)
+    _assert_primary_node(device)
+    command = _command_query(db).filter(
+        models.NodeLocationCommand.id == command_id,
+        models.NodeLocationCommand.device_id == device.id,
+    ).first()
+    if command is None:
+        raise HTTPException(status_code=404, detail="Location command not found")
+    if command.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="Solo se puede cancelar una orden que el nodo aun no ha recogido",
+        )
+    now = _utc_now()
+    command.status = "cancelled"
+    command.cancelled_at = now
+    command.updated_at = now
+    db.commit()
+    return _command_query(db).filter(
+        models.NodeLocationCommand.id == command.id
+    ).one()
+
+
 def _update_device_compatibility(device: models.Device, site: models.Site) -> None:
     device.location = site.name
     device.lat = site.lat
     device.lon = site.lon
     device.location_source = site.location_source
     device.location_accuracy_m = site.location_accuracy_m
+
+
+def _record_location_command_activation(
+    db: Session,
+    *,
+    device: models.Device,
+    site: models.Site,
+    deployment_public_id: str,
+    started_at: datetime,
+) -> None:
+    """Conserva la fecha real incluso si el ACK del nodo se pierde."""
+    command = db.query(models.NodeLocationCommand).filter(
+        models.NodeLocationCommand.device_id == device.id,
+        models.NodeLocationCommand.target_site_id == site.id,
+        models.NodeLocationCommand.deployment_public_id == deployment_public_id,
+        models.NodeLocationCommand.status.in_(("pending", "delivered")),
+    ).first()
+    if command is None:
+        return
+    command.deployment_started_at = started_at
+    command.updated_at = _utc_now()
 
 
 def activate_deployment(
@@ -258,6 +571,13 @@ def activate_deployment(
         # puede hacer que Device vuelva a mostrar un sitio ya cerrado.
         if existing.ended_at is None:
             _update_device_compatibility(device, site)
+        _record_location_command_activation(
+            db,
+            device=device,
+            site=site,
+            deployment_public_id=public_id,
+            started_at=existing.started_at,
+        )
         db.commit()
         return existing
 
@@ -286,6 +606,13 @@ def activate_deployment(
     )
     db.add(deployment)
     _update_device_compatibility(device, site)
+    _record_location_command_activation(
+        db,
+        device=device,
+        site=site,
+        deployment_public_id=public_id,
+        started_at=payload.started_at,
+    )
     try:
         db.commit()
     except IntegrityError as exc:
@@ -343,6 +670,29 @@ def _legacy_site_payload(device: models.Device) -> schemas.SiteCreate:
         location_accuracy_m=(device.location_accuracy_m if lat is not None else None),
         timezone="Europe/Madrid",
     )
+
+
+def legacy_event_context(db: Session, device_name: str) -> dict:
+    """Devuelve la identidad histórica necesaria para migrar una cola antigua."""
+    device = db.query(models.Device).filter(
+        models.Device.name == device_name
+    ).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    site_payload = _legacy_site_payload(device)
+    public_id = legacy_deployment_public_id(site_payload.code, device.id)
+    deployment = db.query(models.Deployment).options(
+        joinedload(models.Deployment.site),
+    ).filter(models.Deployment.public_id == public_id).first()
+    if deployment is None:
+        deployment = ensure_legacy_deployment(db, device, _utc_now())
+    db.commit()
+    return {
+        "device_name": device.name,
+        "site_code": deployment.site.code,
+        "deployment_public_id": deployment.public_id,
+    }
 
 
 def ensure_legacy_deployment(

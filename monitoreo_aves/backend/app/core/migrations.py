@@ -15,6 +15,12 @@ LOCATION_MIGRATION_VERSION = "20260809_01_sites_deployments"
 LOCATION_MIGRATION_DESCRIPTION = (
     "Crea sitios y despliegues y asigna el historico existente a Sevilla"
 )
+NODE_LOCATION_COMMAND_MIGRATION_VERSION = (
+    "20260823_02_node_location_commands"
+)
+NODE_LOCATION_COMMAND_MIGRATION_DESCRIPTION = (
+    "Crea ordenes auditadas para cambiar remotamente la ubicacion del nodo"
+)
 _LEGACY_DEPLOYMENT_NAMESPACE = uuid.UUID("b07cd2ba-e592-4bc0-bb67-805ece746e59")
 _SITE_CODE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _INVALID_LOCATIONS = {
@@ -471,10 +477,69 @@ def apply_location_migration(engine: Engine) -> bool:
         return True
 
 
+def apply_node_location_command_migration(engine: Engine) -> bool:
+    """Registra y verifica la tabla de órdenes creada por el modelo ORM."""
+    if engine.dialect.name != "sqlite":
+        raise RuntimeError("La migracion de ordenes solo admite SQLite")
+
+    required_columns = {
+        "id",
+        "public_id",
+        "device_id",
+        "target_site_id",
+        "target_site_code",
+        "target_site_name",
+        "target_site_lat",
+        "target_site_lon",
+        "target_site_timezone",
+        "deployment_public_id",
+        "status",
+        "requested_by",
+        "requested_at",
+        "delivery_count",
+        "created_at",
+        "updated_at",
+    }
+    with engine.begin() as connection:
+        already_applied = connection.execute(
+            text(
+                "SELECT 1 FROM schema_migrations WHERE version = :version"
+            ),
+            {"version": NODE_LOCATION_COMMAND_MIGRATION_VERSION},
+        ).first()
+        if already_applied:
+            return False
+
+        available_columns = _columns(connection, "node_location_commands")
+        missing = sorted(required_columns - available_columns)
+        if missing:
+            raise RuntimeError(
+                "La tabla node_location_commands esta incompleta: "
+                + ", ".join(missing)
+            )
+
+        connection.execute(
+            text(
+                """
+                INSERT INTO schema_migrations (version, applied_at, description)
+                VALUES (:version, :applied_at, :description)
+                """
+            ),
+            {
+                "version": NODE_LOCATION_COMMAND_MIGRATION_VERSION,
+                "applied_at": _utc_now(),
+                "description": NODE_LOCATION_COMMAND_MIGRATION_DESCRIPTION,
+            },
+        )
+        return True
+
+
 def ensure_database_schema(engine: Engine) -> bool:
     """Crea tablas, conserva columnas anteriores y aplica migraciones pendientes."""
     from ..domain.models import Base
 
     Base.metadata.create_all(bind=engine)
     ensure_legacy_runtime_columns(engine)
-    return apply_location_migration(engine)
+    location_changed = apply_location_migration(engine)
+    commands_changed = apply_node_location_command_migration(engine)
+    return location_changed or commands_changed

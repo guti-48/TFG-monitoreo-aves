@@ -261,6 +261,101 @@ def calcular_indices_acusticos(device_id, site_id=None, deployment_id=None):
     )
 
 
+def _reportes_sin_detecciones(
+    site_id=None,
+    deployment_id=None,
+    device_id=None,
+):
+    """Mantiene visible un sitio válido aunque todavía no tenga detecciones."""
+    if site_id is None and deployment_id is None and device_id is None:
+        return []
+
+    filters = []
+    params = []
+    if site_id is not None:
+        filters.append("s.id = ?")
+        params.append(int(site_id))
+    if deployment_id is not None:
+        filters.append("p.id = ?")
+        params.append(int(deployment_id))
+    if device_id is not None:
+        filters.append("d.id = ?")
+        params.append(int(device_id))
+
+    where_sql = " AND ".join(filters) if filters else "1 = 1"
+    try:
+        with sqlite3.connect(DB_PATH) as conexion:
+            rows = conexion.execute(
+                f"""
+                SELECT
+                    s.id,
+                    s.code,
+                    s.name,
+                    d.id,
+                    d.name,
+                    p.id
+                FROM deployments p
+                JOIN sites s ON s.id = p.site_id
+                JOIN devices d ON d.id = p.device_id
+                WHERE {where_sql}
+                ORDER BY
+                    CASE WHEN p.ended_at IS NULL THEN 0 ELSE 1 END,
+                    p.started_at DESC,
+                    p.id DESC
+                """,
+                params,
+            ).fetchall()
+    except Exception as exc:
+        print(f"No se pudo construir el reporte vacío del sitio: {exc}")
+        return []
+
+    reports = []
+    seen = set()
+    for (
+        current_site_id,
+        site_code,
+        site_name,
+        current_device_id,
+        device_name,
+        current_deployment_id,
+    ) in rows:
+        group_key = (int(current_site_id), int(current_device_id))
+        if group_key in seen:
+            continue
+        seen.add(group_key)
+
+        selected_deployment_id = (
+            int(current_deployment_id) if deployment_id is not None else None
+        )
+        report = {
+            "abundancia": 0,
+            "riqueza": 0,
+            "shannon": 0.0,
+            "simpson": 0.0,
+            "pielou": None,
+            "calidad": "DESCRIPTIVO",
+            "device_id": int(current_device_id),
+            "site_id": int(current_site_id),
+            "site_code": site_code,
+            "site_name": site_name,
+            "deployment_id": selected_deployment_id,
+            "node_name": device_name,
+            "zona": site_name or "Sin ubicación configurada",
+            "detection_period_start": None,
+            "detection_period_end": None,
+        }
+        report.update(
+            calcular_indices_acusticos(
+                current_device_id,
+                site_id=current_site_id,
+                deployment_id=selected_deployment_id,
+            )
+        )
+        reports.append(report)
+
+    return reports
+
+
 def obtener_reporte_biodiversidad(
     site_id=None,
     deployment_id=None,
@@ -276,7 +371,11 @@ def obtener_reporte_biodiversidad(
     )
 
     if df.empty:
-        return []
+        return _reportes_sin_detecciones(
+            site_id=site_id,
+            deployment_id=deployment_id,
+            device_id=device_id,
+        )
 
     informe_final = []
     for (current_site_id, current_device_id), datos_nodo in df.groupby(

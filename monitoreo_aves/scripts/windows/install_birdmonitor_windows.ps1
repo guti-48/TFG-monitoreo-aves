@@ -194,6 +194,20 @@ Write-Host "Creando script de arranque de MediaMTX..." -ForegroundColor Cyan
 
 @"
 `$ErrorActionPreference = "Stop"
+`$AddressDeadline = (Get-Date).AddMinutes(3)
+while (`$null -eq (Get-NetIPAddress `
+    -IPAddress "$ServerHost" `
+    -ErrorAction SilentlyContinue
+)) {
+    if ((Get-Date) -ge `$AddressDeadline) {
+        Write-Error (
+            "La IP segura $ServerHost no esta disponible " +
+            "despues de esperar a la red."
+        )
+        exit 2
+    }
+    Start-Sleep -Seconds 2
+}
 
 `$existing = Get-Process mediamtx -ErrorAction SilentlyContinue
 

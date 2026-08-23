@@ -163,7 +163,9 @@ def login(
         return _login_page("Usuario o contraseña incorrectos.", 401)
 
     _clear_failures(client_key)
-    response = RedirectResponse(url="/", status_code=303)
+    # El catálogo de lugares solo se muestra después de autenticar. El
+    # dashboard retira este indicador al confirmar o mantener la ubicación.
+    response = RedirectResponse(url="/?location_setup=1", status_code=303)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=create_session_token(settings.admin_username, settings),

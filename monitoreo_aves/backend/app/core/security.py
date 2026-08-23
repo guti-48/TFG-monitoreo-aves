@@ -28,6 +28,9 @@ NODE_PERMISSIONS = {
     ("POST", "/audio-metrics/"),
     ("POST", "/upload/"),
     ("POST", "/node/deployments/activate"),
+    ("GET", "/node/deployments/legacy-context"),
+    ("GET", "/node/location-command"),
+    ("POST", "/node/location-command/ack"),
     ("GET", "/stream/control"),
     ("POST", "/stream/status"),
 }

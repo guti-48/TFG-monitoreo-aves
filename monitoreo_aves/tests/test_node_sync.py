@@ -40,7 +40,11 @@ def test_deteccion_envia_tiempos_al_backend(monkeypatch):
         return SuccessfulResponse()
 
     monkeypatch.setattr(node_sync.requests, "post", fake_post)
-    monkeypatch.setattr(node_sync, "subirArchivos", lambda filename: True)
+    monkeypatch.setattr(
+        node_sync,
+        "subirArchivos",
+        lambda filename, context=None: True,
+    )
     monkeypatch.setattr(node_sync, "sincronizarRespaldo", lambda: None)
     monkeypatch.setattr(
         node_sync,
@@ -61,6 +65,10 @@ def test_deteccion_envia_tiempos_al_backend(monkeypatch):
     assert captured["payload"]["filename"] == "record_2026-07-22_14-30-00.wav"
     assert captured["payload"]["audio_start_seconds"] == 16.5
     assert captured["payload"]["audio_end_seconds"] == 19.5
+    assert captured["payload"]["site_code"] == "pytest-site"
+    assert captured["payload"]["deployment_public_id"] == (
+        "41000000-0000-4000-8000-000000000001"
+    )
     assert captured["headers"]["Authorization"] == "Bearer token-test"
 
 
@@ -106,6 +114,7 @@ def test_metricas_envian_diagnostico_aunque_fallen_indices(monkeypatch):
     assert captured["payload"]["birdnet_model_version"] == "2.4"
     assert captured["payload"]["acoustic_metrics_version"] == "legacy-v1"
     assert captured["payload"]["aci"] == 0.0
+    assert captured["payload"]["site_code"] == "pytest-site"
 
 
 def test_metricas_v2_quedan_en_cola_si_backend_no_confirma_version(

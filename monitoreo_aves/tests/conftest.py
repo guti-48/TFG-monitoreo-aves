@@ -24,6 +24,27 @@ os.environ["BIRDMONITOR_NETWORK_MODE"] = "disabled"
 # backend/birdmonitor.env. Las URL se construyen con el host del TestClient.
 os.environ["BIRDMONITOR_STREAM_BASE_URL"] = ""
 os.environ["BIRDMONITOR_STREAM_RTSP_BASE_URL"] = ""
+os.environ["BIRDMONITOR_NODE_NAME"] = "birdmonitor"
+os.environ["BIRDMONITOR_SITE_CODE"] = "pytest-site"
+os.environ["BIRDMONITOR_SITE_NAME"] = "Sitio de pruebas"
+os.environ["BIRDMONITOR_SITE_MUNICIPALITY"] = "Municipio de pruebas"
+os.environ["BIRDMONITOR_SITE_REGION"] = "Region de pruebas"
+os.environ["BIRDMONITOR_SITE_COUNTRY_CODE"] = "ES"
+os.environ["BIRDMONITOR_SITE_TIMEZONE"] = "Europe/Madrid"
+os.environ["BIRDMONITOR_SITE_LOCATION_SOURCE"] = "manual"
+os.environ["BIRDMONITOR_SITE_LOCATION_ACCURACY_M"] = "10"
+os.environ["BIRDMONITOR_DEPLOYMENT_ID"] = (
+    "41000000-0000-4000-8000-000000000001"
+)
+os.environ["BIRDMONITOR_DEPLOYMENT_STARTED_AT"] = (
+    "2026-01-01T00:00:00+00:00"
+)
+os.environ["BIRDMONITOR_NODE_LOCATION"] = "Sitio de pruebas"
+os.environ["BIRDMONITOR_NODE_LAT"] = "37.0"
+os.environ["BIRDMONITOR_NODE_LON"] = "-6.0"
+os.environ["BIRDMONITOR_DEPLOYMENT_STATE_FILE"] = str(
+    PYTEST_TMP_DIR / f"deployment_state_{uuid4().hex}.json"
+)
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

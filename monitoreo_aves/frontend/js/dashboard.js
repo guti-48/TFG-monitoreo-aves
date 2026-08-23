@@ -58,6 +58,466 @@ let speciesChartExpanded = false;
 let activeSpeciesPreviewTrigger = null;
 let speciesPreviewHideTimer = null;
 let detectionAudioReviewState = null;
+let locationSites = [];
+let locationDeployments = [];
+let selectedSiteId = null;
+let selectedDeploymentId = null;
+let locationContextReady = false;
+let locationChangeRequestId = 0;
+let lastKnownActiveSiteId = null;
+let locationCatalogRefreshInProgress = false;
+
+function getSelectedSite() {
+    return locationSites.find(site => Number(site.id) === Number(selectedSiteId)) || null;
+}
+
+function getActiveSite() {
+    return locationSites.find(site => Number(site.active_deployment_count) > 0) || null;
+}
+
+function getSelectedDeployment() {
+    return locationDeployments.find(
+        deployment => Number(deployment.id) === Number(selectedDeploymentId)
+    ) || null;
+}
+
+function locationLabel() {
+    const site = getSelectedSite();
+    return site?.name || 'Ubicación no seleccionada';
+}
+
+function locationFileToken() {
+    const site = getSelectedSite();
+    return String(site?.code || 'sin-ubicacion')
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-');
+}
+
+function locationScopeKey() {
+    return `${selectedSiteId ?? 'none'}:${selectedDeploymentId ?? 'all'}`;
+}
+
+function locationAwareUrl(path, params = {}) {
+    const numericSiteId = Number(selectedSiteId);
+    if (
+        !locationContextReady
+        || selectedSiteId === null
+        || !Number.isInteger(numericSiteId)
+        || numericSiteId < 1
+    ) {
+        throw new Error('No hay una ubicación válida seleccionada');
+    }
+
+    const url = new URL(path, window.location.origin);
+    url.searchParams.set('site_id', String(numericSiteId));
+    const numericDeploymentId = Number(selectedDeploymentId);
+    if (
+        selectedDeploymentId !== null
+        && Number.isInteger(numericDeploymentId)
+        && numericDeploymentId > 0
+    ) {
+        url.searchParams.set('deployment_id', String(numericDeploymentId));
+    }
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') {
+            url.searchParams.set(key, String(value));
+        }
+    });
+    return `${url.pathname}${url.search}`;
+}
+
+function formatDeploymentDate(value) {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleDateString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+}
+
+async function fetchLocationDeployments(siteId) {
+    const response = await fetch(`/sites/${encodeURIComponent(siteId)}/deployments`, {
+        cache: 'no-store'
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status} al cargar campañas`);
+    const deployments = await response.json();
+    return Array.isArray(deployments) ? deployments : [];
+}
+
+function updateLocationControls() {
+    const siteSelect = document.getElementById('location-site-select');
+    const deploymentSelect = document.getElementById('location-deployment-select');
+    const sidebarVersion = document.getElementById('sidebar-location-label');
+    const selectedSite = getSelectedSite();
+
+    if (siteSelect) {
+        siteSelect.innerHTML = locationSites.map(site => {
+            const activeSuffix = Number(site.active_deployment_count) > 0 ? ' · activa' : '';
+            const shortName = site.municipality || site.name;
+            return `<option value="${Number(site.id)}" ${Number(site.id) === Number(selectedSiteId) ? 'selected' : ''}>${escapeHtml(shortName)}${activeSuffix}</option>`;
+        }).join('');
+        siteSelect.disabled = locationSites.length < 2;
+        siteSelect.title = selectedSite?.name || 'Ubicación seleccionada';
+    }
+
+    if (deploymentSelect) {
+        const allLabel = 'Historial completo';
+        deploymentSelect.innerHTML = `
+            <option value="" ${selectedDeploymentId === null ? 'selected' : ''}>${allLabel}</option>
+            ${locationDeployments.map(deployment => {
+                const state = deployment.active ? 'Actual' : 'Finalizada';
+                const period = deployment.active
+                    ? `desde ${formatDeploymentDate(deployment.started_at)}`
+                    : `${formatDeploymentDate(deployment.started_at)} – ${formatDeploymentDate(deployment.ended_at)}`;
+                return `<option value="${Number(deployment.id)}" ${Number(deployment.id) === Number(selectedDeploymentId) ? 'selected' : ''}>${state} · ${period}</option>`;
+            }).join('')}
+        `;
+        deploymentSelect.disabled = locationDeployments.length === 0;
+    }
+
+    const name = selectedSite?.name || 'Ubicación no disponible';
+    if (sidebarVersion) sidebarVersion.textContent = `v2.2 · ${selectedSite?.municipality || name}`;
+}
+
+async function initializeLocationContext() {
+    const response = await fetch(`/sites/?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status} al cargar ubicaciones`);
+
+    const sites = await response.json();
+    locationSites = Array.isArray(sites) ? sites : [];
+    if (locationSites.length === 0) {
+        throw new Error('No hay ubicaciones configuradas');
+    }
+
+    const activeSite = getActiveSite();
+    selectedSiteId = Number((activeSite || locationSites[0]).id);
+    lastKnownActiveSiteId = activeSite ? Number(activeSite.id) : null;
+    selectedDeploymentId = null;
+    locationDeployments = await fetchLocationDeployments(selectedSiteId);
+    locationContextReady = true;
+    updateLocationControls();
+}
+
+async function refreshLocationCatalog() {
+    if (!locationContextReady || locationCatalogRefreshInProgress) return;
+    locationCatalogRefreshInProgress = true;
+    try {
+        const response = await fetch(`/sites/?t=${Date.now()}`, {
+            cache: 'no-store'
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const sites = await response.json();
+        if (!Array.isArray(sites) || sites.length === 0) return;
+
+        const previousActiveId = lastKnownActiveSiteId;
+        locationSites = sites;
+        const activeSite = getActiveSite();
+        const activeId = activeSite ? Number(activeSite.id) : null;
+        lastKnownActiveSiteId = activeId;
+
+        if (
+            activeId !== null
+            && activeId !== previousActiveId
+            && Number(selectedSiteId) === Number(previousActiveId)
+        ) {
+            const deployments = await fetchLocationDeployments(activeId);
+            selectedSiteId = activeId;
+            selectedDeploymentId = null;
+            locationDeployments = deployments;
+            resetLocationScopedState();
+            updateLocationControls();
+            refreshLocationScopedView();
+            return;
+        }
+        updateLocationControls();
+    } catch (error) {
+        console.warn('No se pudo refrescar el catálogo de ubicaciones:', error);
+    } finally {
+        locationCatalogRefreshInProgress = false;
+    }
+}
+
+function removeLocationSetupFlag() {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('location_setup')) return;
+    url.searchParams.delete('location_setup');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function closePhysicalLocationDialog() {
+    document.getElementById('physical-location-dialog')?.remove();
+    removeLocationSetupFlag();
+}
+
+function locationCommandStatusLabel(status) {
+    return ({
+        pending: 'Pendiente de recogida',
+        delivered: 'Recibida por la Raspberry',
+        applied: 'Aplicada',
+        failed: 'Fallida',
+        cancelled: 'Cancelada'
+    })[status] || status;
+}
+
+async function getPrimaryNodeForLocationControl() {
+    const devices = await fetchDevices();
+    const activeDeployment = locationDeployments.find(item => item.active);
+    return devices.find(item => item.name === 'birdmonitor')
+        || devices.find(item => Number(item.id) === Number(activeDeployment?.device_id))
+        || devices[0]
+        || null;
+}
+
+async function fetchLocationCommands(deviceId) {
+    const response = await fetch(
+        `/devices/${encodeURIComponent(deviceId)}/location-commands?limit=10`,
+        { cache: 'no-store' }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const commands = await response.json();
+    return Array.isArray(commands) ? commands : [];
+}
+
+async function openPhysicalLocationDialog(options = {}) {
+    document.getElementById('physical-location-dialog')?.remove();
+    const startup = options.startup === true;
+    const dialog = document.createElement('div');
+    dialog.id = 'physical-location-dialog';
+    dialog.className = 'correction-dialog-backdrop';
+    dialog.innerHTML = `
+        <div class="correction-dialog" role="dialog" aria-modal="true" aria-labelledby="physical-location-title">
+            <div class="correction-dialog-body text-center py-5">
+                <div class="spinner-border text-success" role="status"></div>
+                <p class="text-muted mt-3 mb-0">Consultando ubicación física del nodo...</p>
+            </div>
+        </div>`;
+    document.body.appendChild(dialog);
+
+    try {
+        await refreshLocationCatalog();
+        const node = await getPrimaryNodeForLocationControl();
+        if (!node) throw new Error('No hay ningún nodo registrado');
+        const commands = await fetchLocationCommands(node.id);
+        const openCommand = commands.find(item => ['pending', 'delivered'].includes(item.status));
+        const latestCommand = commands[0] || null;
+        const activeSite = getActiveSite();
+        const eligibleSites = locationSites.filter(
+            site => Number.isFinite(Number(site.lat)) && Number.isFinite(Number(site.lon))
+        );
+        const selectedValue = openCommand?.target_site_id || activeSite?.id || eligibleSites[0]?.id || '';
+        const statusBlock = openCommand
+            ? `
+                <div class="alert alert-warning mb-3">
+                    <strong>${escapeHtml(locationCommandStatusLabel(openCommand.status))}:</strong>
+                    cambio a ${escapeHtml(openCommand.target_site_name)}.
+                    ${openCommand.status === 'pending'
+                        ? 'La Raspberry todavía no ha recogido la orden.'
+                        : 'La Raspberry ya la recibió y está terminando de aplicarla.'}
+                </div>`
+            : latestCommand
+                ? `<div class="correction-empty-suggestion mb-3">Última orden: ${escapeHtml(locationCommandStatusLabel(latestCommand.status))} · ${escapeHtml(latestCommand.target_site_name)}</div>`
+                : '';
+
+        dialog.innerHTML = `
+            <div class="correction-dialog" role="dialog" aria-modal="true" aria-labelledby="physical-location-title">
+                <div class="correction-dialog-header">
+                    <div>
+                        <p class="correction-dialog-eyebrow">Configuración protegida del nodo</p>
+                        <h3 id="physical-location-title">¿Dónde está instalada la Raspberry?</h3>
+                    </div>
+                    ${startup ? '' : `
+                        <button type="button" class="correction-dialog-close" onclick="closePhysicalLocationDialog()" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>`}
+                </div>
+                <div class="correction-dialog-body">
+                    <div class="correction-original mb-3">
+                        <span>Ubicación activa confirmada</span>
+                        <strong>${escapeHtml(activeSite?.name || 'Sin ubicación activa')}</strong>
+                    </div>
+                    ${statusBlock}
+                    ${eligibleSites.length === 0 ? `
+                        <div class="alert alert-danger mb-3">
+                            No hay ubicaciones con coordenadas válidas. Configura primero el catálogo de sitios.
+                        </div>` : ''}
+                    <label class="correction-field">
+                        <span>Ubicación física real del nodo</span>
+                        <select id="physical-location-site-select" class="form-select" ${openCommand ? 'disabled' : ''}>
+                            ${eligibleSites.map(site => `
+                                <option value="${Number(site.id)}" ${Number(site.id) === Number(selectedValue) ? 'selected' : ''}>
+                                    ${escapeHtml(site.name)}${Number(site.active_deployment_count) > 0 ? ' · actual' : ''}
+                                </option>`).join('')}
+                        </select>
+                    </label>
+                    <label class="location-confirm-check mt-3 ${openCommand ? 'd-none' : ''}">
+                        <input id="physical-location-confirm" type="checkbox">
+                        <span>Confirmo que la caja ya está físicamente en el lugar seleccionado.</span>
+                    </label>
+                    <p class="correction-helper mt-3">
+                        Consultar datos históricos no mueve el nodo. Esta acción crea una campaña nueva, actualiza las coordenadas de BirdNET y conserva los archivos pendientes en su ubicación anterior.
+                    </p>
+                    <div id="physical-location-feedback" aria-live="polite"></div>
+                </div>
+                <div class="correction-dialog-actions">
+                    ${openCommand?.status === 'pending' ? `
+                        <button type="button" class="btn btn-outline-danger" onclick="cancelPhysicalLocationCommand(${Number(node.id)}, ${Number(openCommand.id)})">
+                            Cancelar orden pendiente
+                        </button>` : ''}
+                    <button type="button" class="btn btn-outline-secondary" onclick="closePhysicalLocationDialog()">
+                        ${startup ? 'Mantener ubicación actual' : 'Cerrar'}
+                    </button>
+                    ${openCommand ? '' : `
+                        <button type="button" class="btn btn-success" onclick="submitPhysicalLocationCommand(${Number(node.id)})" ${eligibleSites.length === 0 ? 'disabled' : ''}>
+                            <i class="bi bi-send-check me-2"></i>Aplicar en la Raspberry
+                        </button>`}
+                </div>
+            </div>`;
+    } catch (error) {
+        dialog.innerHTML = `
+            <div class="correction-dialog" role="dialog" aria-modal="true">
+                <div class="correction-dialog-body">
+                    <div class="alert alert-danger mb-0">No se pudo cargar el control de ubicación: ${escapeHtml(error.message)}</div>
+                </div>
+                <div class="correction-dialog-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closePhysicalLocationDialog()">Cerrar</button>
+                </div>
+            </div>`;
+    }
+}
+
+async function submitPhysicalLocationCommand(deviceId) {
+    const siteSelect = document.getElementById('physical-location-site-select');
+    const confirmation = document.getElementById('physical-location-confirm');
+    const feedback = document.getElementById('physical-location-feedback');
+    const site = locationSites.find(item => Number(item.id) === Number(siteSelect?.value));
+    if (!site) return;
+
+    const activeSite = getActiveSite();
+    if (Number(site.id) === Number(activeSite?.id)) {
+        closePhysicalLocationDialog();
+        return;
+    }
+    if (!confirmation?.checked) {
+        if (feedback) feedback.innerHTML = '<div class="alert alert-warning mt-3 mb-0">Debes confirmar que la Raspberry ya está físicamente en ese lugar.</div>';
+        confirmation?.focus();
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `/devices/${encodeURIComponent(deviceId)}/location-commands`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-BirdMonitor-CSRF': '1'
+                },
+                body: JSON.stringify({
+                    target_site_id: Number(site.id),
+                    confirm_site_code: site.code,
+                    notes: 'Cambio confirmado desde el dashboard protegido'
+                })
+            }
+        );
+        if (!response.ok) {
+            const detail = await response.json().catch(() => ({}));
+            throw new Error(detail.detail || `HTTP ${response.status}`);
+        }
+        const command = await response.json();
+        if (feedback) {
+            feedback.innerHTML = `
+                <div class="alert alert-success mt-3 mb-0">
+                    Orden creada para ${escapeHtml(command.target_site_name)}. Se aplicará en el próximo ciclo conectado de la Raspberry.
+                </div>`;
+        }
+        window.setTimeout(() => openPhysicalLocationDialog(), 900);
+    } catch (error) {
+        if (feedback) feedback.innerHTML = `<div class="alert alert-danger mt-3 mb-0">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+async function cancelPhysicalLocationCommand(deviceId, commandId) {
+    const feedback = document.getElementById('physical-location-feedback');
+    try {
+        const response = await fetch(
+            `/devices/${encodeURIComponent(deviceId)}/location-commands/${encodeURIComponent(commandId)}/cancel`,
+            {
+                method: 'POST',
+                headers: { 'X-BirdMonitor-CSRF': '1' }
+            }
+        );
+        if (!response.ok) {
+            const detail = await response.json().catch(() => ({}));
+            throw new Error(detail.detail || `HTTP ${response.status}`);
+        }
+        await openPhysicalLocationDialog();
+    } catch (error) {
+        if (feedback) feedback.innerHTML = `<div class="alert alert-danger mt-3 mb-0">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+function resetLocationScopedState() {
+    selectedScienceDeviceId = null;
+    currentScienceReport = [];
+    currentDailyData = [];
+    detectionCache.clear();
+    latestSpeciesCounts = {};
+    speciesChartExpanded = false;
+    if (myChart) {
+        myChart.destroy();
+        myChart = null;
+    }
+    if (dailyChartInst) {
+        dailyChartInst.destroy();
+        dailyChartInst = null;
+    }
+}
+
+function refreshLocationScopedView() {
+    const container = document.getElementById('main-content');
+    if (!container) return;
+    if (currentView === 'live') {
+        renderLiveStreamView(container);
+    } else {
+        switchView(currentView);
+    }
+}
+
+async function changeLocationSite(siteId) {
+    const parsed = Number(siteId);
+    if (!locationSites.some(site => Number(site.id) === parsed)) return;
+
+    const requestId = ++locationChangeRequestId;
+    try {
+        const deployments = await fetchLocationDeployments(parsed);
+        if (requestId !== locationChangeRequestId) return;
+
+        selectedSiteId = parsed;
+        selectedDeploymentId = null;
+        locationDeployments = deployments;
+        resetLocationScopedState();
+        updateLocationControls();
+        refreshLocationScopedView();
+    } catch (error) {
+        console.error('No se pudo cambiar la ubicación:', error);
+        updateLocationControls();
+        alert(`No se pudo cargar la ubicación seleccionada: ${error.message}`);
+    }
+}
+
+function changeLocationDeployment(deploymentId) {
+    const parsed = deploymentId === '' ? null : Number(deploymentId);
+    if (parsed !== null && !locationDeployments.some(item => Number(item.id) === parsed)) {
+        return;
+    }
+
+    selectedDeploymentId = parsed;
+    resetLocationScopedState();
+    updateLocationControls();
+    refreshLocationScopedView();
+}
 
 function slugifyStreamValue(value) {
     const clean = String(value || '').trim().replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -271,10 +731,18 @@ function switchView(viewName) {
 // ESCUCHA EN DIRECTO
 function renderLiveStreamView(container) {
     cleanupLiveStream();
+    const activeSite = getActiveSite();
+    const liveScopeNotice = activeSite
+        ? `La escucha en directo pertenece a la ubicación activa: <strong>${escapeHtml(activeSite.name)}</strong>.`
+        : 'La escucha en directo pertenece al despliegue activo del nodo.';
 
     container.innerHTML = `
         <div class="row justify-content-center animate-fade-in">
             <div class="col-12 col-xl-9">
+                <div class="alert alert-info small mb-3">
+                    <i class="bi bi-broadcast-pin me-2"></i>${liveScopeNotice}
+                    La selección histórica no modifica la fuente de audio en vivo.
+                </div>
                 <div class="card live-stream-card live-console">
                     <div class="card-body">
                         <div class="live-console-head">
@@ -1621,7 +2089,7 @@ async function correctDetectionSpecies(detectionId) {
     closeDetectionAudioReview();
 
     try {
-        const response = await fetch(SPECIES_OPTIONS_URL);
+        const response = await fetch(locationAwareUrl(SPECIES_OPTIONS_URL));
         speciesOptions = response.ok ? await response.json() : [];
     } catch (e) {
         console.warn("No se pudieron cargar opciones de especies", e);
@@ -1774,10 +2242,14 @@ async function refreshCurrentDetectionView() {
 
 // HISTÓRICO
 async function renderHistoryView(container) {
+    const requestedScope = locationScopeKey();
     container.innerHTML = `<div class="d-flex justify-content-center align-items-center py-5"><div class="spinner-border text-success" role="status"></div><span class="ms-3 text-muted">Cargando base de datos completa...</span></div>`;
     try {
-        const response = await fetch(`${API_URL}?limit=500`);
+        const response = await fetch(locationAwareUrl(API_URL, { limit: 500 }), {
+            cache: 'no-store'
+        });
         const data = await response.json();
+        if (requestedScope !== locationScopeKey()) return;
         const sortedData = data.reverse();
         cacheDetections(sortedData);
         let rowsHtml = '';
@@ -1828,7 +2300,7 @@ async function renderHistoryView(container) {
                 <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-3">
                     <div>
                         <h3 class="fw-bold text-white"><i class="bi bi-database-fill me-2 text-accent"></i>Histórico</h3>
-                        <p class="text-muted mb-0">Total registros: ${sortedData.length}</p>
+                        <p class="text-muted mb-0">${escapeHtml(locationLabel())} · Total registros: ${sortedData.length}</p>
                     </div>
                     <div class="d-flex flex-wrap gap-2">
                         <button class="btn btn-outline-success" onclick="downloadCSV()">
@@ -1856,7 +2328,12 @@ async function renderHistoryView(container) {
                                     <th class="py-3 pe-3">Evidencia</th>
                                 </tr>
                             </thead>
-                            <tbody>${rowsHtml}</tbody>
+                            <tbody>${rowsHtml || `
+                                <tr>
+                                    <td colspan="8" class="text-center py-5 text-muted">
+                                        No hay detecciones registradas para ${escapeHtml(locationLabel())} en el alcance seleccionado.
+                                    </td>
+                                </tr>`}</tbody>
                         </table>
                     </div>
                 </div>
@@ -1869,10 +2346,18 @@ async function renderHistoryView(container) {
 //DASHBOARD TIEMPO REAL
 async function updateDashboard() {
     if (currentView !== 'dashboard') return;
+    const requestedScope = locationScopeKey();
     try {
-        const response = await fetch(`${API_URL}?t=${new Date().getTime()}`, { cache: 'no-store' });
+        const response = await fetch(
+            locationAwareUrl(API_URL, { t: Date.now() }),
+            { cache: 'no-store' }
+        );
         let data = await response.json();
-        if (!data || data.length === 0) { safeSetText('total-counter', '0'); return; }
+        if (requestedScope !== locationScopeKey() || currentView !== 'dashboard') return;
+        if (!data || data.length === 0) {
+            renderEmptyDashboardState();
+            return;
+        }
         cacheDetections(data);
 
         const sortedData = data;
@@ -1915,8 +2400,45 @@ async function updateDashboard() {
             await renderLiveFeedSplit(latestBird);
             renderTable(birdsOnly.slice(0, 10));
             updateChart(counts);
+        } else {
+            renderEmptyDashboardState();
         }
     } catch (error) { console.error("Error Dashboard:", error); }
+}
+
+function renderEmptyDashboardState() {
+    safeSetText('total-counter', '0');
+    safeSetText('top-species', '—');
+    safeSetText('last-activity', 'Sin actividad');
+    safeSetText('noise-metric', 'Sin detecciones');
+
+    const noiseCard = document.getElementById('noise-card');
+    const noiseIconBox = document.getElementById('noise-icon-box');
+    const noiseIcon = document.getElementById('noise-icon');
+    if (noiseCard) noiseCard.className = 'kpi-item kpi-item-secondary';
+    if (noiseIconBox) noiseIconBox.className = 'icon-box bg-secondary-subtle';
+    if (noiseIcon) noiseIcon.className = 'bi bi-boombox fs-3';
+
+    const feed = document.getElementById('live-feed-container');
+    if (feed) {
+        feed.innerHTML = `
+            <div class="empty-detection-state">
+                <div class="empty-detection-icon"><i class="bi bi-geo-alt"></i></div>
+                <p class="mb-1 fw-semibold">Aún no hay detecciones en ${escapeHtml(locationLabel())}</p>
+                <span>Las nuevas detecciones de esta ubicación aparecerán aquí sin mezclar datos de otros lugares.</span>
+            </div>`;
+    }
+
+    const tableBody = document.getElementById('history-table-body');
+    if (tableBody) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-5 text-muted">
+                    Sin registros para la ubicación y campaña seleccionadas.
+                </td>
+            </tr>`;
+    }
+    updateChart({});
 }
 
 function getDashboardHTML() {
@@ -1926,7 +2448,7 @@ function getDashboardHTML() {
             <div class="kpi-item kpi-item-success">
                 <div class="kpi-content">
                     <div>
-                        <p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones Totales</p>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Detecciones del sitio</p>
                         <h3 class="fw-bold mb-0" id="total-counter">0</h3>
                     </div>
                     <div class="icon-box bg-success-subtle text-success"><i class="bi bi-soundwave fs-3"></i></div>
@@ -1969,7 +2491,7 @@ function getDashboardHTML() {
                     <div class="empty-detection-state">
                         <div class="empty-detection-icon"><i class="bi bi-radar"></i></div>
                         <p class="mb-1 fw-semibold">Esperando detecciones...</p>
-                        <span>El nodo mostrará aquí la última fuente acústica identificada.</span>
+                        <span>El nodo mostrará aquí la última fuente acústica identificada en ${escapeHtml(locationLabel())}.</span>
                     </div>
                 </div>
             </div>
@@ -2061,7 +2583,9 @@ function downloadTableCSV(filename, headers, rows) {
 
 async function downloadCSV() {
     try {
-        const response = await fetch(`${API_URL}?limit=1000`);
+        const response = await fetch(locationAwareUrl(API_URL, { limit: 1000 }), {
+            cache: 'no-store'
+        });
         const data = await response.json();
         if (!data || data.length === 0) { alert("Sin datos"); return; }
 
@@ -2076,13 +2600,16 @@ async function downloadCSV() {
                 row.confidence,
                 row.amplitude ?? '',
                 row.device_name || row.device_id || '',
+                row.site_name || locationLabel(),
+                row.site_code || getSelectedSite()?.code || '',
+                row.deployment_public_id || '',
                 row.filename
             ];
         });
 
         downloadTableCSV(
-            `birdmonitor_detecciones_${new Date().toISOString().slice(0, 10)}.csv`,
-            ['ID', 'Fecha', 'Hora', 'Timestamp_ISO', 'Especie', 'Confianza', 'Amplitud_RMS', 'Nodo_o_Device_ID', 'Archivo_WAV'],
+            `birdmonitor_detecciones_${locationFileToken()}_${new Date().toISOString().slice(0, 10)}.csv`,
+            ['ID', 'Fecha', 'Hora', 'Timestamp_ISO', 'Especie', 'Confianza', 'Amplitud_RMS', 'Nodo_o_Device_ID', 'Ubicacion', 'Codigo_Sitio', 'ID_Campana', 'Archivo_WAV'],
             rows
         );
     } catch (e) { alert("Error exportando"); }
@@ -2097,7 +2624,9 @@ async function downloadExcelReport(button) {
     }
 
     try {
-        const response = await fetch('/exports/report.xlsx', { cache: 'no-store' });
+        const response = await fetch(locationAwareUrl('/exports/report.xlsx'), {
+            cache: 'no-store'
+        });
         if (!response.ok) {
             let detail = `HTTP ${response.status}`;
             try {
@@ -2113,7 +2642,7 @@ async function downloadExcelReport(button) {
         const disposition = response.headers.get('Content-Disposition') || '';
         const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
         const filename = filenameMatch?.[1]
-            || `birdmonitor_informe_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            || `birdmonitor_informe_${locationFileToken()}_${new Date().toISOString().slice(0, 10)}.xlsx`;
         const objectUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
 
@@ -2645,17 +3174,24 @@ function selectScienceNode(deviceId) {
 
 // VISTA ANÁLISIS ECO
 async function renderScienceView(container) {
+    const requestedScope = locationScopeKey();
     container.innerHTML = `
         <div class="d-flex justify-content-center align-items-center py-5">
             <div class="spinner-grow text-info" role="status"></div>
             <span class="ms-3 text-white">Procesando datos del nodo...</span>
         </div>`;
     try {
-        const response = await fetch("/analytics/biodiversity");
+        const response = await fetch(locationAwareUrl("/analytics/biodiversity"), {
+            cache: 'no-store'
+        });
         const report = await response.json();
+        if (requestedScope !== locationScopeKey() || currentView !== 'science') return;
         currentScienceReport = report || [];
         if (!report || report.length === 0) {
-            container.innerHTML = `<div class="alert alert-warning text-center mt-4">Esperando detecciones reales del nodo...</div>`;
+            container.innerHTML = `
+                <div class="alert alert-warning text-center mt-4">
+                    No hay una campaña o nodo asociado a ${escapeHtml(locationLabel())} en el alcance seleccionado.
+                </div>`;
             return;
         }
 
@@ -3041,10 +3577,12 @@ async function renderScienceView(container) {
         }
 
         // Mapa Leaflet: punto real del mismo nodo que muestran los índices.
-        fetch(`/analytics/map?device_id=${encodeURIComponent(r.device_id)}`)
+        fetch(locationAwareUrl('/analytics/map', { device_id: r.device_id }))
             .then(res => res.json())
             .then(mapData => {
+                if (requestedScope !== locationScopeKey() || currentView !== 'science') return;
                 const mapContainer = document.getElementById('biodiversityMap');
+                if (!mapContainer) return;
                 if (
                     mapData.available === false
                     || !Number.isFinite(Number(mapData.lat))
@@ -3165,7 +3703,7 @@ function downloadScienceCSV() {
     ]);
 
     downloadTableCSV(
-        `birdmonitor_indices_${new Date().toISOString().slice(0, 10)}.csv`,
+        `birdmonitor_indices_${locationFileToken()}_${new Date().toISOString().slice(0, 10)}.csv`,
         [
             'ID_Nodo',
             'Nodo',
@@ -3195,39 +3733,91 @@ function downloadScienceCSV() {
     );
 }
 
-//NODOS
+// NODOS Y UBICACIONES HISTÓRICAS
+async function selectLocationFromNodes(siteId) {
+    await changeLocationSite(siteId);
+    switchView('dashboard');
+}
+
 async function renderNodesView(container) {
     container.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-success"></div></div>`;
     try {
-        const res = await fetch(API_URL.replace('detections/', 'devices/'));
-        const nodos = await res.json();
+        if (!locationContextReady) await initializeLocationContext();
+        const siteDeployments = await Promise.all(
+            locationSites.map(async site => ({
+                site,
+                deployments: Number(site.id) === Number(selectedSiteId)
+                    ? locationDeployments
+                    : await fetchLocationDeployments(site.id)
+            }))
+        );
 
-        let nodesHtml = '';
-        nodos.forEach(node => {
-            nodesHtml += `
-            <div class="col-md-4 mb-4">
-                <div class="card bg-dark text-white border-0 shadow-sm node-card h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="fw-bold m-0"><i class="bi bi-cpu text-info me-2"></i>${node.name}</h5>
-                            <span class="badge bg-success animate-pulse">ONLINE</span>
+        const nodesHtml = siteDeployments.map(({ site, deployments }) => {
+            const activeDeployment = deployments.find(item => item.active);
+            const latestDeployment = activeDeployment || deployments[0] || null;
+            const selected = Number(site.id) === Number(selectedSiteId);
+            const locationParts = [site.municipality, site.region, site.country_code]
+                .filter(Boolean)
+                .join(', ');
+            const statusLabel = activeDeployment ? 'UBICACIÓN ACTUAL' : 'HISTÓRICO';
+            const statusClass = activeDeployment ? 'bg-success' : 'bg-secondary';
+            const latestPeriod = latestDeployment
+                ? `${formatDeploymentDate(latestDeployment.started_at)}${latestDeployment.active ? ' – actualidad' : ` – ${formatDeploymentDate(latestDeployment.ended_at)}`}`
+                : 'Sin campañas';
+
+            return `
+                <div class="col-md-6 col-xl-4 mb-4">
+                    <div class="card bg-dark text-white shadow-sm node-card h-100 ${selected ? 'border-success' : 'border-0'}">
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                                <h5 class="fw-bold m-0">
+                                    <i class="bi bi-geo-alt-fill text-info me-2"></i>${escapeHtml(site.name)}
+                                </h5>
+                                <span class="badge ${statusClass}">${statusLabel}</span>
+                            </div>
+                            <p class="text-muted small mb-2">
+                                <i class="bi bi-map me-1"></i>${escapeHtml(locationParts || 'Ubicación configurada')}
+                            </p>
+                            <p class="text-muted small mb-2">
+                                <i class="bi bi-cpu me-1"></i>${escapeHtml(latestDeployment?.device_name || 'Sin nodo asociado')}
+                            </p>
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-calendar-range me-1"></i>${escapeHtml(latestPeriod)}
+                            </p>
+                            <div class="row g-2 mb-3">
+                                <div class="col-4"><div class="p-2 rounded bg-dark-subtle text-center"><strong>${Number(site.detection_count) || 0}</strong><br><small class="text-muted">registros</small></div></div>
+                                <div class="col-4"><div class="p-2 rounded bg-dark-subtle text-center"><strong>${Number(site.audio_metric_count) || 0}</strong><br><small class="text-muted">métricas</small></div></div>
+                                <div class="col-4"><div class="p-2 rounded bg-dark-subtle text-center"><strong>${deployments.length}</strong><br><small class="text-muted">campañas</small></div></div>
+                            </div>
+                            <button
+                                type="button"
+                                class="btn ${selected ? 'btn-success' : 'btn-outline-success'} mt-auto"
+                                onclick="selectLocationFromNodes(${Number(site.id)})"
+                            >
+                                <i class="bi bi-bar-chart-line me-2"></i>${selected ? 'Viendo estos datos' : 'Ver datos'}
+                            </button>
                         </div>
-                        <p class="text-muted small mb-1"><i class="bi bi-geo-alt me-1"></i> ${node.location}</p>
-                        <p class="text-muted small mb-3"><i class="bi bi-record-circle me-1"></i> ID BDD: <span class="font-monospace">${node.id}</span></p>
                     </div>
-                </div>
-            </div>`;
-        });
+                </div>`;
+        }).join('');
 
         container.innerHTML = `
             <div class="row mb-4 animate-fade-in">
-                <div class="col-12">
-                    <h3 class="fw-bold text-white"><i class="bi bi-router me-2 text-accent"></i>Red de Nodos (ARUs)</h3>
+                <div class="col-12 d-flex justify-content-between align-items-start flex-wrap gap-3">
+                    <div>
+                        <h3 class="fw-bold text-white"><i class="bi bi-router me-2 text-accent"></i>Nodo y ubicaciones</h3>
+                        <p class="text-muted mb-0">
+                            Cada tarjeta conserva el historial independiente del mismo nodo. La ubicación actual aparece marcada en verde.
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-success" onclick="openPhysicalLocationDialog()">
+                        <i class="bi bi-geo-alt-fill me-2"></i>Cambiar ubicación física
+                    </button>
                 </div>
             </div>
             <div class="row animate-fade-in">${nodesHtml}</div>`;
     } catch (e) {
-        container.innerHTML = `<div class="alert alert-danger">Error cargando nodos: ${e.message}</div>`;
+        container.innerHTML = `<div class="alert alert-danger">Error cargando ubicaciones: ${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -3294,9 +3884,13 @@ async function renderDailyView(container) {
 }
 
 async function loadDailyData(dateStr) {
+    const requestedScope = locationScopeKey();
     try {
-        const res = await fetch(`/analytics/daily-activity?date=${dateStr}`);
+        const res = await fetch(locationAwareUrl('/analytics/daily-activity', {
+            date: dateStr
+        }));
         const data = await res.json();
+        if (requestedScope !== locationScopeKey() || currentView !== 'daily') return;
         currentDailyData = data;
 
         // 1. DIBUJAR GRÁFICO (Chart.js)
@@ -3365,7 +3959,7 @@ function downloadDailyCSV() {
     });
 
     downloadTableCSV(
-        `birdmonitor_actividad_horaria_${date}.csv`,
+        `birdmonitor_actividad_horaria_${locationFileToken()}_${date}.csv`,
         [
             'Fecha',
             'Eje_X_Hora',
@@ -3380,10 +3974,7 @@ function downloadDailyCSV() {
 }
 
 //ARRANQUE
-document.addEventListener('DOMContentLoaded', () => {
-    switchView('dashboard');
-    setInterval(updateDashboard, 4000);
-
+document.addEventListener('DOMContentLoaded', async () => {
     // pal responsive del movil
     const menuToggle = document.getElementById('mobile-menu-toggle');
     const sidebar = document.getElementById('sidebar-wrapper');
@@ -3408,4 +3999,36 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    const container = document.getElementById('main-content');
+    if (container) {
+        container.innerHTML = `
+            <div class="d-flex justify-content-center align-items-center py-5">
+                <div class="spinner-border text-success" role="status"></div>
+                <span class="ms-3 text-muted">Cargando ubicación activa...</span>
+            </div>`;
+    }
+
+    try {
+        await initializeLocationContext();
+        switchView('dashboard');
+        setInterval(updateDashboard, 4000);
+        setInterval(refreshLocationCatalog, 15000);
+        if (new URLSearchParams(window.location.search).get('location_setup') === '1') {
+            await openPhysicalLocationDialog({ startup: true });
+        }
+    } catch (error) {
+        console.error('No se pudo inicializar el contexto de ubicación:', error);
+        const siteSelect = document.getElementById('location-site-select');
+        if (siteSelect) {
+            siteSelect.innerHTML = '<option>Ubicación no disponible</option>';
+            siteSelect.disabled = true;
+        }
+        if (container) {
+            container.innerHTML = `
+                <div class="alert alert-danger mt-4">
+                    No se puede mostrar el dashboard sin una ubicación válida: ${escapeHtml(error.message)}
+                </div>`;
+        }
+    }
 });

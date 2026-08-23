@@ -1,0 +1,16 @@
+{
+  "integrity_check": "ok",
+  "foreign_key_errors": 0,
+  "tables": {
+    "audio_metrics": 1206,
+    "deployments": 1,
+    "detection_reviews": 174,
+    "detections": 213,
+    "devices": 1,
+    "learning_examples": 163,
+    "learning_rules": 27,
+    "schema_migrations": 1,
+    "sites": 1
+  },
+  "sha256": "99fb8d4d51f105fa4edfdc208eecdd8f9d97819dc78f96e70bb64e46f90ba2d7"
+}

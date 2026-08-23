@@ -1654,7 +1654,17 @@ def download_excel_report(
         deployment=selected_deployment,
     )
 
-    filename = f"birdmonitor_informe_{datetime.now().date().isoformat()}.xlsx"
+    scope_token = re.sub(
+        r"[^a-z0-9-]+",
+        "-",
+        (selected_site.code if selected_site is not None else "todos-los-sitios")
+        .casefold()
+        .strip(),
+    ).strip("-") or "sitio"
+    filename = (
+        f"birdmonitor_informe_{scope_token}_"
+        f"{datetime.now().date().isoformat()}.xlsx"
+    )
     return StreamingResponse(
         output,
         media_type=EXCEL_MEDIA_TYPE,

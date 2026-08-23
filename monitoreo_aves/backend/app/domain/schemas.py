@@ -244,6 +244,96 @@ class DeploymentResponse(BaseModel):
     updated_at: datetime
     notes: Optional[str] = None
 
+
+NodeLocationCommandStatus = Literal[
+    "pending",
+    "delivered",
+    "applied",
+    "failed",
+    "cancelled",
+]
+
+
+class NodeLocationCommandCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_site_id: int = Field(ge=1)
+    confirm_site_code: str = Field(
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    )
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("confirm_site_code", "notes", mode="before")
+    @classmethod
+    def strip_location_command_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+class NodeLocationCommandAck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    command_public_id: UUID
+    status: Literal["applied", "failed"]
+    deployment_started_at: Optional[datetime] = None
+    error_detail: Optional[str] = Field(default=None, max_length=1000)
+
+    @field_validator("error_detail", mode="before")
+    @classmethod
+    def strip_location_command_error(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_location_command_ack(self):
+        if self.status == "applied":
+            if self.deployment_started_at is None:
+                raise ValueError(
+                    "deployment_started_at es obligatorio al aplicar la orden"
+                )
+            if (
+                self.deployment_started_at.tzinfo is None
+                or self.deployment_started_at.utcoffset() is None
+            ):
+                raise ValueError(
+                    "deployment_started_at debe incluir zona horaria"
+                )
+        elif not self.error_detail:
+            raise ValueError("error_detail es obligatorio si la orden falla")
+        return self
+
+
+class NodeLocationCommandResponse(BaseModel):
+    id: int
+    public_id: UUID
+    device_id: int
+    device_name: str
+    target_site_id: int
+    target_site_code: str
+    target_site_name: str
+    target_site_municipality: Optional[str] = None
+    target_site_region: Optional[str] = None
+    target_site_country_code: str
+    target_site_lat: float
+    target_site_lon: float
+    target_site_location_source: LocationSource
+    target_site_location_accuracy_m: Optional[float] = None
+    target_site_timezone: str
+    deployment_public_id: UUID
+    status: NodeLocationCommandStatus
+    requested_by: str
+    requested_at: datetime
+    delivered_at: Optional[datetime] = None
+    deployment_started_at: Optional[datetime] = None
+    applied_at: Optional[datetime] = None
+    failed_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    delivery_count: int
+    notes: Optional[str] = None
+    error_detail: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
 class DetectionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

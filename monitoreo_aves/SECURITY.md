@@ -34,6 +34,15 @@ soportado es el dashboard web.
   `600`.
 - Backend y MediaMTX iniciados mediante tareas supervisadas y un envoltorio
   WScript sin consola; no dependen de una ventana abierta por el usuario.
+- El lanzador de MediaMTX espera a que la IP del modo local o Tailscale esté
+  asignada antes de enlazar RTSP. Se evita así una carrera al iniciar sesión
+  sin ampliar la escucha a interfaces no autorizadas.
+- El cambio remoto de ubicación sólo puede solicitarlo una sesión
+  administradora con CSRF y confirmación física explícita. La Raspberry sólo
+  puede recoger y confirmar la orden con su token limitado.
+- Cada cambio de ubicación queda auditado, crea un UUID de campaña distinto y
+  se aplica en el límite entre ciclos de grabación mediante estado local
+  atómico. Un fallo de red conserva la ubicación anterior.
 
 ## Datos sensibles
 

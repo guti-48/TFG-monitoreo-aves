@@ -95,10 +95,18 @@ def detectarUbicacionPorIP():
         return None
 
 
-def obtenerUbicacionNodo():
+def obtenerUbicacionNodo(deployment_context=None):
     """
-    Prioridad: manual -> geolocalizacion por IP -> cache local -> desconocido.
+    Prioridad: despliegue activo -> manual -> IP -> cache -> desconocido.
     """
+    if deployment_context is not None:
+        return {
+            "location": deployment_context.site_name,
+            "lat": deployment_context.lat,
+            "lon": deployment_context.lon,
+            "source": deployment_context.location_source,
+        }
+
     if NODE_LOCATION:
         lat = _parsearCoordenada(NODE_LAT, "latitud", -90.0, 90.0)
         lon = _parsearCoordenada(NODE_LON, "longitud", -180.0, 180.0)

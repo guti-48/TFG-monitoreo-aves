@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session, joinedload
 
 from ...core import database
@@ -54,6 +54,14 @@ def activate_deployment(
     return service.deployment_response(service.activate_deployment(db, payload))
 
 
+@router.get("/node/deployments/legacy-context")
+def read_legacy_context(
+    device_name: str,
+    db: Session = Depends(database.get_db),
+):
+    return service.legacy_event_context(db, device_name)
+
+
 @router.get(
     "/sites/{site_id}/deployments",
     response_model=list[schemas.DeploymentResponse],
@@ -87,3 +95,86 @@ def read_device_deployments(
         models.Deployment.started_at.desc()
     ).all()
     return [service.deployment_response(item) for item in deployments]
+
+
+@router.post(
+    "/devices/{device_id}/location-commands",
+    response_model=schemas.NodeLocationCommandResponse,
+)
+def create_location_command(
+    device_id: int,
+    payload: schemas.NodeLocationCommandCreate,
+    request: Request,
+    db: Session = Depends(database.get_db),
+):
+    command = service.request_location_command(
+        db,
+        device_id=device_id,
+        payload=payload,
+        requested_by=getattr(request.state, "security_username", "admin"),
+    )
+    return service.location_command_response(command)
+
+
+@router.get(
+    "/devices/{device_id}/location-commands",
+    response_model=list[schemas.NodeLocationCommandResponse],
+)
+def read_location_commands(
+    device_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(database.get_db),
+):
+    return [
+        service.location_command_response(command)
+        for command in service.list_location_commands(
+            db,
+            device_id=device_id,
+            limit=limit,
+        )
+    ]
+
+
+@router.post(
+    "/devices/{device_id}/location-commands/{command_id}/cancel",
+    response_model=schemas.NodeLocationCommandResponse,
+)
+def cancel_location_command(
+    device_id: int,
+    command_id: int,
+    db: Session = Depends(database.get_db),
+):
+    return service.location_command_response(
+        service.cancel_location_command(
+            db,
+            device_id=device_id,
+            command_id=command_id,
+        )
+    )
+
+
+@router.get("/node/location-command")
+def read_pending_location_command(
+    device_name: str,
+    db: Session = Depends(database.get_db),
+):
+    command = service.deliver_location_command(
+        db,
+        device_name=device_name,
+    )
+    if command is None:
+        return Response(status_code=204)
+    return service.location_command_response(command)
+
+
+@router.post(
+    "/node/location-command/ack",
+    response_model=schemas.NodeLocationCommandResponse,
+)
+def acknowledge_location_command(
+    payload: schemas.NodeLocationCommandAck,
+    db: Session = Depends(database.get_db),
+):
+    return service.location_command_response(
+        service.acknowledge_location_command(db, payload)
+    )

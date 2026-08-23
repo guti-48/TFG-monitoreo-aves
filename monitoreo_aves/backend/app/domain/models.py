@@ -46,6 +46,10 @@ class Device(Base):
     detections = relationship("Detection", back_populates="device")
     audio_metrics = relationship("AudioMetric", back_populates="device")
     deployments = relationship("Deployment", back_populates="device")
+    location_commands = relationship(
+        "NodeLocationCommand",
+        back_populates="device",
+    )
 
 
 class Site(Base):
@@ -99,6 +103,10 @@ class Site(Base):
 
     deployments = relationship("Deployment", back_populates="site")
     learning_rules = relationship("LearningRule", back_populates="site")
+    location_commands = relationship(
+        "NodeLocationCommand",
+        back_populates="target_site",
+    )
 
 
 class Deployment(Base):
@@ -152,6 +160,93 @@ class Deployment(Base):
     site = relationship("Site", back_populates="deployments")
     detections = relationship("Detection", back_populates="deployment")
     audio_metrics = relationship("AudioMetric", back_populates="deployment")
+
+
+class NodeLocationCommand(Base):
+    """Orden auditada para cambiar el despliegue físico de un nodo."""
+
+    __tablename__ = "node_location_commands"
+    __table_args__ = (
+        UniqueConstraint("public_id", name="uq_node_location_command_public_id"),
+        UniqueConstraint(
+            "deployment_public_id",
+            name="uq_node_location_command_deployment_public_id",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'delivered', 'applied', 'failed', 'cancelled')",
+            name="ck_node_location_command_status",
+        ),
+        CheckConstraint(
+            "delivery_count >= 0",
+            name="ck_node_location_command_delivery_count",
+        ),
+        Index(
+            "uq_node_location_command_open_device",
+            "device_id",
+            unique=True,
+            sqlite_where=text("status IN ('pending', 'delivered')"),
+        ),
+        Index(
+            "ix_node_location_command_status_requested",
+            "status",
+            "requested_at",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    public_id = Column(String(36), nullable=False, index=True)
+    device_id = Column(
+        Integer,
+        ForeignKey("devices.id"),
+        nullable=False,
+        index=True,
+    )
+    target_site_id = Column(
+        Integer,
+        ForeignKey("sites.id"),
+        nullable=False,
+        index=True,
+    )
+    target_site_code = Column(String(63), nullable=False)
+    target_site_name = Column(String(200), nullable=False)
+    target_site_municipality = Column(String(120), nullable=True)
+    target_site_region = Column(String(120), nullable=True)
+    target_site_country_code = Column(String(2), nullable=False)
+    target_site_lat = Column(Float, nullable=False)
+    target_site_lon = Column(Float, nullable=False)
+    target_site_location_source = Column(String(32), nullable=False)
+    target_site_location_accuracy_m = Column(Float, nullable=True)
+    target_site_timezone = Column(String(80), nullable=False)
+    deployment_public_id = Column(String(36), nullable=False, index=True)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    requested_by = Column(String(120), nullable=False)
+    requested_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    delivered_at = Column(DateTime, nullable=True)
+    deployment_started_at = Column(DateTime, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    delivery_count = Column(Integer, nullable=False, default=0)
+    notes = Column(String(500), nullable=True)
+    error_detail = Column(String(1000), nullable=True)
+    created_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    device = relationship("Device", back_populates="location_commands")
+    target_site = relationship("Site", back_populates="location_commands")
 
 '''
 Esta clase representa la tabla para almacenar detecciones biológicas o acústicas relevantes.

@@ -1,0 +1,93 @@
+{
+  "created_at": "2026-08-23T10:17:05.907523+00:00",
+  "purpose": "phase4_algeciras_confirmed_metrics_reassignment",
+  "backup_database": "C:\\Users\\cguti\\Desktop\\TFG\\monitoreo_aves\\backend\\app\\backups\\phase4-pre-reassignment-20260823-121705\\birdmonitor.db",
+  "backup_sha256": "6acb6265c2ef1ea430199ca3b15f95225ba664dfc443b119c9979819bee34879",
+  "integrity_before": "ok",
+  "foreign_key_errors_before": 0,
+  "target_site_code": "algeciras",
+  "target_deployment_id": 2,
+  "target_deployment_public_id": "19acadff-1d1d-4c7c-b827-d4b5496fb762",
+  "responsible_confirmation": "Raspberry en Algeciras desde 2026-08-03",
+  "rows_before": [
+    {
+      "id": 1202,
+      "timestamp": "2026-08-03 15:11:14.203052",
+      "filename": "record_2026-08-03_15-11-14.wav",
+      "device_id": 1,
+      "deployment_id": 1
+    },
+    {
+      "id": 1203,
+      "timestamp": "2026-08-03 16:03:05.723196",
+      "filename": "record_2026-08-03_16-03-05.wav",
+      "device_id": 1,
+      "deployment_id": 1
+    },
+    {
+      "id": 1205,
+      "timestamp": "2026-08-03 16:55:42.730268",
+      "filename": "record_2026-08-03_16-55-42.wav",
+      "device_id": 1,
+      "deployment_id": 1
+    },
+    {
+      "id": 1204,
+      "timestamp": "2026-08-23 11:37:56.002452",
+      "filename": "record_2026-08-23_11-37-56.wav",
+      "device_id": 1,
+      "deployment_id": 1
+    },
+    {
+      "id": 1206,
+      "timestamp": "2026-08-23 11:39:45.755732",
+      "filename": "record_2026-08-23_11-39-45.wav",
+      "device_id": 1,
+      "deployment_id": 1
+    }
+  ],
+  "rows_after": [
+    {
+      "id": 1202,
+      "timestamp": "2026-08-03 15:11:14.203052",
+      "filename": "record_2026-08-03_15-11-14.wav",
+      "device_id": 1,
+      "deployment_id": 2
+    },
+    {
+      "id": 1203,
+      "timestamp": "2026-08-03 16:03:05.723196",
+      "filename": "record_2026-08-03_16-03-05.wav",
+      "device_id": 1,
+      "deployment_id": 2
+    },
+    {
+      "id": 1205,
+      "timestamp": "2026-08-03 16:55:42.730268",
+      "filename": "record_2026-08-03_16-55-42.wav",
+      "device_id": 1,
+      "deployment_id": 2
+    },
+    {
+      "id": 1204,
+      "timestamp": "2026-08-23 11:37:56.002452",
+      "filename": "record_2026-08-23_11-37-56.wav",
+      "device_id": 1,
+      "deployment_id": 2
+    },
+    {
+      "id": 1206,
+      "timestamp": "2026-08-23 11:39:45.755732",
+      "filename": "record_2026-08-23_11-39-45.wav",
+      "device_id": 1,
+      "deployment_id": 2
+    }
+  ],
+  "updated_rows": 5,
+  "metrics_by_site_after": {
+    "algeciras": 5,
+    "sevilla": 1201
+  },
+  "integrity_after": "ok",
+  "foreign_key_errors_after": 0
+}

@@ -1,5 +1,4 @@
 import time
-import requests
 from datetime import datetime
 from audio_processing import (
     analizarCalidadAudio,
@@ -17,23 +16,29 @@ from analyzer import BirdAnalyzer
 from node_config import (
     DURATION,
     INTERVALO,
-    NODE_NAME,
     SAMPLE_RATE,
-    SERVER_URL,
     UMBRAL_AVES,
     UMBRAL_HUMANOS,
     UMBRAL_MOTORES,
     UMBRAL_RUIDO_ALTO,
-    getBackendAuthHeaders,
 )
 from birdweather_client import enviarDatosBirdWeather
+from deployment_context import (
+    DeploymentConfigurationError,
+    getCurrentDeploymentContext,
+    getLegacyEventContext,
+)
 from node_location import obtenerUbicacionNodo
 from node_sync import (
+    RemoteLocationStateError,
     enviarDatosServidor,
     enviarMetricasAcusticas,
+    activarDespliegue,
     inicializarOutboxOffline,
     limpiarArchivosAntiguos,
     migrarCsvBackupLegacy,
+    migrarContextoOutboxLegacy,
+    procesarCambioUbicacionPendiente,
     sincronizarRespaldo,
 )
 
@@ -61,10 +66,16 @@ def esperarSiguienteCiclo(inicio_ciclo):
 ### Flujo de trabajo principal ###
 if __name__ == "__main__":
 
+    try:
+        deployment_context = getCurrentDeploymentContext()
+        legacy_context = getLegacyEventContext()
+    except DeploymentConfigurationError as exc:
+        raise SystemExit(f"Configuracion de despliegue invalida: {exc}")
+
     listarDispositivosAudio()
     device_index = resolverDispositivoEntrada()
     configurarGananciaMicrofono()
-    ubicacion_nodo = obtenerUbicacionNodo()
+    ubicacion_nodo = obtenerUbicacionNodo(deployment_context)
     brain = get_brain(
         lat=ubicacion_nodo.get("lat"),
         lon=ubicacion_nodo.get("lon"),
@@ -77,28 +88,24 @@ if __name__ == "__main__":
     print("Hora correcta sincronizada. Arrancando nodo.")
     print(f"Ciclo configurado: {DURATION}s de grabación cada {INTERVALO}s ({INTERVALO//60} min).")
     inicializarOutboxOffline()
-    migrarCsvBackupLegacy()
+    migrarCsvBackupLegacy(legacy_context)
+    migrarContextoOutboxLegacy(legacy_context)
+    activarDespliegue(deployment_context)
+    sincronizarRespaldo()
 
     try:
-        # Registro inicial del dispositivo
-        try:
-            requests.post(
-                f"{SERVER_URL}/devices/",
-                json={
-                    "name": NODE_NAME,
-                    "location": ubicacion_nodo["location"],
-                    "lat": ubicacion_nodo.get("lat"),
-                    "lon": ubicacion_nodo.get("lon"),
-                    "location_source": ubicacion_nodo.get("source", "unknown"),
-                    "location_accuracy_m": ubicacion_nodo.get("accuracy_m"),
-                },
-                headers=getBackendAuthHeaders(),
-                timeout=10,
-            )
-        except:
-            print("No se pudo registrar el dispositivo en el servidor.")
-
         while True:
+            try:
+                if procesarCambioUbicacionPendiente():
+                    print(
+                        "Ubicacion actualizada. Reiniciando el nodo para "
+                        "recargar BirdNET con las nuevas coordenadas."
+                    )
+                    raise SystemExit(75)
+            except RemoteLocationStateError as exc:
+                print(f"Fallo critico de persistencia: {exc}")
+                raise SystemExit(76) from exc
+
             #Marcamos el inicio del ciclo
             inicio_ciclo = time.time()
 

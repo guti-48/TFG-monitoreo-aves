@@ -360,6 +360,10 @@ def test_ingesta_y_consultas_quedan_aisladas_por_sitio(client):
         params={"site_id": sevilla["site_id"]},
     )
     assert excel.status_code == 200
+    assert (
+        'filename="birdmonitor_informe_fase3-sevilla-isolation_'
+        in excel.headers["content-disposition"]
+    )
     workbook = load_workbook(BytesIO(excel.content))
     exported_species = {
         row[6]
@@ -371,6 +375,62 @@ def test_ingesta_y_consultas_quedan_aisladas_por_sitio(client):
     }
     assert "Species Sevilla Phase3" in exported_species
     assert "Species Algeciras Phase3" not in exported_species
+
+
+def test_analisis_muestra_sitio_valido_aunque_tenga_cero_detecciones(client):
+    node = "fase5-node-empty-site"
+    public_id = "52000000-0000-4000-8000-000000000001"
+    deployment = _activate(
+        client,
+        node=node,
+        code="fase5-algeciras-empty",
+        name="Algeciras fase 5 sin detecciones",
+        public_id=public_id,
+        started_at="2026-08-23T08:00:00+00:00",
+        lat=36.12942,
+        lon=-5.45303,
+    ).json()
+
+    metric = client.post(
+        "/audio-metrics/",
+        json=_metric_payload(
+            node=node,
+            site_code="fase5-algeciras-empty",
+            deployment_public_id=public_id,
+            timestamp="2026-08-23T08:01:00+00:00",
+            filename="fase5_algeciras_metric.wav",
+        ),
+    )
+    assert metric.status_code == 200
+    assert client.get(
+        "/detections/",
+        params={"site_id": deployment["site_id"]},
+    ).json() == []
+
+    report_response = client.get(
+        "/analytics/biodiversity",
+        params={"site_id": deployment["site_id"]},
+    )
+    assert report_response.status_code == 200
+    report = report_response.json()
+    assert len(report) == 1
+    assert report[0]["site_code"] == "fase5-algeciras-empty"
+    assert report[0]["zona"] == "Algeciras fase 5 sin detecciones"
+    assert report[0]["abundancia"] == 0
+    assert report[0]["riqueza"] == 0
+    assert report[0]["shannon"] == 0.0
+    assert report[0]["simpson"] == 0.0
+    assert report[0]["pielou"] is None
+    assert report[0]["metrics_available"] is True
+    assert report[0]["metric_samples"] == 1
+
+    map_data = client.get(
+        "/analytics/map",
+        params={"site_id": deployment["site_id"]},
+    ).json()
+    assert map_data["site_code"] == "fase5-algeciras-empty"
+    assert map_data["event_count"] == 0
+    assert map_data["species_count"] == 0
 
 
 def test_aprendizaje_de_una_especie_no_viaja_a_otro_sitio(client):

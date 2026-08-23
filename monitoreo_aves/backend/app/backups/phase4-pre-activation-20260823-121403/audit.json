@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-08-23T10:14:03.804501+00:00",
+  "purpose": "phase4_pre_algeciras_activation",
+  "source": "C:\\Users\\cguti\\Desktop\\TFG\\monitoreo_aves\\backend\\app\\birdmonitor.db",
+  "database": "C:\\Users\\cguti\\Desktop\\TFG\\monitoreo_aves\\backend\\app\\backups\\phase4-pre-activation-20260823-121403\\birdmonitor.db",
+  "sha256": "99fb8d4d51f105fa4edfdc208eecdd8f9d97819dc78f96e70bb64e46f90ba2d7",
+  "integrity_check": "ok",
+  "foreign_key_errors": 0,
+  "counts": {
+    "sites": 1,
+    "deployments": 1,
+    "detections": 213,
+    "audio_metrics": 1206
+  },
+  "planned_deployment_public_id": "19acadff-1d1d-4c7c-b827-d4b5496fb762",
+  "planned_site_code": "algeciras"
+}

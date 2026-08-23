@@ -262,9 +262,16 @@ def test_migracion_es_idempotente_y_no_duplica_entidades(tmp_path):
         assert connection.execute(
             text("SELECT COUNT(*) FROM detections")
         ).scalar_one() == 2
-        assert connection.execute(
-            text("SELECT COUNT(*) FROM schema_migrations")
-        ).scalar_one() == 1
+        versions = {
+            row[0]
+            for row in connection.execute(
+                text("SELECT version FROM schema_migrations")
+            ).fetchall()
+        }
+        assert versions == {
+            "20260809_01_sites_deployments",
+            "20260823_02_node_location_commands",
+        }
 
     engine.dispose()
 

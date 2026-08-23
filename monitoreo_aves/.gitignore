@@ -23,6 +23,7 @@ hardware/raspberry_pi/records/
 hardware/raspberry_pi/spectrograms/
 hardware/raspberry_pi/backup_data.csv
 hardware/raspberry_pi/birdmonitor.env
+hardware/raspberry_pi/deployment_state.json
 backend/birdmonitor.env
 hardware/raspberry_pi/birdweather_token
 hardware/raspberry_pi/birdweather_token.txt

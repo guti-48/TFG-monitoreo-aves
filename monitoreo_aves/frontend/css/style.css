@@ -213,28 +213,8 @@ body {
   font-size: 0.92rem;
 }
 
-.topbar-title-group {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-}
-
-.topbar-context {
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 .text-accent {
   color: var(--green) !important;
-}
-
-.topbar-icon {
-  display: none !important;
 }
 
 #topbar-view-title {
@@ -242,6 +222,37 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.location-switcher {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.location-site-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--green-strong);
+}
+
+.location-switcher .form-select {
+  width: 180px;
+  max-width: 180px;
+  min-width: 0;
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+  background-color: var(--bg-panel);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.location-switcher #location-deployment-select {
+  width: 160px;
+  max-width: 160px;
 }
 
 #main-content {
@@ -1968,6 +1979,10 @@ code {
 }
 
 @media (max-width: 992px) {
+  .location-switcher .form-select {
+    max-width: 180px;
+  }
+
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2008,17 +2023,13 @@ code {
     padding: 0 var(--pad);
   }
 
-  .topbar-title-group {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+  .location-switcher #location-deployment-select {
+    display: none;
   }
 
-  .topbar-context {
-    font-size: 0.66rem;
-    max-width: 68vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .location-switcher #location-site-select {
+    min-width: 0;
+    width: min(42vw, 190px);
   }
 
   .kpi-grid {
@@ -2106,4 +2117,25 @@ code {
   .species-chart-all-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.location-confirm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.location-confirm-check input {
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  accent-color: var(--green);
+  flex-shrink: 0;
 }

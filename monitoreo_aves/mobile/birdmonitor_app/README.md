@@ -1,25 +1,25 @@
-# birdmonitor_app — cliente legado
+# Cliente Flutter legado
 
-El cliente oficial de BirdMonitor es el dashboard web responsive servido por
-FastAPI. Esta aplicación Flutter se conserva temporalmente como referencia,
-pero no recibe nuevas funciones ni debe utilizarse para despliegues nuevos.
+Esta carpeta conserva el antiguo prototipo móvil de BirdMonitor únicamente como referencia histórica.
 
-Centralizar la experiencia en el navegador evita mantener dos interfaces,
-reduce la superficie de ataque y permite aplicar autenticación, revisión,
-audio y exportaciones en un único cliente.
+## Estado
 
-A new Flutter project.
+| Aspecto | Situación |
+|---|---|
+| Desarrollo de nuevas funciones | Detenido |
+| Cliente recomendado | Dashboard web responsive servido por FastAPI |
+| Instalación necesaria en móvil | Ninguna; se abre la URL privada en el navegador |
+| Compatibilidad futura | No garantizada |
 
-## Getting Started
+La experiencia se centralizó en la web para ofrecer desde una sola interfaz:
 
-This project is a starting point for a Flutter application.
+- autenticación y protección CSRF;
+- detecciones, filtros y analítica;
+- revisión de audio original/limpio;
+- exportación CSV/XLSX;
+- selección histórica de ubicaciones;
+- escucha HLS protegida.
 
-A few resources to get you started if this is your first Flutter project:
+Mantener dos clientes completos duplicaría lógica, pruebas y superficie de ataque. Por ese motivo, este código no forma parte del procedimiento de instalación actual.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Consulta el [README principal](../../README.md) para desplegar y utilizar BirdMonitor.

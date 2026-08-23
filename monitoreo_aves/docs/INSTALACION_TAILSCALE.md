@@ -80,6 +80,7 @@ En `/etc/birdmonitor/birdmonitor.env`:
 BIRDMONITOR_NETWORK_MODE=tailscale
 BIRDMONITOR_SERVER_URL=http://100.98.248.58:8000
 BIRDMONITOR_NODE_API_TOKEN=TOKEN_MOSTRADO_POR_EL_SERVIDOR
+BIRDMONITOR_DEPLOYMENT_STATE_FILE=/home/pi/birdmonitor/monitoreo_aves/hardware/raspberry_pi/deployment_state.json
 ```
 
 Ejecuta el instalador:
@@ -100,6 +101,11 @@ sudo systemctl status tailscaled.service birdmonitor.service \
   birdstream.service --no-pager
 ```
 
+Después de iniciar sesión, el dashboard solicita confirmar dónde está
+físicamente la Raspberry. Una orden remota se aplica automáticamente entre
+ciclos y reinicia sólo `birdmonitor.service` para recargar BirdNET con las
+nuevas coordenadas; el streaming independiente continúa supervisado.
+
 ## 6. Aplicar la seguridad en Windows
 
 Abre PowerShell como administrador:
@@ -111,6 +117,9 @@ Set-Location "RUTA\AL\REPOSITORIO\monitoreo_aves"
 
 El script limita el Firewall al adaptador Tailscale y al rango IPv4 de la
 tailnet, liga RTSP a la IP Tailscale exacta y conserva HLS sólo en loopback.
+En los inicios de sesión posteriores, MediaMTX espera hasta tres minutos a que
+Tailscale asigne esa IP antes de arrancar. No cambia a una interfaz más amplia
+si la red privada tarda en estar disponible.
 
 ## 7. Verificar
 

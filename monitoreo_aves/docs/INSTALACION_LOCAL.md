@@ -68,6 +68,7 @@ En `/etc/birdmonitor/birdmonitor.env` o en el archivo de entorno usado por
 BIRDMONITOR_NETWORK_MODE=local
 BIRDMONITOR_SERVER_URL=http://192.168.1.32:8000
 BIRDMONITOR_NODE_API_TOKEN=TOKEN_MOSTRADO_POR_EL_SERVIDOR
+BIRDMONITOR_DEPLOYMENT_STATE_FILE=/home/pi/birdmonitor/monitoreo_aves/hardware/raspberry_pi/deployment_state.json
 ```
 
 Copia el instalador a la Raspberry si todavía no está allí y ejecútalo:
@@ -90,6 +91,12 @@ sudo systemctl restart birdmonitor.service
 sudo systemctl status birdmonitor.service birdstream.service --no-pager
 ```
 
+Después de iniciar sesión en el dashboard se puede confirmar la ubicación
+física del nodo. El cambio se recoge automáticamente en el siguiente límite
+entre ciclos; no interrumpe una grabación en curso. No edites
+`deployment_state.json`: es el estado atómico del despliegue y contiene
+identificadores, no contraseñas.
+
 ## 6. Aplicar la seguridad en Windows
 
 Abre PowerShell como administrador, entra en la raíz del repositorio y ejecuta:
@@ -105,6 +112,10 @@ El script:
 - mantiene HLS en `127.0.0.1:8888`;
 - reconstruye las tareas sin ejecutar el backend como administrador;
 - verifica autenticación, listeners y `/health`.
+
+El lanzador espera hasta tres minutos a que Windows asigne la IP local elegida
+antes de iniciar MediaMTX. Así evita un fallo por orden de arranque sin exponer
+RTSP en interfaces adicionales.
 
 ## 7. Verificar
 

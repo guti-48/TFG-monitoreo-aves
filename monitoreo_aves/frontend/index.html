@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="assets/birdmonitor-ostrero.png">
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=1027">
+    <link rel="stylesheet" href="css/style.css?v=1030">
 </head>
 
 <body>
@@ -60,7 +60,7 @@
                         <span>Cerrar sesión</span>
                     </button>
                 </form>
-                <div class="sidebar-version">v2.1 · Sevilla, ES</div>
+                <div class="sidebar-version" id="sidebar-location-label">v2.2 · Cargando ubicación...</div>
             </div>
         </aside>
 
@@ -73,11 +73,32 @@
                     <button id="mobile-menu-toggle" class="btn text-white p-0 me-3 d-md-none" style="border: none; background: transparent;">
                         <i class="bi bi-list fs-1"></i>
                     </button>
-                    <i class="bi bi-broadcast-pin topbar-icon d-none d-md-block me-2"></i>
-                    <div class="topbar-title-group">
-                        <span id="topbar-view-title" class="fw-bold">Monitorización global</span>
-                        <span class="topbar-context">Nodo Edge · BirdNET · Bioacústica</span>
+                    <span id="topbar-view-title" class="fw-bold">Monitorización global</span>
+                </div>
+                <div id="location-switcher" class="location-switcher" aria-label="Contexto de ubicación">
+                    <div class="location-site-control">
+                        <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+                        <label class="visually-hidden" for="location-site-select">Ubicación</label>
+                        <select
+                            id="location-site-select"
+                            class="form-select form-select-sm"
+                            onchange="changeLocationSite(this.value)"
+                            aria-label="Seleccionar ubicación"
+                            disabled
+                        >
+                            <option>Cargando...</option>
+                        </select>
                     </div>
+                    <label class="visually-hidden" for="location-deployment-select">Campaña</label>
+                    <select
+                        id="location-deployment-select"
+                        class="form-select form-select-sm"
+                        onchange="changeLocationDeployment(this.value)"
+                        aria-label="Seleccionar campaña"
+                        disabled
+                    >
+                        <option>Cargando...</option>
+                    </select>
                 </div>
             </header>
             <!-- Contenido dinámico -->
@@ -87,6 +108,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"></script>
-    <script src="js/dashboard.js?v=1036"></script>
+    <script src="js/dashboard.js?v=1040"></script>
 </body>
 </html>
