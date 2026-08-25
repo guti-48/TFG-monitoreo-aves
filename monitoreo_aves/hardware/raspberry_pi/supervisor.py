@@ -138,13 +138,18 @@ def get_hls_health(hls_url: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def report_status(running: bool, detail: str = "") -> None:
+def report_status(
+    running: bool,
+    detail: str = "",
+    hls_available: bool = False,
+) -> None:
     try:
         requests.post(
             STATUS_URL,
             json={
                 "node_name": NODE_NAME,
                 "running": running,
+                "hls_available": hls_available,
                 "detail": detail
             },
             headers=backend_auth_headers(),
@@ -167,7 +172,11 @@ def main():
         running = is_stream_running()
 
         if control_state is None:
-            report_status(running, "Backend no disponible, se mantiene el estado actual")
+            report_status(
+                running,
+                "Backend no disponible, se mantiene el estado actual",
+                hls_available=False,
+            )
             time.sleep(POLL_INTERVAL)
             continue
 
@@ -178,14 +187,22 @@ def main():
             log("Backend solicita ACTIVAR streaming.")
             ok = run_systemctl("start")
             running = is_stream_running()
-            report_status(running, "Streaming activado" if ok else "Error activando streaming")
+            report_status(
+                running,
+                "Streaming activado; esperando HLS" if ok else "Error activando streaming",
+                hls_available=False,
+            )
             hls_failures = 0
 
         elif not desired and running:
             log("Backend solicita DETENER streaming.")
             ok = run_systemctl("stop")
             running = is_stream_running()
-            report_status(running, "Streaming detenido" if ok else "Error deteniendo streaming")
+            report_status(
+                running,
+                "Streaming detenido" if ok else "Error deteniendo streaming",
+                hls_available=False,
+            )
             hls_failures = 0
 
         elif desired and running:
@@ -195,7 +212,7 @@ def main():
                 if hls_failures:
                     log("El manifiesto HLS vuelve a estar disponible.")
                 hls_failures = 0
-                report_status(True, "Estado sincronizado")
+                report_status(True, "HLS disponible", hls_available=True)
             else:
                 hls_failures += 1
                 log(
@@ -212,17 +229,18 @@ def main():
                         if ok and running
                         else "Error reiniciando streaming sin HLS"
                     )
-                    report_status(running, detail)
+                    report_status(running, detail, hls_available=False)
                     hls_failures = 0
                 else:
                     report_status(
                         True,
-                        f"Servicio activo; esperando HLS ({hls_failures}/{HLS_FAILURE_LIMIT})"
+                        f"Servicio activo; esperando HLS ({hls_failures}/{HLS_FAILURE_LIMIT})",
+                        hls_available=False,
                     )
 
         else:
             hls_failures = 0
-            report_status(running, "Estado sincronizado")
+            report_status(running, "Estado sincronizado", hls_available=False)
 
         time.sleep(POLL_INTERVAL)
 

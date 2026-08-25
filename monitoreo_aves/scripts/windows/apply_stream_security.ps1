@@ -1,6 +1,10 @@
 # Aplica la configuracion endurecida de MediaMTX en Windows.
 # Ejecutar desde PowerShell como administrador.
 
+param(
+    [switch]$SkipBackendReload
+)
+
 $ErrorActionPreference = "Stop"
 
 $CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -118,11 +122,17 @@ $EscapedServerHost = $ServerHost.Replace("'", "''")
 
 @"
 `$ErrorActionPreference = "Stop"
+function Test-BirdMonitorLocalAddress {
+    param([string]`$Address)
+
+    `$Addresses = [Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+        ForEach-Object { `$_.GetIPProperties().UnicastAddresses } |
+        ForEach-Object { `$_.Address.IPAddressToString }
+    return `$Addresses -contains `$Address
+}
+
 `$AddressDeadline = (Get-Date).AddMinutes(3)
-while (`$null -eq (Get-NetIPAddress `
-    -IPAddress '$EscapedServerHost' `
-    -ErrorAction SilentlyContinue
-)) {
+while (-not (Test-BirdMonitorLocalAddress '$EscapedServerHost')) {
     if ((Get-Date) -ge `$AddressDeadline) {
         Write-Error (
             "La IP segura $EscapedServerHost no esta disponible " +
@@ -207,8 +217,14 @@ Register-ScheduledTask `
     -Description "MediaMTX endurecido para BirdMonitor" `
     -Force | Out-Null
 
-Write-Host "Recargando backend con la configuracion nueva..." -ForegroundColor Cyan
-& $BackendRepair
+if ($SkipBackendReload) {
+    Write-Host (
+        "Se conserva el backend actual; solo se reconstruye MediaMTX."
+    ) -ForegroundColor Yellow
+} else {
+    Write-Host "Recargando backend con la configuracion nueva..." -ForegroundColor Cyan
+    & $BackendRepair
+}
 
 Write-Host "Arrancando MediaMTX endurecido..." -ForegroundColor Cyan
 Start-ScheduledTask -TaskName $TaskName

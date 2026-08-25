@@ -37,6 +37,10 @@ def test_rechaza_api_anonima_y_permite_sesion_administradora(
     assert anonymous_audio.status_code == 401
     anonymous_spectrogram = client.get("/spectrograms/evidencia-privada.png")
     assert anonymous_spectrogram.status_code == 401
+    anonymous_detection_spectrogram = client.get(
+        "/detections/1/spectrogram"
+    )
+    assert anonymous_detection_spectrogram.status_code == 401
     anonymous_hls = client.get(
         "/stream/hls/birdmonitor-audio/index.m3u8"
     )

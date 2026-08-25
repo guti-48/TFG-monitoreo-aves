@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import datetime, timezone
 from threading import Lock
@@ -19,7 +20,29 @@ from .security import get_stream_security_settings
 
 router = APIRouter()
 stream_lock = Lock()
-_TRANSIENT_STREAM_FIELDS = {"hls_url", "page_url", "rtsp_url"}
+
+
+def _read_status_stale_seconds() -> int:
+    try:
+        return max(
+            15,
+            int(os.getenv("BIRDMONITOR_STREAM_STATUS_STALE_SECONDS", "30")),
+        )
+    except (TypeError, ValueError):
+        return 30
+
+
+STREAM_STATUS_STALE_SECONDS = _read_status_stale_seconds()
+_TRANSIENT_STREAM_FIELDS = {
+    "hls_url",
+    "page_url",
+    "rtsp_url",
+    "status_stale",
+    "last_status_age_seconds",
+    "reported_actual_running",
+    "reported_hls_available",
+    "playback_ready",
+}
 
 
 class StreamControlUpdate(BaseModel):
@@ -31,6 +54,7 @@ class StreamControlUpdate(BaseModel):
 class StreamStatusUpdate(BaseModel):
     node_name: str = "birdmonitor"
     running: bool
+    hls_available: bool | None = None
     detail: str = ""
     stream_path: str | None = None
 
@@ -131,6 +155,33 @@ def _stream_rtsp_base_url(request: Request | None = None) -> str:
     return base_url
 
 
+def _status_freshness(last_status_at: object) -> tuple[bool, float | None]:
+    if not last_status_at:
+        return True, None
+
+    try:
+        parsed = datetime.fromisoformat(str(last_status_at).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age_seconds = max(
+            0.0,
+            (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds(),
+        )
+    except (TypeError, ValueError):
+        return True, None
+
+    return age_seconds > STREAM_STATUS_STALE_SECONDS, round(age_seconds, 1)
+
+
+def _legacy_hls_available(payload: StreamStatusUpdate) -> bool:
+    """Interpreta reportes de supervisores anteriores al campo hls_available."""
+    if not payload.running:
+        return False
+
+    detail = payload.detail.strip().casefold()
+    return detail in {"estado sincronizado", "hls disponible"}
+
+
 def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
     current = dict(current)
     base_url = _stream_base_url(request)
@@ -144,6 +195,26 @@ def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
     current["hls_url"] = f"{base_url}/{stream_path}/index.m3u8"
     current["page_url"] = f"{base_url}/{stream_path}/"
     current["rtsp_url"] = f"{rtsp_base_url}/{stream_path}"
+
+    status_stale, status_age = _status_freshness(current.get("last_status_at"))
+    reported_running = bool(current.get("actual_running", False))
+    reported_hls_available = bool(current.get("hls_available", False))
+
+    current["reported_actual_running"] = reported_running
+    current["reported_hls_available"] = reported_hls_available
+    current["status_stale"] = status_stale
+    current["last_status_age_seconds"] = status_age
+    current["actual_running"] = reported_running and not status_stale
+    current["hls_available"] = reported_hls_available and not status_stale
+    current["playback_ready"] = bool(
+        current["actual_running"] and current["hls_available"]
+    )
+
+    if status_stale and current.get("stream_enabled"):
+        current["detail"] = (
+            "Nodo sin telemetria reciente; comprueba su alimentacion y conexion"
+        )
+
     return current
 
 
@@ -153,6 +224,7 @@ def _stream_default_state(node_name: str) -> dict:
         "stream_path": _stream_path_for_node(node_name),
         "stream_enabled": False,
         "actual_running": False,
+        "hls_available": False,
         "detail": "",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "last_status_at": None,
@@ -229,6 +301,10 @@ def set_stream_status(payload: StreamStatusUpdate):
 
         current = state.get(payload.node_name, _stream_default_state(payload.node_name))
         current["actual_running"] = payload.running
+        if payload.hls_available is not None:
+            current["hls_available"] = payload.hls_available
+        else:
+            current["hls_available"] = _legacy_hls_available(payload)
         current["detail"] = payload.detail
         if payload.stream_path:
             current["stream_path"] = _normalize_stream_path(payload.stream_path)

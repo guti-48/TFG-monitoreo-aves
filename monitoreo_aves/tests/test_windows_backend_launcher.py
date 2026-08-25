@@ -43,3 +43,18 @@ def test_aplicador_mediamtx_tambien_usa_lanzador_sin_consola():
     assert "run_powershell_hidden.vbs" in stream_installer
     assert '-Execute "wscript.exe"' in stream_installer
     assert "shell.Run(command, 0, True)" in hidden_launcher
+
+
+def test_lanzador_mediamtx_detecta_la_ip_sin_cmdlets_privilegiados():
+    stream_installer = (
+        WINDOWS_SCRIPTS / "apply_stream_security.ps1"
+    ).read_text(encoding="utf-8")
+    full_installer = (
+        WINDOWS_SCRIPTS / "install_birdmonitor_windows.ps1"
+    ).read_text(encoding="utf-8")
+
+    for script in (stream_installer, full_installer):
+        assert "NetworkInterface]::GetAllNetworkInterfaces" in script
+        assert "Test-BirdMonitorLocalAddress" in script
+
+    assert "SkipBackendReload" in stream_installer

@@ -342,6 +342,7 @@ class DetectionResponse(BaseModel):
     confidence: float
     timestamp: datetime
     filename: str
+    spectrogram_url: str
     device_id: int
     deployment_id: Optional[int] = None
     deployment_public_id: Optional[UUID] = None

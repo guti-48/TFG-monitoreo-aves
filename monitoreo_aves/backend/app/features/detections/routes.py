@@ -363,3 +363,24 @@ def get_detection_audio(
         filename=audio_path.name,
         headers={"Cache-Control": "private, no-store"},
     )
+
+
+@router.get("/detections/{detection_id}/spectrogram")
+def get_detection_spectrogram(
+    detection_id: int,
+    db: Session = Depends(database.get_db),
+):
+    detection = _get_detection_or_404(detection_id, db)
+    try:
+        image_path = review_media.resolve_spectrogram_path(
+            detection.filename,
+            detection.deployment,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return FileResponse(
+        image_path,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )

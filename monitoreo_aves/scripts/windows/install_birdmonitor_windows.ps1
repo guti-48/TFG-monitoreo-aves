@@ -194,11 +194,17 @@ Write-Host "Creando script de arranque de MediaMTX..." -ForegroundColor Cyan
 
 @"
 `$ErrorActionPreference = "Stop"
+function Test-BirdMonitorLocalAddress {
+    param([string]`$Address)
+
+    `$Addresses = [Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+        ForEach-Object { `$_.GetIPProperties().UnicastAddresses } |
+        ForEach-Object { `$_.Address.IPAddressToString }
+    return `$Addresses -contains `$Address
+}
+
 `$AddressDeadline = (Get-Date).AddMinutes(3)
-while (`$null -eq (Get-NetIPAddress `
-    -IPAddress "$ServerHost" `
-    -ErrorAction SilentlyContinue
-)) {
+while (-not (Test-BirdMonitorLocalAddress "$ServerHost")) {
     if ((Get-Date) -ge `$AddressDeadline) {
         Write-Error (
             "La IP segura $ServerHost no esta disponible " +

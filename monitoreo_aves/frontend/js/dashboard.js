@@ -1,7 +1,6 @@
 const API_URL = "/detections/";
 const DETECTION_REVIEW_BASE_URL = "/detections";
 const SPECIES_OPTIONS_URL = "/species/options";
-const IMG_BASE_URL = "/spectrograms/";
 const ASSETS_PATH = 'assets/';
 const NOISE_MAP = {
     'Human vocal': 'human.png',
@@ -952,9 +951,20 @@ async function refreshLiveStreamControlStatus() {
 
         if (hlsLabel) hlsLabel.textContent = hlsUrl;
 
-        if (data.actual_running) {
-            setLiveStreamStatus('online', 'Stream activo');
-            setLiveStreamMessage('El servicio de streaming está activo. Puedes conectar el reproductor.');
+        if (data.status_stale) {
+            const age = formatLiveStreamStatusAge(data.last_status_age_seconds);
+            setLiveStreamStatus('offline', 'Nodo sin conexión');
+            setLiveStreamMessage(
+                `La Raspberry no envía telemetría reciente${age ? ` (ultimo reporte: hace ${age})` : ''}. `
+                + 'Comprueba su alimentación, Wi-Fi y conexión Tailscale.',
+                true
+            );
+        } else if (data.playback_ready) {
+            setLiveStreamStatus('online', 'HLS disponible');
+            setLiveStreamMessage('La publicación HLS está lista. Puedes conectar el reproductor.');
+        } else if (data.stream_enabled && data.actual_running) {
+            setLiveStreamStatus('warning', 'Preparando HLS...');
+            setLiveStreamMessage(data.detail || 'birdstream.service está activo, pero MediaMTX aún no recibe audio reproducible.');
         } else if (data.stream_enabled && !data.actual_running) {
             setLiveStreamStatus('warning', 'Arrancando...');
             setLiveStreamMessage('El backend ha solicitado activar la escucha. Esperando reporte de la Raspberry.');
@@ -967,6 +977,15 @@ async function refreshLiveStreamControlStatus() {
         setLiveStreamStatus('offline', 'Error backend');
         setLiveStreamMessage(`No se pudo consultar /stream/control: ${e.message}`, true);
     }
+}
+
+function formatLiveStreamStatusAge(value) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds < 0) return '';
+    if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+    if (seconds < 86400) return `${Math.round(seconds / 3600)} h`;
+    return `${Math.round(seconds / 86400)} d`;
 }
 
 async function setLiveStreamEnabled(enabled) {
@@ -1001,7 +1020,7 @@ async function setLiveStreamEnabled(enabled) {
         if (enabled) {
             setTimeout(async () => {
                 await refreshLiveStreamControlStatus();
-                if (lastStreamData && lastStreamData.actual_running) {
+                if (lastStreamData && lastStreamData.playback_ready) {
                     initLiveStreamPlayer(true);
                 }
             }, 6000);
@@ -1123,6 +1142,33 @@ function attachLiveSynchronization(audio) {
 async function initLiveStreamPlayer(autoplay = false) {
     const audio = document.getElementById('live-audio-player');
     if (!audio) return;
+
+    try {
+        const control = await fetchLiveStreamControlStatus();
+        lastStreamData = control;
+
+        if (control.status_stale) {
+            setLiveStreamStatus('offline', 'Nodo sin conexión');
+            setLiveStreamMessage(
+                'No se puede abrir el directo porque la Raspberry no está comunicando con el servidor.',
+                true
+            );
+            return;
+        }
+
+        if (!control.playback_ready) {
+            setLiveStreamStatus('warning', control.actual_running ? 'Preparando HLS...' : 'Stream no disponible');
+            setLiveStreamMessage(
+                control.detail || 'El flujo HLS todavía no está listo para reproducirse.',
+                true
+            );
+            return;
+        }
+    } catch (error) {
+        setLiveStreamStatus('offline', 'Error backend');
+        setLiveStreamMessage(`No se pudo verificar el directo: ${error.message}`, true);
+        return;
+    }
 
     detachLiveSynchronization();
     audio.pause();
@@ -2856,7 +2902,8 @@ async function renderLiveFeedSplit(d) {
     const displayedSpecies = getDisplaySpecies(d);
     const species = cleanName(displayedSpecies);
     const percent = (d.confidence * 100).toFixed(0);
-    const spectrogramUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
+    const spectrogramUrl = d.spectrogram_url
+        || `${DETECTION_REVIEW_BASE_URL}/${encodeURIComponent(d.id)}/spectrogram`;
     const timeStr = new Date(d.timestamp).toLocaleTimeString();
     const speciesPhotoUrl = await getSpeciesImageUrl(displayedSpecies);
 
@@ -2894,7 +2941,8 @@ function renderTable(data) {
     tbody.innerHTML = "";
 
     data.forEach(d => {
-        const imgUrl = `${IMG_BASE_URL}${d.filename.replace(/\.wav/g, '')}.png`;
+        const imgUrl = d.spectrogram_url
+            || `${DETECTION_REVIEW_BASE_URL}/${encodeURIComponent(d.id)}/spectrogram`;
         const displayedSpecies = getDisplaySpecies(d);
         const clean = cleanName(displayedSpecies);
         const originalClean = cleanName(d.species);

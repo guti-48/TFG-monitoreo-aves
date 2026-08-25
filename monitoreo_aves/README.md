@@ -287,6 +287,9 @@ El cambio de ubicación activa requiere sesión y protección CSRF. Se procesa e
 # Reparar una tarea Backend atascada o en estado Queued.
 .\scripts\windows\repair_backend_task.ps1
 
+# Reconstruir sólo la tarea de escucha sin reiniciar el backend.
+.\scripts\windows\apply_stream_security.ps1 -SkipBackendReload
+
 # Recargar backend y streaming tras cambios.
 .\scripts\windows\restart_birdmonitor_streaming.ps1
 

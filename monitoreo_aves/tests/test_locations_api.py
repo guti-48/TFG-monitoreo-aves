@@ -537,6 +537,7 @@ def test_upload_se_almacena_y_recupera_dentro_de_su_despliegue(
     monkeypatch.setattr(upload_routes, "SERVER_AUDIO_DIR", records)
     monkeypatch.setattr(upload_routes, "SPECTOGRAM_DIR", spectrograms)
     monkeypatch.setattr(review_media, "SERVER_AUDIO_DIR", records)
+    monkeypatch.setattr(review_media, "SPECTOGRAM_DIR", spectrograms)
 
     node = "fase3-node-upload"
     public_id = "35000000-0000-4000-8000-000000000001"
@@ -563,6 +564,7 @@ def test_upload_se_almacena_y_recupera_dentro_de_su_despliegue(
     ).json()
 
     audio_bytes = b"RIFF-birdmonitor-phase3-context"
+    spectrogram_bytes = b"\x89PNG\r\n\x1a\nphase3-context"
     upload = client.post(
         "/upload/",
         data={
@@ -575,7 +577,12 @@ def test_upload_se_almacena_y_recupera_dentro_de_su_despliegue(
                 "phase3_context_audio.wav",
                 audio_bytes,
                 "audio/wav",
-            )
+            ),
+            "specto": (
+                "phase3_context_audio.png",
+                spectrogram_bytes,
+                "image/png",
+            ),
         },
     )
     assert upload.status_code == 200
@@ -587,11 +594,29 @@ def test_upload_se_almacena_y_recupera_dentro_de_su_despliegue(
         / "phase3_context_audio.wav"
     )
     assert stored.read_bytes() == audio_bytes
+    stored_spectrogram = (
+        spectrograms
+        / "fase3-upload-site"
+        / public_id
+        / "phase3_context_audio.png"
+    )
+    assert stored_spectrogram.read_bytes() == spectrogram_bytes
 
     download = client.get(f"/detections/{detection['id']}/audio")
     assert download.status_code == 200
     assert download.content == audio_bytes
     assert download.headers["cache-control"] == "private, no-store"
+
+    assert detection["spectrogram_url"] == (
+        f"/detections/{detection['id']}/spectrogram"
+    )
+    spectrogram_download = client.get(detection["spectrogram_url"])
+    assert spectrogram_download.status_code == 200
+    assert spectrogram_download.content == spectrogram_bytes
+    assert spectrogram_download.headers["content-type"] == "image/png"
+    assert spectrogram_download.headers["cache-control"] == (
+        "private, max-age=86400"
+    )
 
     second_public_id = "35000000-0000-4000-8000-000000000002"
     _activate(

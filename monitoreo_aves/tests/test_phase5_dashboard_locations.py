@@ -68,3 +68,13 @@ def test_control_fisico_esta_separado_del_selector_historico_y_usa_csrf():
     assert "X-BirdMonitor-CSRF': '1'" in javascript
     assert "setInterval(refreshLocationCatalog, 15000)" in javascript
     assert "openPhysicalLocationDialog({ startup: true })" in javascript
+
+
+def test_dashboard_resuelve_espectrogramas_por_deteccion_y_no_por_ruta_plana():
+    javascript = (PROJECT_ROOT / "frontend" / "js" / "dashboard.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "d.spectrogram_url" in javascript
+    assert "DETECTION_REVIEW_BASE_URL" in javascript
+    assert 'const IMG_BASE_URL = "/spectrograms/"' not in javascript

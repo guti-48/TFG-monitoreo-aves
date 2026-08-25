@@ -72,6 +72,39 @@ def resolve_audio_path(filename: str, deployment=None) -> Path:
     raise FileNotFoundError(f"No se encontro el audio {safe_name}")
 
 
+def resolve_spectrogram_path(filename: str, deployment=None) -> Path:
+    """Localiza el PNG original dentro del despliegue o del almacén legado."""
+    safe_name = Path(filename or "").name
+    if not safe_name:
+        raise FileNotFoundError(
+            "La deteccion no tiene un espectrograma asociado"
+        )
+
+    safe_name = f"{Path(safe_name).stem}.png"
+    spectrogram_dir = SPECTOGRAM_DIR.resolve()
+    candidate_dirs = []
+    if deployment is not None and getattr(deployment, "site", None) is not None:
+        candidate_dirs.append(
+            spectrogram_dir / deployment.site.code / deployment.public_id
+        )
+    candidate_dirs.append(spectrogram_dir)
+
+    for candidate_dir in candidate_dirs:
+        image_path = (candidate_dir / safe_name).resolve()
+        try:
+            image_path.relative_to(spectrogram_dir)
+        except ValueError as exc:
+            raise FileNotFoundError(
+                "Ruta de espectrograma no permitida"
+            ) from exc
+        if image_path.is_file():
+            return image_path
+
+    raise FileNotFoundError(
+        f"No se encontro el espectrograma {safe_name}"
+    )
+
+
 def get_audio_duration(audio_path: Path) -> float:
     info = sf.info(str(audio_path))
     duration = float(info.frames) / float(info.samplerate)

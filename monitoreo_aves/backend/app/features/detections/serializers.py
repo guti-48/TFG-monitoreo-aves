@@ -29,6 +29,7 @@ def serializar_deteccion(detection: models.Detection, db: Session) -> dict:
         "confidence": detection.confidence,
         "timestamp": detection.timestamp,
         "filename": detection.filename,
+        "spectrogram_url": f"/detections/{detection.id}/spectrogram",
         "device_id": detection.device_id,
         "deployment_id": detection.deployment_id,
         "deployment_public_id": deployment.public_id if deployment else None,

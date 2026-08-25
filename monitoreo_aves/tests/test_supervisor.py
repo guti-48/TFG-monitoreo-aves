@@ -77,7 +77,9 @@ def test_main_restarts_active_service_after_consecutive_hls_failures(monkeypatch
     monkeypatch.setattr(
         supervisor,
         "report_status",
-        lambda running, detail="": reports.append((running, detail)),
+        lambda running, detail="", hls_available=False: reports.append(
+            (running, detail, hls_available)
+        ),
     )
     monkeypatch.setattr(supervisor, "log", lambda message: None)
 
@@ -93,4 +95,37 @@ def test_main_restarts_active_service_after_consecutive_hls_failures(monkeypatch
         supervisor.main()
 
     assert actions == ["restart"]
-    assert reports[-1] == (True, "Streaming reiniciado tras perder la publicacion HLS")
+    assert reports[-1] == (
+        True,
+        "Streaming reiniciado tras perder la publicacion HLS",
+        False,
+    )
+
+
+def test_report_status_incluye_disponibilidad_hls(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(supervisor.requests, "post", fake_post)
+    monkeypatch.setattr(
+        supervisor,
+        "backend_auth_headers",
+        lambda: {"Authorization": "Bearer nodo-test"},
+    )
+
+    supervisor.report_status(
+        True,
+        "HLS disponible",
+        hls_available=True,
+    )
+
+    assert captured["json"] == {
+        "node_name": supervisor.NODE_NAME,
+        "running": True,
+        "hls_available": True,
+        "detail": "HLS disponible",
+    }
