@@ -1,189 +1,166 @@
 # BirdMonitor
 
-**Monitorización bioacústica de aves con Raspberry Pi, BirdNET y un dashboard web seguro.**
+[![Pruebas](https://github.com/guti-48/TFG-monitoreo-aves/actions/workflows/tests.yml/badge.svg)](https://github.com/guti-48/TFG-monitoreo-aves/actions/workflows/tests.yml)
 
-BirdMonitor es un sistema distribuido de análisis acústico pasivo (PAM) desarrollado como Trabajo de Fin de Grado. Un nodo *edge* basado en Raspberry Pi captura el entorno, ejecuta BirdNET localmente y conserva una cola cuando no hay red. Un servidor central recibe las observaciones, organiza las evidencias por ubicación y ofrece revisión humana, analítica, exportación y escucha en directo desde el navegador.
+Sistema autónomo de monitorización bioacústica que combina una Raspberry Pi,
+BirdNET y un dashboard web privado. El nodo graba y analiza localmente; el
+servidor conserva las evidencias, permite revisarlas y ofrece estadísticas,
+exportación y escucha en directo.
 
-> BirdMonitor ayuda a detectar y revisar actividad acústica; no sustituye un censo ornitológico ni convierte la confianza de BirdNET en certeza biológica.
+> Proyecto académico de monitorización acústica pasiva (PAM). Una detección de
+> BirdNET es una hipótesis que debe interpretarse junto con su confianza,
+> evidencia acústica y revisión humana; no equivale por sí sola a un censo.
 
-## Qué ofrece
+## Qué instala
 
-| Área | Funcionalidad |
-|---|---|
-| Captura | Ciclos configurables; por defecto, 60 s de grabación cada 300 s para limitar la carga de la Raspberry Pi |
-| Clasificación | BirdNET local, ventanas solapadas, umbrales por tipo de sonido y conservación de varias especies por grabación |
-| Evidencia | WAV original, espectrograma realzado e intervalo exacto clasificado por BirdNET |
-| Calidad | RMS, clipping, desplazamiento DC, exceso de graves, zumbido de red y contraste del evento |
-| Revisión | Validación, rechazo o corrección manual con trazabilidad; sugerencias de aprendizaje asistido |
-| Analítica | Actividad temporal, riqueza, diversidad, distribución de especies y métricas acústicas |
-| Exportación | CSV interoperable e informe XLSX con hojas, estilos, filtros y gráficos |
-| Ubicaciones | Historial independiente por sitio y despliegue, incluso cuando una Raspberry se traslada |
-| Directo | Publicación RTSP autenticada y reproducción HLS protegida dentro del dashboard |
-| Seguridad | Sesiones, CSRF, token exclusivo del nodo, medios privados y perfiles de red local/Tailscale |
+BirdMonitor no necesita un backend en una nube pública:
 
-El cliente oficial es el **dashboard web responsive**. Funciona en ordenador, tableta y móvil sin instalar una aplicación. El prototipo Flutter se conserva únicamente como [componente legado](mobile/birdmonitor_app/README.md).
+| Equipo | Componentes | Responsabilidad |
+|---|---|---|
+| Raspberry Pi | `birdmonitor.service` | Captura WAV, métricas acústicas, BirdNET, cola sin conexión y BirdWeather opcional |
+| Raspberry Pi | `birdstream.service` | Publica una única señal RTSP autenticada |
+| Raspberry Pi | `birdmonitor-stream-supervisor.service` | Sincroniza el botón del dashboard y recupera el directo |
+| Servidor | FastAPI + SQLite | API, autenticación, datos, evidencias, revisión y exportaciones |
+| Servidor | MediaMTX | Convierte el RTSP del nodo en HLS interno |
+| Navegador | Dashboard responsive | Cliente oficial para ordenador, tableta y móvil |
+
+En Windows, el instalador registra dos tareas ocultas al iniciar sesión:
+`BirdMonitor Backend` y `BirdMonitor MediaMTX`. No instala servicios de terceros
+ni abre puertos en el router.
+
+## Funcionalidades
+
+- Grabaciones configurables; valor inicial: 60 segundos cada 5 minutos.
+- Clasificación local con BirdNET y varias especies por una misma grabación.
+- Coordenadas y fecha aplicadas al contexto del modelo.
+- WAV original, espectrograma y ventana exacta que produjo la clasificación.
+- Diagnóstico de RMS, clipping, desplazamiento DC, graves y zumbido eléctrico.
+- Revisión humana: confirmar, corregir, rechazar o marcar como ruido.
+- Reglas de aprendizaje local derivadas únicamente de revisiones explícitas.
+- Separación histórica por nodo, sitio y despliegue.
+- Índices ecoacústicos, actividad temporal, biodiversidad y mapa.
+- Exportación CSV e informe Excel estructurado con filtros y gráficos.
+- Escucha HLS protegida en el navegador y acceso RTSP para VLC.
+- Cola SQLite en la Raspberry para conservar eventos cuando no hay red.
 
 ## Arquitectura
 
 ```mermaid
 flowchart LR
-    MIC[Micrófono USB] --> PI[Raspberry Pi<br/>captura + BirdNET]
-    PI -->|API autenticada<br/>detecciones y evidencias| API[FastAPI :8000]
-    PI -->|RTSP autenticado| MTX[MediaMTX :8554]
-    PI -. contribución opcional .-> BW[BirdWeather]
+    MIC[Micrófono USB] --> ALSA[ALSA dsnoop\nmicshared]
+    ALSA --> NODE[Captura + BirdNET\nRaspberry Pi]
+    ALSA --> FFMPEG[FFmpeg]
+    NODE -->|API + token de nodo| API[FastAPI :8000]
+    NODE -. opcional .-> BW[BirdWeather]
+    FFMPEG -->|RTSP autenticado| MTX[MediaMTX :8554]
     API --> DB[(SQLite)]
-    API --> MEDIA[(WAV y espectrogramas)]
-    MTX -->|HLS interno<br/>127.0.0.1:8888| API
-    API --> WEB[Dashboard web<br/>sesión requerida]
+    API --> MEDIA[(WAV + PNG)]
+    MTX -->|HLS solo en 127.0.0.1:8888| API
+    API -->|sesión web| WEB[Dashboard]
 ```
 
-La Raspberry publica una única señal de audio. MediaMTX la redistribuye, por lo que abrir varios navegadores no multiplica la captura, el análisis de BirdNET ni el proceso FFmpeg del nodo.
-
-### Flujo de una observación
-
-```mermaid
-flowchart LR
-    A[Captura WAV] --> B[Diagnóstico del micrófono]
-    B --> C[BirdNET por ventanas]
-    C --> D[Umbrales y deduplicación]
-    D --> E[Cola local persistente]
-    E --> F[Servidor central]
-    F --> G[Revisión humana]
-    G --> H[Analítica y exportación]
-```
-
-1. El nodo graba un WAV y calcula métricas sin modificar la señal original.
-2. BirdNET analiza ventanas de audio y devuelve las clases candidatas.
-3. Se aplican umbrales configurables. Se conservan distintas especies detectadas en la grabación y, para cada especie, la observación de mayor confianza.
-4. La detección, sus coordenadas y el identificador del despliegue se guardan en una cola SQLite del nodo.
-5. Cuando el servidor está disponible, se sincronizan datos, audio y espectrograma. Un traslado posterior no cambia la procedencia de observaciones antiguas.
-6. La revisión humana puede confirmar, rechazar o corregir el resultado de la IA.
-
-## Componentes
-
-| Ruta | Responsabilidad | Tecnologías principales |
-|---|---|---|
-| `hardware/raspberry_pi/` | Captura, BirdNET, métricas, cola *offline*, BirdWeather y control remoto de ubicación | Python, birdnetlib, ALSA, FFmpeg |
-| `backend/app/` | API, autenticación, persistencia, ubicaciones, medios, streaming y exportaciones | FastAPI, SQLAlchemy, Pydantic, SQLite |
-| `backend/analisisBiodiversidad.py` | Índices bioacústicos y ecológicos | NumPy, SciPy, scikit-maad |
-| `frontend/` | Dashboard responsive y reproductores de evidencia/directo | HTML, CSS, JavaScript, Chart.js, Leaflet |
-| `tools/mediamtx/` | Configuración endurecida del servidor multimedia | MediaMTX |
-| `scripts/` | Configuración, instalación, diagnóstico y reparación | Python, PowerShell, Bash |
-| `tests/` | Pruebas de análisis, API, seguridad, ubicación, sincronización y streaming | pytest |
-
-## Sitios, despliegues y nodos
-
-BirdMonitor no crea una base de datos distinta por ciudad. Mantiene una base central y separa cada registro mediante relaciones explícitas:
-
-| Concepto | Ejemplo | Para qué sirve |
-|---|---|---|
-| **Sitio** | Sevilla, Algeciras o Sangüesa | Lugar estable que se puede consultar en el histórico |
-| **Despliegue** | Una campaña de agosto en Algeciras | Periodo durante el que un nodo estuvo físicamente en un sitio |
-| **Nodo** | `birdmonitor-01` | Identidad estable de la Raspberry Pi |
-| **Detección** | Un mirlo a una hora concreta | Conserva su sitio y despliegue de origen para siempre |
-
-El selector superior del dashboard **consulta datos históricos**; no mueve físicamente el nodo. El cambio de ubicación activa se confirma tras iniciar sesión y se envía como una orden auditada. La Raspberry la aplica entre ciclos, actualiza las coordenadas de BirdNET/BirdWeather y responde al servidor. Si está desconectada, la orden queda pendiente y las capturas mantienen el último contexto confirmado.
+El análisis BirdNET y el directo son procesos independientes. Un problema del
+reproductor HLS no elimina las grabaciones ni detiene la inferencia. El PCM
+compartido `micshared` permite que ambos lean el mismo micrófono sin competir
+por el dispositivo físico.
 
 ## Requisitos
 
-### Servidor central
+### Servidor
 
-- Windows 10/11 o macOS con Python 3 y `venv`.
-- [MediaMTX](https://github.com/bluenviron/mediamtx/releases) para la escucha en directo.
-- Una IP privada estable: LAN para modo local o IP de Tailscale para acceso entre redes.
-- PowerShell como administrador en Windows para registrar tareas y reglas de Firewall.
+- Windows 10/11 —recorrido principal— o macOS.
+- Python 3.11 o posterior, Git y conexión de red privada.
+- [MediaMTX](https://github.com/bluenviron/mediamtx/releases) (configuración
+  verificada con la versión 1.19.2).
+- PowerShell como administrador para instalar tareas y reglas de Firewall.
+- Tailscale en los equipos si se utilizará acceso entre redes diferentes.
 
-### Nodo edge
+### Nodo
 
-- Raspberry Pi con Raspberry Pi OS, Python, FFmpeg y ALSA.
-- Entorno compatible con `birdnetlib==0.18.1` y el modelo BirdNET.
-- Micrófono reconocido por ALSA.
-- Servicios `birdmonitor.service` y `birdstream.service` configurados mediante `systemd`.
-- Tailscale instalado en el nodo cuando se use ese perfil.
+- Raspberry Pi con Raspberry Pi OS de 64 bits.
+- Micrófono USB reconocido por ALSA.
+- Python 3, FFmpeg, PortAudio y libsndfile.
+- Espacio suficiente para el modelo BirdNET incluido y la retención temporal.
 
-## Instalación rápida del servidor en Windows
+## Instalación completa
 
-La guía completa está en [docs/INSTALACION.md](docs/INSTALACION.md). Hay recorridos separados para [red local](docs/INSTALACION_LOCAL.md) y [Tailscale](docs/INSTALACION_TAILSCALE.md).
+El orden es importante: primero se prepara el servidor y se generan las
+identidades; después se configura la Raspberry.
 
-### 1. Preparar el proyecto
+### 1. Servidor Windows
+
+Abre PowerShell y clona el repositorio:
 
 ```powershell
 git clone https://github.com/guti-48/TFG-monitoreo-aves.git
-Set-Location .\TFG-monitoreo-aves\monitoreo_aves
+Set-Location .\TFG-monitoreo-aves
 
 python -m venv venv
 .\venv\Scripts\python.exe -m pip install --upgrade pip
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Si tu clon deja `backend/` directamente en la raíz, no entres en `monitoreo_aves`: ejecuta los comandos desde la carpeta que contiene `requirements.txt`.
+`requirements.txt` contiene solamente lo necesario para el servidor. No
+instala TensorFlow ni los controladores de audio de la Raspberry.
 
-Descarga el binario de MediaMTX y colócalo en:
+Descarga MediaMTX para Windows y coloca el ejecutable en:
 
 ```text
 tools/mediamtx/mediamtx.exe
 ```
 
-La configuración `tools/mediamtx/mediamtx.secure.yml` sí está versionada; el binario y las credenciales no deben subirse a Git.
-
-### 2. Crear identidades y elegir la red
+Genera las credenciales y elige **un** modo de red:
 
 ```powershell
-# Crea el administrador, el secreto de sesión y el token del nodo.
+# Administrador, secreto de sesión y token del nodo.
 .\venv\Scripts\python.exe scripts\configure_security.py
 
-# Opción A: todos los equipos en una LAN privada.
+# Opción A: servidor, Raspberry y usuarios en la misma LAN.
 .\venv\Scripts\python.exe scripts\configure_network_mode.py `
   --mode local `
-  --server-host IP_LAN_DEL_SERVIDOR
+  --server-host 192.168.1.10
 
-# Opción B: Raspberry y usuarios en redes diferentes.
+# Opción B: acceso privado desde redes distintas.
 .\venv\Scripts\python.exe scripts\configure_network_mode.py `
   --mode tailscale `
-  --server-host IP_TAILSCALE_DEL_SERVIDOR
+  --server-host 100.x.y.z
 
-# Genera credenciales independientes para RTSP/HLS.
+# Credenciales separadas para publicar, leer y servir HLS.
 .\venv\Scripts\python.exe scripts\configure_stream_security.py
 ```
 
-Los dos asistentes sensibles muestran una credencial una sola vez. El token del nodo se copia a `/etc/birdmonitor/birdmonitor.env`; la contraseña de publicación se introduce después con el configurador de streaming de la Raspberry.
+Guarda temporalmente los dos valores mostrados una sola vez:
 
-### 3. Instalar el arranque automático
+1. Token de API del nodo, producido por `configure_security.py`.
+2. Contraseña RTSP de publicación, producida por
+   `configure_stream_security.py`.
 
-Abre PowerShell **como administrador** en la raíz del proyecto:
+Los necesitarás en la Raspberry. No los copies a Git, documentación o
+capturas.
+
+Abre ahora PowerShell **como administrador**, vuelve a la raíz del proyecto y
+ejecuta:
 
 ```powershell
 .\scripts\windows\install_birdmonitor_windows.ps1
 .\scripts\windows\check_birdmonitor_windows.ps1
 ```
 
-El instalador registra `BirdMonitor Backend` y `BirdMonitor MediaMTX` como tareas ocultas al iniciar sesión, aplica el perfil de red y verifica los puertos. La base de datos y los medios no se eliminan al reinstalar las tareas.
+Comprueba finalmente:
 
-### 4. Abrir el dashboard
-
-```text
-En el servidor:        http://127.0.0.1:8000
-Desde otro dispositivo: http://IP_PRIVADA_DEL_SERVIDOR:8000
+```powershell
+curl.exe http://127.0.0.1:8000/health
 ```
 
-El primer acceso redirige a `/login`. No abras los puertos de BirdMonitor en el router.
+La respuesta debe contener `"status":"ok"`. Abre
+`http://127.0.0.1:8000`; desde otro equipo usa la IP privada seleccionada.
 
-## Instalación rápida del servidor en macOS
+### Servidor macOS (alternativo)
 
-Clona el repositorio fuera de `Desktop`, `Documents` y `Downloads`, ya que los permisos de privacidad de macOS pueden impedir que un `LaunchAgent` lea esas carpetas:
-
-```bash
-mkdir -p ~/Projects
-cd ~/Projects
-git clone https://github.com/guti-48/TFG-monitoreo-aves.git
-cd TFG-monitoreo-aves/monitoreo_aves
-
-python3 -m venv venv
-./venv/bin/python -m pip install --upgrade pip
-./venv/bin/python -m pip install -r requirements.txt
-```
-
-Coloca el binario de MediaMTX para Darwin en `tools/mediamtx/macos/mediamtx` y dale permiso de ejecución. Después ejecuta los mismos asistentes de seguridad/red con `./venv/bin/python` e instala el arranque automático:
+Clona el proyecto fuera de `Desktop`, `Documents` y `Downloads`, ya que un
+`LaunchAgent` puede no tener permiso para leerlos. Instala `requirements.txt`,
+ejecuta los tres configuradores del servidor igual que en Windows y coloca el
+binario Darwin en `tools/mediamtx/macos/mediamtx`:
 
 ```bash
 chmod +x tools/mediamtx/macos/mediamtx
@@ -191,201 +168,273 @@ chmod +x tools/mediamtx/macos/mediamtx
 ./scripts/macos/check_birdmonitor_macos.sh
 ```
 
-La automatización utiliza `~/Library/LaunchAgents/com.birdmonitor.services.plist`. En macOS se debe revisar además el Firewall del sistema, porque el instalador no crea sus reglas automáticamente.
+El instalador crea `~/Library/LaunchAgents/com.birdmonitor.services.plist`.
+Debe revisarse manualmente el Firewall de macOS, porque esa automatización no
+crea sus reglas.
 
-## Instalación del nodo Raspberry Pi
+### 2. Nodo Raspberry Pi
 
-La guía operativa específica está en [hardware/raspberry_pi/README.md](hardware/raspberry_pi/README.md). En resumen:
-
-1. Instala el repositorio y el entorno BirdNET en la Raspberry.
-2. Copia `hardware/raspberry_pi/birdmonitor.env.example` a `/etc/birdmonitor/birdmonitor.env`, establece permisos `600` y completa servidor, token, nodo, sitio, coordenadas y captura.
-3. Configura el primer sitio con `configure_site.py`.
-4. Introduce de forma interactiva la credencial RTSP con `configure_stream_publisher.py`.
-5. Reinicia y comprueba `birdmonitor.service`, `birdstream.service` y, si procede, `tailscaled.service`.
-
-Ejemplo del paso de streaming:
+Instala las dependencias del sistema y clona el proyecto:
 
 ```bash
-sudo python3 scripts/raspberry_pi/configure_stream_publisher.py \
-  --network-mode tailscale \
-  --server-host IP_TAILSCALE_DEL_SERVIDOR
+sudo apt update
+sudo apt install -y git ffmpeg alsa-utils libportaudio2 libsndfile1 python3-venv
+
+cd /home/pi
+git clone https://github.com/guti-48/TFG-monitoreo-aves.git birdmonitor
+cd /home/pi/birdmonitor
+
+python3 -m venv venv
+./venv/bin/python -m pip install --upgrade pip
+./venv/bin/python -m pip install -r requirements-node.txt
 ```
 
-El script no incluye la contraseña en el historial: la solicita sin mostrarla, la guarda bajo `/etc/birdmonitor/` con permisos restrictivos y restaura la unidad anterior si FFmpeg no permanece estable.
+La instalación de TensorFlow puede variar entre modelos de Raspberry Pi y
+versiones de Python. Utiliza Raspberry Pi OS de 64 bits y un Python compatible
+con la versión ofrecida por `pip` para tu arquitectura.
+
+Prepara la configuración privada:
+
+```bash
+sudo install -d -m 700 /etc/birdmonitor
+sudo cp hardware/raspberry_pi/birdmonitor.env.example \
+  /etc/birdmonitor/birdmonitor.env
+sudo chmod 600 /etc/birdmonitor/birdmonitor.env
+sudo nano /etc/birdmonitor/birdmonitor.env
+```
+
+Completa como mínimo:
+
+```dotenv
+BIRDMONITOR_NETWORK_MODE=tailscale
+BIRDMONITOR_SERVER_URL=http://100.x.y.z:8000
+BIRDMONITOR_NODE_API_TOKEN=TOKEN_GENERADO_EN_EL_SERVIDOR
+BIRDMONITOR_NODE_NAME=birdmonitor-01
+BIRDMONITOR_MIC_ALSA_CARD=3
+BIRDMONITOR_MIC_CAPTURE_VOLUME=50%
+BIRDMONITOR_MIC_AUTO_GAIN=0
+BIRDMONITOR_MIC_DEVICE=
+```
+
+Para modo local cambia la URL por la IPv4 LAN. Si usas Tailscale, instálalo y
+conecta la Raspberry a la misma *tailnet* antes de continuar.
+
+Registra el primer sitio. Valida primero con `--dry-run`:
+
+```bash
+sudo ./venv/bin/python hardware/raspberry_pi/configure_site.py \
+  --site-code mi-sitio \
+  --site-name "Nombre de la ubicación" \
+  --municipality "Municipio" \
+  --region "Provincia" \
+  --country-code ES \
+  --timezone Europe/Madrid \
+  --location-source manual \
+  --lat 36.0000 \
+  --lon -5.0000 \
+  --accuracy-m 50 \
+  --new-deployment \
+  --dry-run
+```
+
+Repite el comando sin `--dry-run` cuando los datos sean correctos.
+
+Localiza la tarjeta del micrófono y configura la captura compartida. Sustituye
+`3` por el número mostrado por `arecord -l`:
+
+```bash
+arecord -l
+sudo bash scripts/raspberry_pi/configure_shared_microphone.sh --card 3
+```
+
+El script crea una copia de `/etc/asound.conf`, configura `dsnoop` y realiza
+una grabación de prueba. Mantén `BIRDMONITOR_MIC_DEVICE` vacío para que
+PortAudio utilice este PCM compartido.
+
+Instala los servicios del nodo:
+
+```bash
+sudo bash scripts/raspberry_pi/install_birdmonitor_services.sh
+```
+
+Por último introduce la contraseña RTSP de publicación generada en el servidor:
+
+```bash
+sudo ./venv/bin/python scripts/raspberry_pi/configure_stream_publisher.py \
+  --network-mode tailscale \
+  --server-host 100.x.y.z
+```
+
+Para LAN usa `--network-mode local` y la IP local del servidor. La contraseña
+se solicita sin mostrarla y se guarda en `/etc/birdmonitor/` con permisos
+restrictivos.
+
+Valida la instalación:
+
+```bash
+sudo systemctl is-active birdmonitor.service
+sudo systemctl is-active birdstream.service
+sudo systemctl is-active birdmonitor-stream-supervisor.service
+sudo journalctl -u birdmonitor.service -n 50 --no-pager
+```
+
+Los tres estados deben ser `active`. En el dashboard aparecerán el nodo y sus
+primeras métricas aunque un ciclo no contenga aves.
 
 ## Modos de red
 
-| Perfil | Uso recomendado | Alcance permitido | Consideración |
-|---|---|---|---|
-| `local` | Todos los equipos están en la misma red privada controlada | Subred local | HTTP no cifra el tráfico frente a otros usuarios de esa LAN |
-| `tailscale` | Nodo, servidor o usuarios están en redes distintas | Dispositivos autorizados de la *tailnet* | Recomendado para acceso remoto; conviene definir políticas ACL |
+| Modo | Úsalo cuando | Acceso |
+|---|---|---|
+| `local` | Todos los equipos están en una LAN privada controlada | Subred local configurada |
+| `tailscale` | Nodo, servidor o usuarios están en redes diferentes | Dispositivos autorizados de la *tailnet* |
 
-| Puerto | Servicio | Exposición esperada |
+| Puerto | Función | Exposición esperada |
 |---:|---|---|
-| `8000` | Dashboard y API FastAPI | IP privada elegida y loopback |
-| `8554` | Publicación/lectura RTSP autenticada | IP privada elegida |
-| `8888` | HLS de MediaMTX | Sólo `127.0.0.1`; FastAPI lo entrega tras validar la sesión |
+| `8000` | Dashboard y API | IP privada elegida y loopback |
+| `8554` | RTSP autenticado | IP privada elegida |
+| `8888` | HLS de MediaMTX | Solo `127.0.0.1`; FastAPI actúa como proxy |
 
-Cambiar de perfil no borra datos. Vuelve a ejecutar `configure_network_mode.py`, actualiza el publicador de la Raspberry y aplica el perfil:
+No abras estos puertos mediante DMZ o reenvío en el router. Tailscale es el
+modo recomendado para acceso remoto.
 
-```powershell
-.\scripts\windows\apply_network_mode.ps1
-```
-
-## Configuración principal
-
-El servidor guarda la configuración real en `backend/birdmonitor.env`. La Raspberry usa `/etc/birdmonitor/birdmonitor.env`. Ambos archivos contienen secretos, están excluidos de Git y no deben aparecer en capturas, memorias o incidencias.
-
-| Variable del nodo | Valor habitual | Efecto |
-|---|---:|---|
-| `BIRDMONITOR_SERVER_URL` | `http://IP:8000` | Servidor central visto desde la Raspberry |
-| `BIRDMONITOR_NODE_NAME` | `birdmonitor-01` | Identidad estable y única del hardware |
-| `BIRDMONITOR_RECORD_SECONDS` | `60` | Duración de cada captura |
-| `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | `300` | Inicio de un ciclo respecto al anterior |
-| `BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD` | `0.65` | Confianza mínima inicial para aves |
-| `BIRDMONITOR_BIRDNET_OVERLAP_SECONDS` | `1.5` | Solapamiento de ventanas BirdNET |
-| `BIRDMONITOR_BIRDNET_SENSITIVITY` | `1.25` | Sensibilidad del analizador |
-| `BIRDMONITOR_RETENTION_DAYS` | `9` | Retención local de WAV y espectrogramas ya gestionados |
-| `BIRDWEATHER_ENABLED` | `0` | Activa la contribución opcional a BirdWeather |
-
-Los umbrales no deben ajustarse usando una sola grabación. Conviene reunir muestras de varios periodos, revisar falsos positivos/negativos y documentar cualquier cambio para mantener la comparabilidad.
-
-### Ajuste del micrófono
-
-La espuma o el pelo antiviento reducen turbulencias, pero no eliminan zumbido eléctrico, ruido propio del preamplificador, vibración de la caja o una ganancia inadecuada. BirdMonitor diagnostica esos problemas y permite fijar el nivel ALSA mediante:
-
-- `BIRDMONITOR_MIC_ALSA_CARD`
-- `BIRDMONITOR_MIC_CAPTURE_VOLUME`
-- `BIRDMONITOR_MIC_AUTO_GAIN`
-
-El reproductor utiliza el **WAV original** y limita la escucha al tramo de revisión. El espectrograma sí aplica un paso alto y normalización frente al fondo para facilitar la inspección visual, pero no sobrescribe la evidencia ni cambia el audio que analizó BirdNET. Un filtro puede mejorar la representación, pero no recuperar una señal saturada o un canto que nunca superó el ruido del hardware.
+Los datos, la inferencia y la autenticación permanecen en los equipos del
+usuario. El navegador sí descarga actualmente fuentes y bibliotecas visuales
+versionadas desde Google Fonts, jsDelivr y unpkg; las fotografías de especies,
+sus descripciones y el mapa consultan Wikipedia y OpenStreetMap. Si no hay
+Internet, la captura y el análisis continúan, pero esas funciones visuales
+pueden no estar disponibles.
 
 ## Uso del dashboard
 
-Tras iniciar sesión se puede:
+Después de iniciar sesión puedes:
 
-- consultar detecciones por sitio, despliegue, fechas, especie y confianza;
-- escuchar el WAV y localizar la ventana clasificada sobre el espectrograma;
-- escuchar el audio original y revisar avisos de calidad;
-- confirmar, rechazar o corregir una especie;
-- consultar actividad, biodiversidad y distribución completa de especies;
-- descargar CSV o un informe Excel estructurado;
-- escuchar el directo y detenerlo para un dispositivo o para todos;
-- consultar campañas históricas sin que la Raspberry siga instalada allí;
-- confirmar una nueva ubicación física del nodo sin entrar por SSH.
+- consultar y filtrar el histórico por sitio o despliegue;
+- escuchar el tramo clasificado y revisar su espectrograma;
+- comparar audio original y vista de escucha filtrada;
+- confirmar, corregir o rechazar detecciones;
+- consultar calidad del micrófono e índices ecológicos;
+- descargar CSV o Excel;
+- asignar la ubicación física del nodo sin acceder por SSH;
+- iniciar la emisión y escucharla desde el navegador;
+- copiar una URL RTSP para VLC.
 
-El cambio de ubicación activa requiere sesión y protección CSRF. Se procesa entre capturas para no interrumpir un WAV en curso.
+La contraseña de RTSP aparece enmascarada en pantalla para no filtrarla en una
+captura. El botón **Copiar URL para VLC** sigue disponible para el administrador.
 
-## Operación y diagnóstico
+## Datos y privacidad
+
+| Dato | Ubicación | Se versiona |
+|---|---|---|
+| Configuración y secretos del servidor | `backend/birdmonitor.env` | No |
+| Base SQLite central | `backend/app/birdmonitor.db` | No |
+| WAV y espectrogramas | `hardware/raspberry_pi/records/` y `spectrograms/` | No |
+| Configuración del nodo | `/etc/birdmonitor/birdmonitor.env` | No |
+| Cola sin conexión | `hardware/raspberry_pi/offline_outbox.db` en el nodo | No |
+| Estado de despliegue | `deployment_state.json` en el nodo | No |
+
+Cada ubicación se representa mediante un sitio y cada periodo físico mediante
+un despliegue. Trasladar la Raspberry no mezcla los datos ni borra el histórico.
+
+## Seguridad y rotación
+
+La instalación exige sesiones firmadas, cookies `HttpOnly`, CSRF, token de nodo,
+validación de uploads, medios privados, HLS tras autenticación y credenciales
+separadas de MediaMTX. Consulta [SECURITY.md](SECURITY.md) para conocer el modelo
+de amenazas y las limitaciones.
+
+Si una captura revela únicamente la URL de VLC, rota solo el lector:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_stream_security.py --rotate-reader
+.\scripts\windows\repair_backend_task.ps1
+```
+
+Si sospechas que también se filtró la contraseña de publicación, rota todo con
+`--rotate` y vuelve a ejecutar `configure_stream_publisher.py` en la Raspberry.
+
+## Diagnóstico
 
 ### Servidor Windows
 
 ```powershell
-# Estado integral de tareas, red, seguridad y puertos.
 .\scripts\windows\check_birdmonitor_windows.ps1
-
-# Reparar una tarea Backend atascada o en estado Queued.
 .\scripts\windows\repair_backend_task.ps1
-
-# Reconstruir sólo la tarea de escucha sin reiniciar el backend.
-.\scripts\windows\apply_stream_security.ps1 -SkipBackendReload
-
-# Recargar backend y streaming tras cambios.
 .\scripts\windows\restart_birdmonitor_streaming.ps1
-
-# Comprobación mínima.
-curl.exe http://127.0.0.1:8000/health
 ```
 
-Los registros de ejecución se guardan en `%LOCALAPPDATA%\BirdMonitor`.
+Los logs están en `%LOCALAPPDATA%\BirdMonitor`.
 
 ### Raspberry Pi
 
 ```bash
-sudo systemctl status birdmonitor.service birdstream.service --no-pager
+sudo systemctl status birdmonitor.service birdstream.service \
+  birdmonitor-stream-supervisor.service --no-pager
 sudo journalctl -u birdmonitor.service -n 100 --no-pager
 sudo journalctl -u birdstream.service -n 100 --no-pager
 ```
 
-| Síntoma | Comprobación recomendada |
+| Síntoma | Interpretación y acción |
 |---|---|
-| La tarea del backend queda `Queued` | Ejecutar `repair_backend_task.ps1` como administrador y revisar `backend.log` |
-| `/health` no responde | Comprobar la tarea, el puerto 8000 y `%LOCALAPPDATA%\BirdMonitor\backend.log` |
-| El directo figura activo pero no se oye | Revisar `birdstream.service`, la entrada ALSA y el log de MediaMTX |
-| MediaMTX devuelve `401` | Repetir la configuración del publicador con la credencial vigente; no pegarla en la unidad `systemd` |
-| El dashboard muestra datos de otro lugar | Cambiar el filtro histórico o confirmar la ubicación física; son operaciones distintas |
-| La interfaz parece antigua tras actualizar | Forzar recarga con `Ctrl+F5` y comprobar que sólo haya un backend escuchando |
+| No aparecen aves, pero sí métricas nuevas | El nodo funciona; ninguna clase superó el umbral |
+| El audio en directo se corta cada ciclo | Comprueba que ambos procesos usan `micshared` y que `BIRDMONITOR_MIC_DEVICE` está vacío |
+| El dashboard indica nodo sin conexión | Revisa alimentación, Wi-Fi/Tailscale y el supervisor |
+| MediaMTX responde `401` | Reconfigura el publicador con la contraseña vigente |
+| La tarea Windows queda `Queued` | Ejecuta `repair_backend_task.ps1` como administrador |
+| La interfaz parece antigua | Usa `Ctrl+F5` y confirma que solo existe un backend en el puerto 8000 |
 
-## Seguridad
+## Desarrollo y pruebas
 
-La instalación segura es parte del funcionamiento, no un complemento opcional:
-
-- contraseña administradora almacenada como hash;
-- sesiones firmadas con cookies `HttpOnly` y `SameSite=Strict`;
-- CSRF en operaciones que cambian estado;
-- token del nodo almacenado como hash y limitado a sus rutas;
-- validación de nombres, rutas de archivos, parámetros y fórmulas de Excel;
-- audios, espectrogramas, exportaciones y HLS detrás de autenticación;
-- credenciales separadas para publicar, leer y servir el stream;
-- HLS enlazado únicamente a loopback;
-- Firewall y middleware restringidos al perfil local o Tailscale;
-- secretos y binarios excluidos del repositorio.
-
-No se debe publicar `8000`, `8554` ni `8888` mediante reenvío de puertos, DMZ o una IP pública. Consulta la política, las limitaciones y la respuesta ante incidentes en [SECURITY.md](SECURITY.md). La implementación realizada se resume en [docs/INFORME_SEGURIDAD.md](docs/INFORME_SEGURIDAD.md).
-
-## Pruebas
-
-Desde la raíz del proyecto:
+Para trabajar con servidor y nodo en la misma máquina instala las dependencias
+de desarrollo:
 
 ```powershell
+.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\venv\Scripts\python.exe -m pytest -q
 node --check frontend\js\dashboard.js
 ```
 
-Las pruebas cubren análisis acústico, calidad del audio, API, exportación, autenticación, CSRF, streaming, aislamiento de red, sincronización *offline* y migración/cambio remoto de ubicaciones.
+La suite cubre API, seguridad, uploads, revisión, exportaciones, métricas,
+BirdNET, cola sin conexión, ubicaciones y streaming.
 
-## Estructura del repositorio
+## Estructura
 
 ```text
-monitoreo_aves/
-├── backend/
-│   ├── app/
-│   │   ├── core/              # Configuración, base de datos y seguridad
-│   │   ├── domain/            # Modelos y esquemas
-│   │   └── features/          # Funcionalidades agrupadas por dominio
-│   └── analisisBiodiversidad.py
-├── frontend/                  # Dashboard web responsive
-├── hardware/raspberry_pi/     # Nodo edge, BirdNET y cola offline
-├── scripts/
-│   ├── windows/               # Instalación y operación del servidor
-│   ├── macos/                 # LaunchAgent y comprobaciones
-│   └── raspberry_pi/          # Endurecimiento del publicador RTSP
-├── tools/mediamtx/            # Configuración segura; binario no versionado
-├── tests/                     # Suite automatizada
-├── docs/                      # Instalación e informe técnico de seguridad
-├── SECURITY.md
-└── requirements.txt
+backend/
+├── app/core/                 configuración, SQLite, migraciones y seguridad
+├── app/domain/               modelos y esquemas
+├── app/features/             rutas agrupadas por funcionalidad
+└── analisisBiodiversidad.py  índices ecológicos
+frontend/                     dashboard HTML/CSS/JavaScript
+hardware/raspberry_pi/        captura, BirdNET, métricas y sincronización
+scripts/
+├── windows/                  instalación y operación del servidor Windows
+├── macos/                    LaunchAgent del servidor macOS
+└── raspberry_pi/             audio compartido, servicios y RTSP
+tools/mediamtx/               configuración endurecida sin secretos
+tests/                        pruebas automatizadas
+docs/                         guías ampliadas
 ```
 
-## Alcance y limitaciones
+Los archivos `__init__.py` se conservan porque definen paquetes importables de
+Python. El código de migración histórica también se mantiene para que una base
+de datos creada con versiones anteriores pueda actualizarse sin perder datos.
 
-- BirdNET puede producir falsos positivos y falsos negativos, especialmente con cantos lejanos, especies solapadas o ruido dominante.
-- Las coordenadas y la fecha mejoran el contexto del modelo, pero pueden penalizar especies introducidas o inusuales; la revisión humana conserva el resultado corregido sin reentrenar el modelo base.
-- El sistema guarda varias especies encontradas en una captura, aunque la separación perfecta de voces simultáneas depende del modelo y de la relación señal/ruido.
-- SQLite es apropiado para una instalación privada con un servidor central; un servicio multiusuario público requeriría otra arquitectura de despliegue y endurecimiento adicional.
-- El directo está diseñado para supervisión y presenta varios segundos de latencia por HLS.
-- La calidad final depende del micrófono, su ganancia, alimentación, montaje, protección ambiental y distancia a la fuente.
+## Límites conocidos
 
-## Tecnologías y referencias
+- BirdNET puede producir falsos positivos y falsos negativos.
+- Dos aves simultáneas pueden detectarse, pero su separación depende de la
+  relación señal/ruido y del modelo.
+- Los filtros de escucha no recuperan información ausente o saturada.
+- El HLS añade varios segundos de latencia y no sustituye una grabación forense.
+- SQLite es adecuado para una instalación privada; un servicio público y
+  multiusuario requeriría otra arquitectura.
 
-- [BirdNET](https://birdnet.cornell.edu/) — clasificación acústica de aves.
-- [birdnetlib](https://github.com/joeweiss/birdnetlib) — integración local de BirdNET en Python.
-- [FastAPI](https://fastapi.tiangolo.com/) — API y servidor web.
-- [MediaMTX](https://mediamtx.org/) — distribución RTSP/HLS.
-- [scikit-maad](https://scikit-maad.github.io/) — métricas de análisis ecoacústico.
-- [Tailscale](https://tailscale.com/kb/) — conectividad privada entre ubicaciones.
-- [BirdWeather](https://www.birdweather.com/) — contribución opcional a ciencia ciudadana.
+## Tecnologías
 
----
-
-BirdMonitor prioriza tres propiedades: **evidencia trazable**, **operación accesible desde el navegador** y **despliegue privado por defecto**.
+[BirdNET](https://birdnet.cornell.edu/) ·
+[birdnetlib](https://github.com/joeweiss/birdnetlib) ·
+[FastAPI](https://fastapi.tiangolo.com/) ·
+[MediaMTX](https://mediamtx.org/) ·
+[scikit-maad](https://scikit-maad.github.io/) ·
+[Tailscale](https://tailscale.com/kb/) ·
+[BirdWeather](https://www.birdweather.com/)

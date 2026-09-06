@@ -105,10 +105,12 @@ Se mantuvo el principio de mínima exposición: no se sustituyó el enlace exact
 La batería automatizada de esta revisión obtuvo:
 
 ```text
-112 passed, 32 warnings
+125 passed, 31 warnings
 ```
 
-Una de las advertencias procede de los permisos de caché del entorno aislado de pruebas; las restantes son avisos de dependencias ya documentados. No se produjo ningún fallo de prueba.
+Las advertencias proceden de dependencias externas: detección opcional de
+FFmpeg por Pydub y adaptadores de fecha de SQLite obsoletos en Python 3.12. No
+se produjo ningún fallo de prueba.
 
 Las pruebas cubren autenticación, CSRF, permisos del nodo, subida y recuperación de medios, streaming, modos de red, migración geográfica, aislamiento entre ubicaciones y el protocolo remoto con reintentos y persistencia atómica.
 
@@ -123,8 +125,10 @@ En la verificación operativa:
 - las colas offline quedaron vacías;
 - SQLite devolvió integridad correcta y cero errores de claves foráneas.
 
-La evidencia específica de la migración geográfica se conserva en [`migracion_ubicaciones/fase_4_configuracion_raspberry_pi.md`](migracion_ubicaciones/fase_4_configuracion_raspberry_pi.md).
-El diseño y las pruebas del control remoto se documentan en [`migracion_ubicaciones/fase_6_cambio_remoto_y_seguridad.md`](migracion_ubicaciones/fase_6_cambio_remoto_y_seguridad.md).
+La migración geográfica, el aislamiento por despliegue y el control remoto se
+conservan como comportamiento verificable mediante las pruebas automatizadas
+de ubicación, migración y nodo. Los informes de fase usados durante el
+desarrollo no forman parte de la distribución instalable.
 
 ## 5. Gestión de secretos durante la intervención
 

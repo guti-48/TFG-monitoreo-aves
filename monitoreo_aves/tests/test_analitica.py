@@ -67,3 +67,18 @@ def test_actividad_diaria_agrupa_por_hora_y_filtra_ruido(client):
     assert hora_6["especies_activas"] == 2
     assert set(hora_6["lista_especies"]) == {"Common Kingfisher", "White Stork"}
     assert actividad[7]["total_detecciones"] == 0
+
+
+def test_error_del_mapa_no_expone_detalles_internos(client, monkeypatch):
+    from backend.app.features.analytics import routes
+
+    def fallar_mapa(**_kwargs):
+        raise RuntimeError("C:/ruta/privada/base-de-datos.db")
+
+    monkeypatch.setattr(routes, "obetenerDatosMapa", fallar_mapa)
+
+    response = client.get("/analytics/map")
+
+    assert response.status_code == 200
+    assert response.json() == {"error": "No se pudo generar el mapa"}
+    assert "ruta/privada" not in response.text

@@ -82,10 +82,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Configura credenciales separadas para MediaMTX.",
     )
-    parser.add_argument(
+    rotation_group = parser.add_mutually_exclusive_group()
+    rotation_group.add_argument(
         "--rotate",
         action="store_true",
         help="Rota todas las credenciales de streaming existentes.",
+    )
+    rotation_group.add_argument(
+        "--rotate-reader",
+        action="store_true",
+        help=(
+            "Rota solo la credencial de lectura RTSP sin cambiar la "
+            "publicacion de la Raspberry ni el proxy HLS."
+        ),
     )
     parser.add_argument(
         "--server-host",
@@ -121,10 +130,40 @@ def main() -> None:
             "Vuelve a configurar el modo de red."
         )
 
-    if stream_security_is_configured(current_values) and not args.rotate:
+    security_configured = stream_security_is_configured(current_values)
+    if security_configured and not args.rotate and not args.rotate_reader:
         print(
             "La seguridad de streaming ya esta configurada. "
             "Usa --rotate solo si quieres invalidar las credenciales actuales."
+        )
+        return
+
+    if args.rotate_reader:
+        if not security_configured:
+            raise SystemExit(
+                "No se puede rotar solo el lector porque la seguridad de "
+                "streaming aun no esta configurada completamente."
+            )
+
+        reader_password = secrets.token_urlsafe(32)
+        updates = {
+            "BIRDMONITOR_STREAM_READER_USER": (
+                current_values.get("BIRDMONITOR_STREAM_READER_USER")
+                or "birdmonitor-viewer"
+            ),
+            "BIRDMONITOR_STREAM_READER_PASSWORD": reader_password,
+        }
+        write_env_atomic(
+            BACKEND_ENV_FILE,
+            replace_env_values(original_lines, updates),
+        )
+        print(
+            "Credencial de lectura RTSP rotada. La nueva clave permanece "
+            "solo en backend/birdmonitor.env y no se muestra en consola."
+        )
+        print(
+            "Reinicia el backend para invalidar la clave anterior. "
+            "La Raspberry no necesita cambios."
         )
         return
 

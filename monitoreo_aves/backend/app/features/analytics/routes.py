@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Query
 
 try:
@@ -14,6 +16,8 @@ except ModuleNotFoundError:
     )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
 
 @router.get("/analytics/biodiversity")
 def get_biodiversity_report(
@@ -27,9 +31,10 @@ def get_biodiversity_report(
             deployment_id=deployment_id,
             device_id=device_id,
         )
-    except Exception as e:
-        print(f"Error al obtener el reporte de biodiversidad: {e}")
+    except Exception:
+        logger.exception("No se pudo generar el reporte de biodiversidad")
         return []
+
 
 @router.get("/analytics/map")
 def get_map_data(
@@ -43,9 +48,10 @@ def get_map_data(
             site_id=site_id,
             deployment_id=deployment_id,
         )
-    except Exception as e:
-        print(f"Error en mapa: {e}")
-        return {"error": str(e)}
+    except Exception:
+        logger.exception("No se pudieron obtener los datos del mapa")
+        return {"error": "No se pudo generar el mapa"}
+
 
 @router.get("/analytics/daily-activity")
 def get_daily_activity(
@@ -61,6 +67,6 @@ def get_daily_activity(
             deployment_id=deployment_id,
             device_id=device_id,
         )
-    except Exception as e:
-        print(f"Error generando informe diario: {e}")
+    except Exception:
+        logger.exception("No se pudo generar el informe diario")
         return []

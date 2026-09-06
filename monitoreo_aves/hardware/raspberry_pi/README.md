@@ -1,44 +1,58 @@
-# Nodo edge de BirdMonitor
+# Nodo Raspberry Pi de BirdMonitor
 
-Esta carpeta contiene el software que se ejecuta en la Raspberry Pi. El nodo captura audio, analiza BirdNET localmente, calcula métricas, conserva una cola cuando el servidor no responde y publica el directo mediante FFmpeg.
+Esta carpeta contiene el nodo *edge*: graba el micrófono, ejecuta BirdNET en
+local, conserva una cola si el servidor no responde y publica el audio en
+directo. Los WAV no se envían a servicios de IA externos.
 
-## Procesos del nodo
+## Procesos instalados
 
-| Archivo o servicio | Responsabilidad |
+| Unidad | Función |
 |---|---|
-| `mainNode.py` / `birdmonitor.service` | Captura, análisis, evidencias, sincronización y BirdWeather opcional |
-| `supervisor.py` | Sincroniza el estado deseado del directo y recupera `birdstream.service` si deja de publicar |
-| `birdstream.service` | Captura la entrada ALSA y publica RTSP autenticado en MediaMTX |
-| `node_sync.py` | Cola SQLite persistente e idempotencia de envíos |
-| `configure_site.py` | Crea o activa de forma atómica el contexto de sitio/despliegue |
-| `deployment_state.json` | Estado operativo local generado; no editar ni versionar |
+| `birdmonitor.service` | Captura, análisis BirdNET, evidencias y sincronización |
+| `birdstream.service` | Publicación RTSP autenticada mediante FFmpeg |
+| `birdmonitor-stream-supervisor.service` | Aplica el botón de emisión y recupera el directo |
 
-## Requisitos previos
+`mainNode.py` realiza el análisis, `supervisor.py` controla el streaming,
+`node_sync.py` mantiene la cola persistente y `configure_site.py` activa el
+sitio/despliegue. `deployment_state.json` se genera localmente y no se debe
+editar ni versionar.
 
-- Raspberry Pi OS con red operativa.
-- Python y un entorno virtual compatible con BirdNET/birdnetlib.
-- FFmpeg y ALSA instalados.
+## Requisitos
+
+- Raspberry Pi OS de 64 bits y Python compatible con TensorFlow/BirdNET.
+- `ffmpeg`, `alsa-utils`, `libportaudio2` y `libsndfile1`.
 - Micrófono visible en `arecord -l`.
-- Servicios base `birdmonitor.service` y `birdstream.service` creados.
-- Token de nodo y credencial de publicación generados previamente en el servidor.
-- `tailscaled.service` activo si se usa el modo `tailscale`.
+- Servidor BirdMonitor ya configurado para modo `local` o `tailscale`.
+- Token de nodo y contraseña RTSP de publicación generados por el servidor.
 
-El configurador RTSP **protege una unidad `birdstream.service` existente**; no crea desde cero la ruta ALSA ni instala BirdNET.
+Los comandos siguientes suponen un clon en `/home/pi/birdmonitor`.
 
-## 1. Instalar la configuración privada
+## 1. Instalar software
 
-En el ejemplo, el repositorio está en `/home/pi/birdmonitor/monitoreo_aves`:
+```bash
+sudo apt update
+sudo apt install -y ffmpeg alsa-utils libportaudio2 libsndfile1 python3-venv
+
+cd /home/pi/birdmonitor
+python3 -m venv venv
+./venv/bin/python -m pip install --upgrade pip
+./venv/bin/python -m pip install -r requirements-node.txt
+```
+
+Comprueba antes que la versión de TensorFlow indicada por el sistema es
+compatible con la arquitectura de la Raspberry.
+
+## 2. Crear el entorno privado
 
 ```bash
 sudo install -d -m 700 /etc/birdmonitor
-sudo cp \
-  /home/pi/birdmonitor/monitoreo_aves/hardware/raspberry_pi/birdmonitor.env.example \
+sudo install -m 600 \
+  /home/pi/birdmonitor/hardware/raspberry_pi/birdmonitor.env.example \
   /etc/birdmonitor/birdmonitor.env
-sudo chmod 600 /etc/birdmonitor/birdmonitor.env
 sudo nano /etc/birdmonitor/birdmonitor.env
 ```
 
-Completa, como mínimo:
+Completa al menos:
 
 ```dotenv
 BIRDMONITOR_NETWORK_MODE=tailscale
@@ -51,22 +65,17 @@ BIRDMONITOR_MIC_CAPTURE_VOLUME=50%
 BIRDMONITOR_MIC_AUTO_GAIN=0
 ```
 
-No copies valores reales a Git, capturas o documentos públicos. Comprueba que `birdmonitor.service` contiene:
+No copies valores reales a Git, capturas o documentos públicos.
 
-```ini
-[Service]
-EnvironmentFile=/etc/birdmonitor/birdmonitor.env
-```
+## 3. Configurar sitio y campaña
 
-## 2. Crear el primer despliegue
-
-Primero valida sin escribir:
+Primero valida sin modificar el estado:
 
 ```bash
-sudo python3 \
-  /home/pi/birdmonitor/monitoreo_aves/hardware/raspberry_pi/configure_site.py \
+sudo /home/pi/birdmonitor/venv/bin/python \
+  /home/pi/birdmonitor/hardware/raspberry_pi/configure_site.py \
   --site-code codigo-del-sitio \
-  --site-name "Nombre legible del sitio" \
+  --site-name "Nombre legible" \
   --municipality "Municipio" \
   --region "Provincia o región" \
   --country-code ES \
@@ -79,104 +88,109 @@ sudo python3 \
   --dry-run
 ```
 
-Repite el comando sin `--dry-run` cuando los datos sean correctos. El script genera un UUID para la campaña, conserva los secretos del archivo y crea una copia previa bajo `/etc/birdmonitor/backups/`.
+Repite sin `--dry-run` cuando sea correcto. Al mover la caja no se borra la
+base central: cada campaña queda separada por `site_code` y `deployment_id`.
 
-> No borres la base central al mover la caja. Cada nuevo despliegue separa las observaciones mediante `site_code` y `deployment_id`; los sitios históricos siguen disponibles en el dashboard.
+## 4. Compartir el micrófono
 
-## 3. Proteger la publicación de audio
-
-Usa el mismo modo y la misma IP configurados en el servidor:
+BirdNET y el directo leen el mismo dispositivo. ALSA `dsnoop` evita que un
+proceso bloquee al otro y reduce los cortes producidos por competir por el USB.
+Sustituye `3` por la tarjeta mostrada en `arecord -l`:
 
 ```bash
-cd /home/pi/birdmonitor/monitoreo_aves
-sudo python3 scripts/raspberry_pi/configure_stream_publisher.py \
+cd /home/pi/birdmonitor
+sudo bash scripts/raspberry_pi/configure_shared_microphone.sh --card 3
+```
+
+El script prueba una captura y, si falla, restaura automáticamente
+`/etc/asound.conf`. Deja `BIRDMONITOR_MIC_DEVICE` vacío para usar el PCM por
+defecto.
+
+## 5. Instalar los servicios
+
+```bash
+sudo bash scripts/raspberry_pi/install_birdmonitor_services.sh \
+  --user pi \
+  --python /home/pi/birdmonitor/venv/bin/python
+```
+
+Las unidades se crean sin secretos embebidos, se habilitan al arranque y se
+reinician si terminan de forma inesperada. Una unidad anterior se copia a
+`/etc/birdmonitor/backups/`.
+
+## 6. Autorizar la publicación RTSP
+
+Usa el mismo modo y la IP configurados en el servidor:
+
+```bash
+sudo /home/pi/birdmonitor/venv/bin/python \
+  /home/pi/birdmonitor/scripts/raspberry_pi/configure_stream_publisher.py \
   --network-mode tailscale \
   --server-host IP_TAILSCALE_DEL_SERVIDOR
 ```
 
-La contraseña se solicita de forma interactiva. El resultado queda en `/etc/birdmonitor/stream-publisher.env` con permisos `600`; la unidad utiliza `${BIRDMONITOR_STREAM_PUBLISH_URL}` en vez de contener el secreto.
+En una LAN privada usa `--network-mode local` y la IPv4 local del servidor.
+La contraseña se solicita sin mostrarla y queda en
+`/etc/birdmonitor/stream-publisher.env` con permisos `600`. El configurador
+habilita `birdstream.service` para los siguientes reinicios.
 
-Para red local cambia `tailscale` por `local` y usa la IPv4 LAN del servidor.
-
-## 4. Arrancar y validar
+## 7. Validar
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl restart birdmonitor.service
-sudo systemctl restart birdstream.service
-
 sudo systemctl is-active birdmonitor.service
 sudo systemctl is-active birdstream.service
+sudo systemctl is-active birdmonitor-stream-supervisor.service
+
+sudo systemctl status \
+  birdmonitor.service \
+  birdstream.service \
+  birdmonitor-stream-supervisor.service --no-pager
+```
+
+Las tres unidades deben indicar `active`. En modo Tailscale verifica también:
+
+```bash
 sudo systemctl is-active tailscaled.service
+tailscale ping IP_TAILSCALE_DEL_SERVIDOR
 ```
 
-Los dos primeros deben devolver `active`; el tercero sólo es obligatorio en modo Tailscale.
+## Operación y diagnóstico
 
 ```bash
-sudo systemctl show birdmonitor.service \
-  -p ActiveState -p SubState -p NRestarts -p ExecMainStatus
-sudo systemctl show birdstream.service \
-  -p ActiveState -p SubState -p NRestarts -p ExecMainStatus
-```
-
-Comprueba después en el servidor que `/health` responde, el nodo aparece en el dashboard y una nueva captura conserva el sitio/despliegue activo.
-
-## 5. Operación habitual
-
-```bash
-# Estado resumido
-sudo systemctl status birdmonitor.service birdstream.service --no-pager
-
-# Últimos eventos del análisis
+# Análisis BirdNET
 sudo journalctl -u birdmonitor.service -n 100 --no-pager
 
-# Diagnóstico del directo
+# Audio en directo
 sudo journalctl -u birdstream.service -n 100 --no-pager
 
-# Reinicio controlado del análisis
-sudo systemctl restart birdmonitor.service
+# Órdenes del dashboard y recuperación del directo
+sudo journalctl -u birdmonitor-stream-supervisor.service -n 100 --no-pager
 ```
 
-El directo y BirdNET son procesos distintos. Reiniciar `birdmonitor.service` no debería cerrar la publicación de `birdstream.service`.
-
-## Cambio de ubicación desde el dashboard
-
-1. Inicia sesión y elige el sitio físico donde se instalará la Raspberry.
-2. Confirma la orden administrativa.
-3. El nodo la consulta con su token y la aplica entre dos ciclos.
-4. `deployment_state.json` se reemplaza atómicamente y el servidor recibe la confirmación.
-5. BirdNET y BirdWeather recargan las nuevas coordenadas.
-
-Si no hay red, la orden permanece pendiente. No asignes observaciones a un sitio futuro de forma retroactiva.
-
-## Captura y calidad
-
-| Variable | Valor inicial recomendado | Nota |
-|---|---:|---|
-| `BIRDMONITOR_RECORD_SECONDS` | `60` | Duración del WAV |
-| `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | `300` | Evita una carga continua innecesaria |
-| `BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD` | `0.65` | Debe calibrarse con datos locales revisados |
-| `BIRDMONITOR_BIRDNET_OVERLAP_SECONDS` | `1.5` | Reduce pérdidas en límites de ventana a cambio de más cómputo |
-| `BIRDMONITOR_BIRDNET_SENSITIVITY` | `1.25` | Sensibilidad reproducible del análisis |
-| `BIRDMONITOR_RETENTION_DAYS` | `9` | Limpieza local de medios antiguos |
-
-La ganancia debe fijarse en hardware/ALSA antes de evaluar filtros. Una señal con clipping no se puede recuperar, y amplificar digitalmente una grabación débil amplifica también el ruido.
-
-## Cola offline y archivos
-
-- Las detecciones pendientes se conservan localmente y se reintentan sin crear duplicados.
-- Cada elemento guarda una instantánea del sitio y despliegue vigentes al capturarse.
-- Los WAV y espectrogramas se eliminan según la retención configurada cuando ya no son necesarios.
-- `deployment_state.json`, la cola local, `records/`, `spectrograms/` y los archivos de `/etc/birdmonitor/` no deben versionarse.
-
-## Diagnóstico rápido
-
-| Problema | Acción |
+| Problema | Comprobación |
 |---|---|
-| `birdmonitor.service` reinicia | Revisar token, dispositivo de entrada, entorno Python y `journalctl` |
-| `birdstream.service` devuelve código 8 | Verificar entrada ALSA y repetir `configure_stream_publisher.py` con la credencial vigente |
-| El nodo no llega al backend | Comprobar `BIRDMONITOR_SERVER_URL`, Tailscale/LAN y `/health` desde la Raspberry |
-| El sitio del dashboard no cambia | Comprobar que el servicio puede escribir `deployment_state.json` y revisar la orden pendiente |
-| Hay zumbido o ruido grave | Separar alimentación USB, evitar contacto rígido con la caja, fijar ganancia y revisar varias muestras |
+| El análisis se reinicia | Token, entorno Python, entrada ALSA y primer log |
+| El directo se corta | Estado de `birdstream`, conectividad y `micshared` |
+| FFmpeg sale con código 8 | Credencial RTSP, URL del servidor y entrada ALSA |
+| El nodo no sincroniza | `BIRDMONITOR_SERVER_URL`, token y `/health` |
+| No cambia de ubicación | Orden pendiente, permisos del estado y log del nodo |
+
+Reiniciar `birdmonitor.service` no debería detener el directo, ya que son
+procesos independientes. Si se expone una credencial RTSP, rótala desde el
+servidor y repite únicamente el paso 6.
+
+## Calidad y retención
+
+| Variable | Inicio recomendado | Efecto |
+|---|---:|---|
+| `BIRDMONITOR_RECORD_SECONDS` | `60` | Duración de cada WAV |
+| `BIRDMONITOR_RECORD_INTERVAL_SECONDS` | `300` | Descanso y carga del nodo |
+| `BIRDMONITOR_BIRD_CONFIDENCE_THRESHOLD` | `0.65` | Umbral que debe calibrarse localmente |
+| `BIRDMONITOR_BIRDNET_OVERLAP_SECONDS` | `1.5` | Reduce pérdidas entre ventanas |
+| `BIRDMONITOR_BIRDNET_SENSITIVITY` | `1.25` | Sensibilidad reproducible |
+| `BIRDMONITOR_RETENTION_DAYS` | `9` | Retención de medios locales |
+
+Primero ajusta la ganancia física/ALSA. El filtrado no recupera una señal
+recortada y amplificar una señal débil también amplifica el ruido.
 
 Volver al [README principal](../../README.md).

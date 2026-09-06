@@ -19,6 +19,7 @@ def test_generador_es_ejecutable_desde_la_raiz_del_proyecto():
 
     assert result.returncode == 0
     assert "--server-host" in result.stdout
+    assert "--rotate-reader" in result.stdout
 
 
 def test_actualizacion_de_env_preserva_lineas_y_no_duplica_claves():

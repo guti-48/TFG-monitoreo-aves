@@ -321,6 +321,7 @@ def main() -> None:
                 atomic_write(service_path, updated_service, 0o644)
 
         run_systemctl("daemon-reload")
+        run_systemctl("enable", args.service)
         run_systemctl("restart", args.service)
         verify_service_stability(args.service)
     except Exception as exc:

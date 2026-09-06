@@ -57,7 +57,7 @@ indicarlo explícitamente:
 ```powershell
 .\venv\Scripts\python.exe scripts\configure_network_mode.py `
   --mode tailscale `
-  --server-host 100.98.248.58
+  --server-host 100.x.y.z
 ```
 
 Usa la IP Tailscale del servidor, no la de la Raspberry ni la Wi-Fi. El
@@ -78,17 +78,20 @@ En `/etc/birdmonitor/birdmonitor.env`:
 
 ```bash
 BIRDMONITOR_NETWORK_MODE=tailscale
-BIRDMONITOR_SERVER_URL=http://100.98.248.58:8000
+BIRDMONITOR_SERVER_URL=http://100.x.y.z:8000
 BIRDMONITOR_NODE_API_TOKEN=TOKEN_MOSTRADO_POR_EL_SERVIDOR
-BIRDMONITOR_DEPLOYMENT_STATE_FILE=/home/pi/birdmonitor/monitoreo_aves/hardware/raspberry_pi/deployment_state.json
+BIRDMONITOR_DEPLOYMENT_STATE_FILE=/home/pi/birdmonitor/hardware/raspberry_pi/deployment_state.json
 ```
 
-Ejecuta el instalador:
+Si el nodo aún no está instalado, sigue primero la
+[guía de Raspberry](../hardware/raspberry_pi/README.md): instala
+`requirements-node.txt`, configura `micshared` y crea los tres servicios.
+Después autoriza la publicación:
 
 ```bash
 sudo python3 scripts/raspberry_pi/configure_stream_publisher.py \
   --network-mode tailscale \
-  --server-host 100.98.248.58
+  --server-host 100.x.y.z
 ```
 
 El instalador se niega a continuar si `tailscaled.service` no está activo. La
@@ -98,7 +101,7 @@ contraseña queda en `/etc/birdmonitor/stream-publisher.env`, con permisos
 ```bash
 sudo systemctl restart birdmonitor.service
 sudo systemctl status tailscaled.service birdmonitor.service \
-  birdstream.service --no-pager
+  birdstream.service birdmonitor-stream-supervisor.service --no-pager
 ```
 
 Después de iniciar sesión, el dashboard solicita confirmar dónde está
@@ -111,7 +114,7 @@ nuevas coordenadas; el streaming independiente continúa supervisado.
 Abre PowerShell como administrador:
 
 ```powershell
-Set-Location "RUTA\AL\REPOSITORIO\monitoreo_aves"
+Set-Location "RUTA\AL\REPOSITORIO\TFG-monitoreo-aves"
 .\scripts\windows\apply_network_mode.ps1
 ```
 
@@ -126,13 +129,13 @@ si la red privada tarda en estar disponible.
 ```powershell
 .\scripts\windows\check_birdmonitor_windows.ps1
 curl.exe http://127.0.0.1:8000/health
-curl.exe http://100.98.248.58:8000/health
+curl.exe http://100.x.y.z:8000/health
 ```
 
 Desde un dispositivo autorizado y conectado a Tailscale:
 
 ```text
-http://100.98.248.58:8000
+http://100.x.y.z:8000
 ```
 
 Desde un dispositivo sin Tailscale, la IP LAN del servidor o Internet no debe

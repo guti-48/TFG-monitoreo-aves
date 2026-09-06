@@ -16,8 +16,8 @@ es siempre interno y sólo escucha en `127.0.0.1`.
 ## Requisitos comunes
 
 - Un servidor Windows 10/11 o macOS con Python 3.
-- Una Raspberry Pi con BirdNET, FFmpeg, ALSA y los servicios
-  `birdmonitor.service` y `birdstream.service`.
+- Una Raspberry Pi de 64 bits compatible con BirdNET, FFmpeg y ALSA. El
+  repositorio incluye el instalador de sus tres servicios.
 - El binario de MediaMTX colocado en la ruta indicada en el README.
 - Una contraseña administradora exclusiva de al menos 12 caracteres.
 
@@ -27,14 +27,15 @@ El orden es intencionado: primero se crean las identidades, después se elige la
 red, luego se protege el streaming y sólo al final se exponen los servicios en
 la interfaz seleccionada.
 
-1. Clonar el repositorio e instalar `requirements.txt`.
+1. Clonar el repositorio e instalar `requirements.txt` en el servidor.
 2. Ejecutar `scripts/configure_security.py`.
 3. Guardar en la Raspberry el token mostrado una sola vez.
 4. Ejecutar `scripts/configure_network_mode.py`.
 5. Ejecutar `scripts/configure_stream_security.py`.
-6. Configurar `birdstream.service` con el instalador de la Raspberry.
-7. Aplicar el perfil de red en el servidor.
-8. Ejecutar las comprobaciones finales.
+6. Instalar `requirements-node.txt`, ALSA compartido y los servicios de la
+   Raspberry siguiendo su [guía](../hardware/raspberry_pi/README.md).
+7. Configurar la credencial de publicación de `birdstream.service`.
+8. Aplicar el perfil de red en el servidor y ejecutar las comprobaciones.
 
 Los valores reales se guardan en `backend/birdmonitor.env` y en archivos de
 `/etc/birdmonitor/`. Están excluidos de Git y nunca deben copiarse a la memoria
@@ -54,7 +55,7 @@ configurador con el nuevo modo y la nueva IP:
 Después hay que repetir la configuración del publicador en la Raspberry y
 aplicar el perfil del servidor. Las credenciales de aplicación y la base de
 datos se conservan. Si se desea invalidar también la antigua credencial RTSP,
-se puede rotar con:
+se puede rotar completamente con:
 
 ```powershell
 .\venv\Scripts\python.exe scripts\configure_stream_security.py --rotate
@@ -62,6 +63,14 @@ se puede rotar con:
 
 La rotación obliga a volver a introducir la nueva contraseña de publicación en
 la Raspberry.
+
+Si sólo se ha expuesto la URL de lectura (por ejemplo, en una captura), conserva
+la publicación de la Raspberry y rota únicamente el lector:
+
+```powershell
+.\venv\Scripts\python.exe scripts\configure_stream_security.py --rotate-reader
+.\scripts\windows\repair_backend_task.ps1
+```
 
 ## Comprobación común en Windows
 

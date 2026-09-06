@@ -5,6 +5,7 @@
 .DS_Store
 .pytest_cache/
 .tmp/
+backend/app/backups/
 *.secret
 *.crt
 *.key

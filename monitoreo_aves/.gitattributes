@@ -1,0 +1,28 @@
+* text=auto
+
+# Linux, macOS y formatos multiplataforma.
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.example text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.txt text eol=lf
+
+# Herramientas nativas de Windows.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+
+# Binarios versionados deliberadamente.
+*.png binary
+*.jpg binary
+*.ico binary
+*.tflite binary

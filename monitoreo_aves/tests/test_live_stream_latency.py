@@ -43,3 +43,30 @@ def test_embedded_player_has_a_local_hls_library_fallback():
 
     assert "function ensureHlsLibrary()" in dashboard
     assert "/hls.min.js" in dashboard
+
+
+def test_dashboard_oculta_la_credencial_rtsp_pero_permite_copiarla():
+    dashboard = (PROJECT_ROOT / "frontend" / "js" / "dashboard.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function maskRtspCredential(rawUrl)" in dashboard
+    assert "rtspLabel.textContent = maskRtspCredential(rtspUrl)" in dashboard
+    assert "copyLiveStreamUrl('rtsp')" in dashboard
+
+
+def test_dashboard_no_depende_de_imagenes_locales_ignoradas():
+    dashboard = (PROJECT_ROOT / "frontend" / "js" / "dashboard.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "human.png" not in dashboard
+    assert "ruido_amb.png" not in dashboard
+    assert (PROJECT_ROOT / "frontend" / "assets" / "noise-placeholder.svg").is_file()
+
+
+def test_dependencias_javascript_del_html_tienen_version():
+    html = (PROJECT_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+
+    assert "npm/chart.js@4.4.9/" in html
+    assert 'npm/chart.js\"></script>' not in html

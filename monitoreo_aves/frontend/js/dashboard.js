@@ -3,10 +3,10 @@ const DETECTION_REVIEW_BASE_URL = "/detections";
 const SPECIES_OPTIONS_URL = "/species/options";
 const ASSETS_PATH = 'assets/';
 const NOISE_MAP = {
-    'Human vocal': 'human.png',
-    'Motor': 'ruido_amb.png',
+    'Human vocal': 'noise-placeholder.svg',
+    'Motor': 'noise-placeholder.svg',
 };
-const PLACEHOLDER_IMG = ASSETS_PATH + 'placeholder.jpg';
+const PLACEHOLDER_IMG = ASSETS_PATH + 'birdmonitor-ostrero.png';
 
 // HLS se consume por el proxy autenticado del backend. MediaMTX permanece
 // accesible solo desde el propio servidor.
@@ -552,6 +552,21 @@ function getCurrentRtspUrl() {
     return `${LIVE_STREAM_RTSP_BASE_URL}/${normalizeStreamPath(selectedStreamPath)}`;
 }
 
+function maskRtspCredential(rawUrl) {
+    try {
+        const parsed = new URL(String(rawUrl || ''));
+        if (!parsed.password) return String(rawUrl || '');
+
+        const username = parsed.username || 'usuario';
+        return `${parsed.protocol}//${username}:••••••••@${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch (_) {
+        return String(rawUrl || '').replace(
+            /^(rtsp:\/\/[^:/\s]+):[^@\s]+@/i,
+            '$1:••••••••@'
+        );
+    }
+}
+
 function isAppleMobileDevice() {
     return /iPad|iPhone|iPod/.test(navigator.platform)
         || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -614,7 +629,10 @@ function updateLiveStreamLabels(data = null) {
     if (title) title.textContent = streamPath;
     if (hlsLabel) hlsLabel.textContent = hlsUrl;
     if (clientHlsLabel) clientHlsLabel.textContent = hlsUrl;
-    if (rtspLabel) rtspLabel.textContent = rtspUrl;
+    if (rtspLabel) {
+        rtspLabel.textContent = maskRtspCredential(rtspUrl);
+        rtspLabel.title = 'Credencial oculta. Usa “Copiar URL para VLC”.';
+    }
     if (pathInput && pathInput.value !== streamPath) pathInput.value = streamPath;
     if (nodeSelect && nodeSelect.value !== selectedStreamNodeName) nodeSelect.value = selectedStreamNodeName;
 }
@@ -782,7 +800,7 @@ function renderLiveStreamView(container) {
                             </div>
                             <div class="live-client-access-item">
                                 <span><i class="bi bi-display me-1"></i>VLC · RTSP</span>
-                                <code id="live-rtsp-url">${escapeHtml(getCurrentRtspUrl())}</code>
+                                <code id="live-rtsp-url" title="Credencial oculta. Usa Copiar URL para VLC.">${escapeHtml(maskRtspCredential(getCurrentRtspUrl()))}</code>
                             </div>
                         </div>
 
@@ -2720,8 +2738,8 @@ function getSpeciesWikiTitle(speciesRawName) {
 async function getSpeciesImageUrl(speciesRawName) {
     const clean = getSpeciesWikiTitle(speciesRawName);
     if (NOISE_MAP[clean] || clean.includes("Human") || clean.includes("Motor") || clean.includes("Noise")) {
-        if (clean.includes("Human")) return ASSETS_PATH + 'human.png';
-        if (clean.includes("Motor") || clean.includes("Ruido") || clean.includes("Noise")) return ASSETS_PATH + 'ruido_amb.png';
+        if (clean.includes("Human")) return ASSETS_PATH + 'noise-placeholder.svg';
+        if (clean.includes("Motor") || clean.includes("Ruido") || clean.includes("Noise")) return ASSETS_PATH + 'noise-placeholder.svg';
         return PLACEHOLDER_IMG;
     }
     try {

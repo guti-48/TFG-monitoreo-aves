@@ -26,6 +26,8 @@ soportado es el dashboard web.
 - HLS de MediaMTX sólo en loopback y entregado por FastAPI tras comprobar la
   sesión.
 - RTSP ligado a la IP elegida y protegido por credenciales.
+- La URL RTSP se enmascara visualmente en el dashboard; sólo el botón de copia
+  entrega la URL completa al usuario autenticado.
 - Filtrado de origen y cabecera `Host` según el modo local o Tailscale.
 - Reglas de Firewall de Windows limitadas a la subred local o al adaptador
   Tailscale.
@@ -80,6 +82,9 @@ autoriza por sí solo a todos los miembros de una tailnet.
   está protegido, pero un administrador local de la Raspberry puede observar
   el proceso.
 - El script de macOS no automatiza reglas avanzadas de su firewall.
+- El dashboard carga bibliotecas visuales desde CDN y contenido opcional de
+  Wikipedia/OpenStreetMap. Un despliegue totalmente aislado debe servir copias
+  locales y revisar su política de contenidos.
 - Faltan rate limiting global, cuotas de almacenamiento y una política de
   copias de seguridad cifradas.
 - Se deben continuar las auditorías de XSS, fórmulas en exportaciones,
@@ -106,6 +111,8 @@ Si se sospecha una filtración:
 4. Rotar las identidades de streaming con
    `scripts/configure_stream_security.py --rotate` y volver a configurar la
    Raspberry.
+   Si sólo se expuso el lector, usar `--rotate-reader` evita cambiar la
+   credencial de publicación del nodo.
 5. Cerrar sesiones reiniciando el backend después de rotar el secreto de
    sesión.
 6. Revisar dispositivos y políticas de acceso de Tailscale.

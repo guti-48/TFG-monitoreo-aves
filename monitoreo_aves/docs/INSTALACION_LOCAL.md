@@ -21,7 +21,7 @@ tools/mediamtx/mediamtx.exe
 ```
 
 Se recomienda reservar en el router una IP para el servidor, por ejemplo
-`192.168.1.32`, para que no cambie después de reiniciar.
+`192.168.1.10`, para que no cambie después de reiniciar.
 
 ## 2. Crear la cuenta y el token del nodo
 
@@ -43,7 +43,7 @@ su hash.
 ```powershell
 .\venv\Scripts\python.exe scripts\configure_network_mode.py `
   --mode local `
-  --server-host 192.168.1.32
+  --server-host 192.168.1.10
 ```
 
 Sustituye el ejemplo por la IPv4 privada realmente asignada al servidor. El
@@ -66,17 +66,20 @@ En `/etc/birdmonitor/birdmonitor.env` o en el archivo de entorno usado por
 
 ```bash
 BIRDMONITOR_NETWORK_MODE=local
-BIRDMONITOR_SERVER_URL=http://192.168.1.32:8000
+BIRDMONITOR_SERVER_URL=http://192.168.1.10:8000
 BIRDMONITOR_NODE_API_TOKEN=TOKEN_MOSTRADO_POR_EL_SERVIDOR
-BIRDMONITOR_DEPLOYMENT_STATE_FILE=/home/pi/birdmonitor/monitoreo_aves/hardware/raspberry_pi/deployment_state.json
+BIRDMONITOR_DEPLOYMENT_STATE_FILE=/home/pi/birdmonitor/hardware/raspberry_pi/deployment_state.json
 ```
 
-Copia el instalador a la Raspberry si todavía no está allí y ejecútalo:
+Si el nodo aún no está instalado, sigue primero la
+[guía de Raspberry](../hardware/raspberry_pi/README.md): instala
+`requirements-node.txt`, configura `micshared` y crea los tres servicios.
+Después autoriza la publicación:
 
 ```bash
 sudo python3 scripts/raspberry_pi/configure_stream_publisher.py \
   --network-mode local \
-  --server-host 192.168.1.32
+  --server-host 192.168.1.10
 ```
 
 El programa solicita la contraseña sin mostrarla, corrige tanto la unidad
@@ -88,7 +91,8 @@ Reinicia el nodo:
 
 ```bash
 sudo systemctl restart birdmonitor.service
-sudo systemctl status birdmonitor.service birdstream.service --no-pager
+sudo systemctl status birdmonitor.service birdstream.service \
+  birdmonitor-stream-supervisor.service --no-pager
 ```
 
 Después de iniciar sesión en el dashboard se puede confirmar la ubicación
@@ -127,7 +131,7 @@ curl.exe http://127.0.0.1:8000/health
 Desde otro dispositivo de la misma red:
 
 ```text
-http://192.168.1.32:8000
+http://192.168.1.10:8000
 ```
 
 Debe aparecer el inicio de sesión. Una red de invitados, otra VLAN o Internet

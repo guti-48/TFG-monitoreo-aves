@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-labelledby="title description">
+  <title id="title">Ruido ambiental</title>
+  <desc id="description">Representación abstracta de una señal acústica ambiental</desc>
+  <rect width="800" height="800" fill="#edf2eb"/>
+  <circle cx="400" cy="400" r="246" fill="#dfe9dc"/>
+  <g fill="none" stroke="#477456" stroke-linecap="round" stroke-width="28">
+    <path d="M190 400h58l35-92 58 190 70-278 62 356 55-238 42 122 32-60h28"/>
+    <path d="M250 258a230 230 0 0 1 300 0" opacity=".42"/>
+    <path d="M250 542a230 230 0 0 0 300 0" opacity=".42"/>
+  </g>
+</svg>
