@@ -254,6 +254,16 @@ NodeLocationCommandStatus = Literal[
 ]
 
 
+class NodeLocationCoordinates(BaseModel):
+    """Corrección manual del punto de referencia, no geolocalización del navegador."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lon: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    location_accuracy_m: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+
+
 class NodeLocationCommandCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -264,6 +274,7 @@ class NodeLocationCommandCreate(BaseModel):
         pattern=r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
     )
     notes: Optional[str] = Field(default=None, max_length=500)
+    coordinates: Optional[NodeLocationCoordinates] = None
 
     @field_validator("confirm_site_code", "notes", mode="before")
     @classmethod

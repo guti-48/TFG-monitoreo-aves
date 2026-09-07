@@ -2119,6 +2119,19 @@ code {
   }
 }
 
+.location-coordinate-editor summary {
+    cursor: pointer;
+    color: var(--primary-color, #466e53);
+    font-weight: 600;
+}
+
+.location-coordinate-map {
+    height: 280px;
+    border: 1px solid #d7dfd3;
+    border-radius: 8px;
+    isolation: isolate;
+}
+
 .location-confirm-check {
   display: flex;
   align-items: flex-start;

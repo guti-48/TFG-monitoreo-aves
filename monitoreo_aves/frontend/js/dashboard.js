@@ -65,6 +65,8 @@ let locationContextReady = false;
 let locationChangeRequestId = 0;
 let lastKnownActiveSiteId = null;
 let locationCatalogRefreshInProgress = false;
+let physicalLocationMap = null;
+let physicalLocationMarker = null;
 
 function getSelectedSite() {
     return locationSites.find(site => Number(site.id) === Number(selectedSiteId)) || null;
@@ -246,8 +248,80 @@ function removeLocationSetupFlag() {
 }
 
 function closePhysicalLocationDialog() {
+    disposePhysicalLocationMap();
     document.getElementById('physical-location-dialog')?.remove();
     removeLocationSetupFlag();
+}
+
+function disposePhysicalLocationMap() {
+    physicalLocationMap?.remove();
+    physicalLocationMap = null;
+    physicalLocationMarker = null;
+}
+
+function readPhysicalLocationCoordinates() {
+    const read = id => document.getElementById(id)?.value.trim() || '';
+    const latText = read('physical-location-lat');
+    const lonText = read('physical-location-lon');
+    const accuracyText = read('physical-location-accuracy');
+    const lat = Number(latText.replace(',', '.'));
+    const lon = Number(lonText.replace(',', '.'));
+    const accuracy = accuracyText ? Number(accuracyText.replace(',', '.')) : null;
+    if (!latText || !lonText || !Number.isFinite(lat) || !Number.isFinite(lon)
+        || lat < -90 || lat > 90 || lon < -180 || lon > 180
+        || (accuracy !== null && (!Number.isFinite(accuracy) || accuracy < 0))) {
+        throw new Error('Introduce latitud entre −90 y 90, longitud entre −180 y 180 y precisión no negativa (o vacía).');
+    }
+    return { lat, lon, location_accuracy_m: accuracy };
+}
+
+function syncPhysicalLocationMarker() {
+    try {
+        const { lat, lon } = readPhysicalLocationCoordinates();
+        physicalLocationMarker?.setLatLng([lat, lon]);
+        physicalLocationMap?.panTo([lat, lon]);
+    } catch (_) { /* Se informa al enviar; permite escribir coordenadas incompletas. */ }
+}
+
+function initializePhysicalLocationMap() {
+    const details = document.getElementById('physical-location-coordinates');
+    if (!details?.open || typeof L === 'undefined') return;
+    if (physicalLocationMap) {
+        physicalLocationMap.invalidateSize();
+        return;
+    }
+    let point;
+    try { point = readPhysicalLocationCoordinates(); } catch (_) { point = null; }
+    physicalLocationMap = L.map('physical-location-map').setView(point ? [point.lat, point.lon] : [0, 0], point ? 17 : 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+    }).addTo(physicalLocationMap);
+    const makeMarker = latlng => {
+        physicalLocationMarker = L.marker(latlng, { draggable: true }).addTo(physicalLocationMap);
+        physicalLocationMarker.on('dragend', () => setPoint(physicalLocationMarker.getLatLng()));
+    };
+    const setPoint = latlng => {
+        document.getElementById('physical-location-lat').value = latlng.lat.toFixed(6);
+        document.getElementById('physical-location-lon').value = latlng.lng.toFixed(6);
+        // Mover el marcador no proporciona una medida de precisión GPS.
+        document.getElementById('physical-location-accuracy').value = '';
+        if (physicalLocationMarker) physicalLocationMarker.setLatLng(latlng);
+        else makeMarker(latlng);
+    };
+    if (point) makeMarker([point.lat, point.lon]);
+    physicalLocationMap.on('click', event => setPoint(event.latlng));
+}
+
+function resetPhysicalLocationCoordinates() {
+    disposePhysicalLocationMap();
+    const selected = document.getElementById('physical-location-site-select')?.value;
+    const site = locationSites.find(item => Number(item.id) === Number(selected));
+    if (!site) return;
+    document.getElementById('physical-location-lat').value = site.lat ?? '';
+    document.getElementById('physical-location-lon').value = site.lon ?? '';
+    document.getElementById('physical-location-accuracy').value = site.location_accuracy_m ?? '';
+    document.getElementById('physical-location-confirm').checked = false;
+    initializePhysicalLocationMap();
 }
 
 function locationCommandStatusLabel(status) {
@@ -280,6 +354,7 @@ async function fetchLocationCommands(deviceId) {
 }
 
 async function openPhysicalLocationDialog(options = {}) {
+    disposePhysicalLocationMap();
     document.getElementById('physical-location-dialog')?.remove();
     const startup = options.startup === true;
     const dialog = document.createElement('div');
@@ -302,15 +377,14 @@ async function openPhysicalLocationDialog(options = {}) {
         const openCommand = commands.find(item => ['pending', 'delivered'].includes(item.status));
         const latestCommand = commands[0] || null;
         const activeSite = getActiveSite();
-        const eligibleSites = locationSites.filter(
-            site => Number.isFinite(Number(site.lat)) && Number.isFinite(Number(site.lon))
-        );
-        const selectedValue = openCommand?.target_site_id || activeSite?.id || eligibleSites[0]?.id || '';
+        const eligibleSites = locationSites.filter(site => !site.archived_at);
+        const selectedValue = openCommand?.target_site_id || options.siteId || activeSite?.id || eligibleSites[0]?.id || '';
         const statusBlock = openCommand
             ? `
                 <div class="alert alert-warning mb-3">
                     <strong>${escapeHtml(locationCommandStatusLabel(openCommand.status))}:</strong>
                     cambio a ${escapeHtml(openCommand.target_site_name)}.
+                    Punto: ${Number(openCommand.target_site_lat).toFixed(6)}, ${Number(openCommand.target_site_lon).toFixed(6)}.
                     ${openCommand.status === 'pending'
                         ? 'La Raspberry todavía no ha recogido la orden.'
                         : 'La Raspberry ya la recibió y está terminando de aplicarla.'}
@@ -343,13 +417,25 @@ async function openPhysicalLocationDialog(options = {}) {
                         </div>` : ''}
                     <label class="correction-field">
                         <span>Ubicación física real del nodo</span>
-                        <select id="physical-location-site-select" class="form-select" ${openCommand ? 'disabled' : ''}>
+                        <select id="physical-location-site-select" class="form-select" onchange="resetPhysicalLocationCoordinates()" ${openCommand ? 'disabled' : ''}>
                             ${eligibleSites.map(site => `
                                 <option value="${Number(site.id)}" ${Number(site.id) === Number(selectedValue) ? 'selected' : ''}>
                                     ${escapeHtml(site.name)}${Number(site.active_deployment_count) > 0 ? ' · actual' : ''}
                                 </option>`).join('')}
                         </select>
                     </label>
+                    ${openCommand ? '' : `
+                        <details id="physical-location-coordinates" class="location-coordinate-editor mt-3" ${options.editCoordinates ? 'open' : ''} ontoggle="initializePhysicalLocationMap()">
+                            <summary>Ajustar punto exacto del sitio</summary>
+                            <p class="correction-helper mt-2">Pulsa en el mapa, arrastra el marcador o escribe las coordenadas de la caja, no las de tu ordenador.</p>
+                            <div class="row g-2 mb-3">
+                                <label class="col-sm-4">Latitud<input id="physical-location-lat" class="form-control" inputmode="decimal" onchange="syncPhysicalLocationMarker()"></label>
+                                <label class="col-sm-4">Longitud<input id="physical-location-lon" class="form-control" inputmode="decimal" onchange="syncPhysicalLocationMarker()"></label>
+                                <label class="col-sm-4">Precisión (m, opcional)<input id="physical-location-accuracy" class="form-control" inputmode="decimal"></label>
+                            </div>
+                            <div id="physical-location-map" class="location-coordinate-map" aria-label="Seleccionar el punto de instalación"></div>
+                            <p class="correction-helper mt-2">Esto corrige la referencia del sitio, también en sus mapas históricos. No traslada detecciones entre sitios ni recalcula análisis anteriores. Si has cambiado de punto de muestreo, utiliza otro sitio. Las coordenadas se conservarán para futuras visitas.</p>
+                        </details>`}
                     <label class="location-confirm-check mt-3 ${openCommand ? 'd-none' : ''}">
                         <input id="physical-location-confirm" type="checkbox">
                         <span>Confirmo que la caja ya está físicamente en el lugar seleccionado.</span>
@@ -373,6 +459,7 @@ async function openPhysicalLocationDialog(options = {}) {
                         </button>`}
                 </div>
             </div>`;
+        if (!openCommand && eligibleSites.length) resetPhysicalLocationCoordinates();
     } catch (error) {
         dialog.innerHTML = `
             <div class="correction-dialog" role="dialog" aria-modal="true">
@@ -386,6 +473,28 @@ async function openPhysicalLocationDialog(options = {}) {
     }
 }
 
+function locationApiErrorMessage(payload, status) {
+    const detail = payload?.detail;
+    const errors = Array.isArray(detail) ? detail : [detail];
+    // Un servidor aún sin recargar rechaza el campo nuevo antes de crear la orden.
+    if (errors.some(item => item?.type === 'extra_forbidden'
+        && Array.isArray(item.loc) && item.loc.join('.') === 'body.coordinates')) {
+        return 'El backend todavía usa una versión anterior y no admite el ajuste de coordenadas. Reinicia BirdMonitor Backend, recarga la página y vuelve a intentarlo. Esta solicitud no ha creado ninguna orden.';
+    }
+    const fields = {
+        lat: 'Latitud', lon: 'Longitud', location_accuracy_m: 'Precisión',
+        target_site_id: 'Sitio', confirm_site_code: 'Confirmación del sitio', notes: 'Notas'
+    };
+    const messages = errors.map(item => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item.msg !== 'string') return '';
+        const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : null;
+        return `${fields[field] ? fields[field] + ': ' : ''}${item.msg}`;
+    }).filter(Boolean);
+    // No convertir objetos a texto ni mostrar el campo "input" de validación.
+    return messages.length ? messages.join(' · ') : `No se pudo completar la operación (HTTP ${status}).`;
+}
+
 async function submitPhysicalLocationCommand(deviceId) {
     const siteSelect = document.getElementById('physical-location-site-select');
     const confirmation = document.getElementById('physical-location-confirm');
@@ -394,7 +503,8 @@ async function submitPhysicalLocationCommand(deviceId) {
     if (!site) return;
 
     const activeSite = getActiveSite();
-    if (Number(site.id) === Number(activeSite?.id)) {
+    const editCoordinates = document.getElementById('physical-location-coordinates')?.open;
+    if (Number(site.id) === Number(activeSite?.id) && !editCoordinates) {
         closePhysicalLocationDialog();
         return;
     }
@@ -405,6 +515,7 @@ async function submitPhysicalLocationCommand(deviceId) {
     }
 
     try {
+        const coordinates = editCoordinates ? readPhysicalLocationCoordinates() : null;
         const response = await fetch(
             `/devices/${encodeURIComponent(deviceId)}/location-commands`,
             {
@@ -416,13 +527,14 @@ async function submitPhysicalLocationCommand(deviceId) {
                 body: JSON.stringify({
                     target_site_id: Number(site.id),
                     confirm_site_code: site.code,
+                    ...(coordinates ? { coordinates } : {}),
                     notes: 'Cambio confirmado desde el dashboard protegido'
                 })
             }
         );
         if (!response.ok) {
             const detail = await response.json().catch(() => ({}));
-            throw new Error(detail.detail || `HTTP ${response.status}`);
+            throw new Error(locationApiErrorMessage(detail, response.status));
         }
         const command = await response.json();
         if (feedback) {
@@ -449,7 +561,7 @@ async function cancelPhysicalLocationCommand(deviceId, commandId) {
         );
         if (!response.ok) {
             const detail = await response.json().catch(() => ({}));
-            throw new Error(detail.detail || `HTTP ${response.status}`);
+            throw new Error(locationApiErrorMessage(detail, response.status));
         }
         await openPhysicalLocationDialog();
     } catch (error) {
@@ -3578,6 +3690,9 @@ async function renderScienceView(container) {
                             <p class="sci-section-title mb-0">
                                 <i class="bi bi-map-fill me-1"></i>Ubicación del nodo y entorno de referencia
                             </p>
+                            <button type="button" class="btn btn-sm btn-outline-success mt-2" onclick="openPhysicalLocationDialog({ siteId: selectedSiteId, editCoordinates: true })">
+                                <i class="bi bi-geo-alt me-1"></i>Ajustar ubicación del nodo
+                            </button>
                             <p class="text-muted mb-0 mt-2" style="font-size:0.72rem;">
                                 El área acústica es orientativa y local; no representa una cobertura garantizada ni permite localizar cada ave.
                             </p>

@@ -240,6 +240,7 @@ def test_cambio_remoto_ubicacion_separa_permisos_admin_y_nodo(
     payload = {
         "target_site_id": site["id"],
         "confirm_site_code": site["code"],
+        "coordinates": {"lat": 42.571234, "lon": -1.281234},
     }
 
     without_csrf = client.post(

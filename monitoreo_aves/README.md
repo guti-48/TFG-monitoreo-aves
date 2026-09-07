@@ -321,6 +321,31 @@ Después de iniciar sesión puedes:
 La contraseña de RTSP aparece enmascarada en pantalla para no filtrarla en una
 captura. El botón **Copiar URL para VLC** sigue disponible para el administrador.
 
+### Fijar el punto exacto del nodo
+
+En **Análisis científico → Ajustar ubicación del nodo**, selecciona el sitio
+en el que está instalada la Raspberry. En **Ajustar punto exacto del sitio**
+puedes pulsar en el mapa, arrastrar el marcador o introducir latitud y longitud
+(grados decimales). La precisión en metros es opcional: déjala vacía si no la
+conoces; los decimales del marcador no equivalen a una precisión medida.
+
+Confirma la ubicación física y pulsa **Aplicar en la Raspberry**. La orden
+queda pendiente hasta el siguiente ciclo conectado del nodo. No es necesario
+entrar por SSH ni volver a escribir las coordenadas al regresar al mismo sitio.
+El cambio abre una campaña nueva; la Raspberry conserva el estado localmente
+y reinicia su proceso de análisis para utilizar las nuevas coordenadas.
+
+Este ajuste corrige el punto de referencia **del sitio completo**, incluidos
+sus mapas históricos. No reasigna detecciones entre sitios, no recalcula
+resultados de BirdNET y no localiza a las aves. Para otro punto de muestreo
+físicamente distinto utiliza un sitio distinto, aunque esté en la misma ciudad.
+Consultar un sitio histórico no cambia por sí solo la ubicación del nodo.
+
+Si la Raspberry está desconectada, el mapa conserva las coordenadas confirmadas;
+una orden pendiente se puede cancelar antes de que el nodo la recoja.
+El ajuste requiere sesión administradora y protección CSRF. No cambia la
+configuración de la estación en BirdWeather: revísala allí si usas ese servicio.
+
 ## Datos y privacidad
 
 | Dato | Ubicación | Se versiona |
@@ -381,6 +406,7 @@ sudo journalctl -u birdstream.service -n 100 --no-pager
 | MediaMTX responde `401` | Reconfigura el publicador con la contraseña vigente |
 | La tarea Windows queda `Queued` | Ejecuta `repair_backend_task.ps1` como administrador |
 | La interfaz parece antigua | Usa `Ctrl+F5` y confirma que solo existe un backend en el puerto 8000 |
+| Ajustar coordenadas devuelve un error 422 o indica backend anterior | Reinicia la tarea `BirdMonitor Backend` para cargar el código nuevo y después usa `Ctrl+F5`. Recargar el navegador no actualiza el proceso Python. El dashboard muestra el detalle de validación y conserva el formulario si la solicitud falla |
 
 ## Desarrollo y pruebas
 
@@ -391,6 +417,7 @@ de desarrollo:
 .\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\venv\Scripts\python.exe -m pytest -q
 node --check frontend\js\dashboard.js
+node --test tests/test_location_coordinates_ui.cjs
 ```
 
 La suite cubre API, seguridad, uploads, revisión, exportaciones, métricas,

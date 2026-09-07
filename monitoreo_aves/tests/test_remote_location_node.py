@@ -98,10 +98,11 @@ def test_ubicacion_y_birdnet_usan_el_contexto_activo():
     }
 
 
-def test_cambio_remoto_respeta_orden_activar_persistir_confirmar(monkeypatch):
+@pytest.mark.parametrize("target_site", ["algeciras", "sevilla"])
+def test_cambio_remoto_respeta_orden_activar_persistir_confirmar(monkeypatch, target_site):
     calls = []
     current = _context()
-    command = _command()
+    command = _command(target_site_code=target_site)
     monkeypatch.setattr(node_sync, "obtenerOrdenCambioUbicacion", lambda: command)
     monkeypatch.setattr(node_sync, "getCurrentDeploymentContext", lambda: current)
     monkeypatch.setattr(
@@ -125,7 +126,10 @@ def test_cambio_remoto_respeta_orden_activar_persistir_confirmar(monkeypatch):
     assert node_sync.procesarCambioUbicacionPendiente() is True
     assert [call[0] for call in calls] == ["activate", "persist", "ack"]
     candidate = calls[0][1]
-    assert candidate.site_code == "algeciras"
+    assert candidate.site_code == target_site
+    assert candidate.lat == command["target_site_lat"]
+    assert candidate.lon == command["target_site_lon"]
+    assert candidate.deployment_public_id != current.deployment_public_id
     assert calls[2][2]["deployment_started_at"] == candidate.started_at
 
 

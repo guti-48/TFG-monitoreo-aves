@@ -318,7 +318,15 @@ def request_location_command(
             status_code=422,
             detail="La confirmacion no coincide con el codigo del sitio",
         )
-    if site.lat is None or site.lon is None:
+    coordinates = payload.coordinates
+    lat = coordinates.lat if coordinates else site.lat
+    lon = coordinates.lon if coordinates else site.lon
+    accuracy = coordinates.location_accuracy_m if coordinates else site.location_accuracy_m
+    source = "manual" if coordinates else site.location_source
+    changed = (lat, lon, accuracy, source) != (
+        site.lat, site.lon, site.location_accuracy_m, site.location_source
+    )
+    if lat is None or lon is None:
         raise HTTPException(
             status_code=409,
             detail="El sitio necesita latitud y longitud antes de asignarlo",
@@ -328,7 +336,7 @@ def request_location_command(
         models.Deployment.device_id == device.id,
         models.Deployment.ended_at.is_(None),
     ).first()
-    if active is not None and active.site_id == site.id:
+    if active is not None and active.site_id == site.id and not changed:
         raise HTTPException(
             status_code=409,
             detail="El nodo ya tiene activo el sitio seleccionado",
@@ -357,10 +365,10 @@ def request_location_command(
         target_site_municipality=site.municipality,
         target_site_region=site.region,
         target_site_country_code=site.country_code,
-        target_site_lat=site.lat,
-        target_site_lon=site.lon,
-        target_site_location_source=site.location_source,
-        target_site_location_accuracy_m=site.location_accuracy_m,
+        target_site_lat=lat,
+        target_site_lon=lon,
+        target_site_location_source=source,
+        target_site_location_accuracy_m=accuracy,
         target_site_timezone=site.timezone,
         deployment_public_id=str(uuid4()),
         status="pending",
@@ -553,7 +561,6 @@ def activate_deployment(
     payload: schemas.DeploymentActivate,
 ) -> models.Deployment:
     device = get_or_create_device(db, payload.device_name)
-    site = get_or_create_site_for_activation(db, payload.site)
     public_id = str(payload.deployment_public_id)
 
     existing = db.query(models.Deployment).options(
@@ -561,12 +568,13 @@ def activate_deployment(
         joinedload(models.Deployment.site),
     ).filter(models.Deployment.public_id == public_id).first()
     if existing:
-        if existing.device_id != device.id or existing.site_id != site.id:
+        if existing.device_id != device.id or existing.site.code != payload.site.code:
             db.rollback()
             raise HTTPException(
                 status_code=409,
                 detail="El UUID del despliegue ya pertenece a otro contexto",
             )
+        site = existing.site
         # Un reintento de una activacion antigua debe ser idempotente, pero no
         # puede hacer que Device vuelva a mostrar un sitio ya cerrado.
         if existing.ended_at is None:
@@ -580,6 +588,41 @@ def activate_deployment(
         )
         db.commit()
         return existing
+
+    # Solo una orden administrativa vigente autoriza corregir un sitio existente.
+    # Sus coordenadas no se publican hasta activar la campaña, en esta transacción.
+    command = db.query(models.NodeLocationCommand).filter(
+        models.NodeLocationCommand.deployment_public_id == public_id,
+    ).first()
+    if command is not None:
+        if (
+            command.device_id != device.id
+            or command.status not in ("pending", "delivered")
+            or command.target_site_code != payload.site.code
+            or (payload.site.lat, payload.site.lon, payload.site.location_source,
+                payload.site.location_accuracy_m) != (
+                command.target_site_lat, command.target_site_lon,
+                command.target_site_location_source,
+                command.target_site_location_accuracy_m)
+        ):
+            raise HTTPException(status_code=409, detail="La activacion no coincide con una orden vigente")
+        site = get_site_or_404(db, command.target_site_id)
+        if site.archived_at is not None:
+            raise HTTPException(status_code=409, detail="El sitio esta archivado")
+        other_active = db.query(models.Deployment).filter(
+            models.Deployment.site_id == site.id,
+            models.Deployment.device_id != device.id,
+            models.Deployment.ended_at.is_(None),
+        ).first()
+        if other_active and (site.lat, site.lon) != (payload.site.lat, payload.site.lon):
+            raise HTTPException(status_code=409, detail="Otro nodo utiliza este sitio; crea un sitio distinto")
+        site.lat = command.target_site_lat
+        site.lon = command.target_site_lon
+        site.location_source = command.target_site_location_source
+        site.location_accuracy_m = command.target_site_location_accuracy_m
+        site.updated_at = _utc_now()
+    else:
+        site = get_or_create_site_for_activation(db, payload.site)
 
     active = db.query(models.Deployment).filter(
         models.Deployment.device_id == device.id,
