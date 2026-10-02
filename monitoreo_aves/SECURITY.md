@@ -92,6 +92,31 @@ autoriza por sí solo a todos los miembros de una tailnet.
 
 ## Operación segura
 
+### Mapas externos: excepción limitada de Referer
+
+El dashboard mantiene `Referrer-Policy: no-referrer`. Solo las imágenes de
+teselas de OpenStreetMap usan `referrerPolicy: strict-origin` en Leaflet:
+el proveedor recibe el origen del dashboard (esquema, host y puerto), no
+su ruta, filtros ni parámetros. Las peticiones cartográficas también revelan
+al proveedor la IP de salida y la zona visualizada; no deben considerarse
+anónimas. Esta excepción no envía credenciales de BirdMonitor a OSM.
+
+La corrección del 01/10/2026 elimina la incompatibilidad entre la política
+global y la identificación requerida por OSM. Ambos mapas utilizan
+`https://tile.openstreetmap.org/{z}/{x}/{y}.png`, atribución enlazada y la
+caché HTTP del navegador, sin rotar servidores, falsear identidades ni
+añadir descargas masivas o reintentos. La carga se realiza al terminar
+los movimientos y las animaciones de zoom.
+
+Referencias: [política oficial de teselas](https://operations.osmfoundation.org/policies/tiles/)
+y [opción referrerPolicy de Leaflet](https://leafletjs.com/reference.html#tilelayer-referrerpolicy).
+
+Para requisitos de confidencialidad que impidan compartir el origen o la
+zona consultada, se necesita cartografía autoalojada o un proveedor compatible;
+suprimir el Referer mientras se usan estos servidores públicos no es la solución.
+
+### Mantenimiento
+
 1. Instalar usando [`docs/INSTALACION.md`](docs/INSTALACION.md).
 2. Usar contraseñas exclusivas y mantener Tailscale, Python, MediaMTX y el
    sistema operativo actualizados.

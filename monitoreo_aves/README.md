@@ -323,6 +323,16 @@ captura. El botón **Copiar URL para VLC** sigue disponible para el administrado
 
 ### Fijar el punto exacto del nodo
 
+El fondo cartográfico usa las teselas públicas de OpenStreetMap con atribución
+y caché del navegador. Solo esas imágenes envían como Referer el origen del
+dashboard, sin ruta ni parámetros, para cumplir su
+[política de uso](https://operations.osmfoundation.org/policies/tiles/).
+OSM recibe también la IP de salida y el área consultada. No hay descarga
+offline, precarga masiva ni garantía de disponibilidad de este servicio.
+Si aparece «403 Access blocked», carga la versión actual del dashboard y
+comprueba que las extensiones de privacidad no eliminen el Referer de OSM.
+No fuerces recargas repetidas ni cambies de servidor para eludir un bloqueo.
+
 En **Análisis científico → Ajustar ubicación del nodo**, selecciona el sitio
 en el que está instalada la Raspberry. En **Ajustar punto exacto del sitio**
 puedes pulsar en el mapa, arrastrar el marcador o introducir latitud y longitud

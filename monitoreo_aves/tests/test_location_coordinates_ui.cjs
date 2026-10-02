@@ -31,6 +31,31 @@ test('coordenadas decimales con coma y precisión desconocida', () => {
     assert.equal(point.location_accuracy_m, null);
 });
 
+test('los mapas usan OSM con origen mínimo, atribución y caché normal', () => {
+    const { sandbox } = dashboard();
+    let request;
+    const layer = {};
+    sandbox.L = { tileLayer: (url, options) => { request = { url, options }; return layer; } };
+    assert.equal(sandbox.createBirdMonitorMapTiles(), layer);
+    assert.equal(request.url, 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+    assert.equal(request.options.referrerPolicy, 'strict-origin');
+    assert.match(request.options.attribution, /https:\/\/www.openstreetmap.org\/copyright/);
+    assert.match(request.options.attribution, /contributors/);
+    assert.equal(request.options.updateWhenIdle, true);
+    assert.equal(request.options.updateWhenZooming, false);
+    assert.equal(request.options.detectRetina, false);
+    assert.equal(request.options.maxZoom, 19);
+    assert.equal(Object.hasOwn(request.options, 'headers'), false);
+});
+
+test('vista ecológica y selector comparten la misma política de teselas', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../frontend/js/dashboard.js'), 'utf8');
+    assert.equal((source.match(/L\.tileLayer\(/g) || []).length, 1);
+    assert.match(source, /createBirdMonitorMapTiles\(\)\.addTo\(physicalLocationMap\)/);
+    assert.match(source, /createBirdMonitorMapTiles\(\)\.addTo\(map\)/);
+    assert.doesNotMatch(source, /\{s\}\.tile\.openstreetmap\.org/);
+});
+
 test('rechaza valores vacíos, no finitos y fuera de rango', () => {
     for (const [key, value] of [['lat', ''], ['lat', '91'], ['lon', '-181'], ['lat', 'NaN'], ['accuracy', '-1']]) {
         const { sandbox, fields } = dashboard();

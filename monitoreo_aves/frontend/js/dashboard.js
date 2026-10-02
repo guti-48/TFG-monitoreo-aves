@@ -283,6 +283,23 @@ function syncPhysicalLocationMarker() {
     } catch (_) { /* Se informa al enviar; permite escribir coordenadas incompletas. */ }
 }
 
+function createBirdMonitorMapTiles() {
+    // OSM exige Referer en páginas web. Excepción solo para las teselas:
+    // compartir el origen, nunca la ruta, filtros ni parámetros del dashboard.
+    // El resto de recursos conserva Referrer-Policy: no-referrer del backend.
+    // https://operations.osmfoundation.org/policies/tiles/
+    return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+        referrerPolicy: 'strict-origin',
+        maxZoom: 19,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        detectRetina: false
+        // Sin cache-busting, precarga masiva ni reintentos automáticos.
+        // La caché HTTP de las imágenes sigue las cabeceras de OSM.
+    });
+}
+
 function initializePhysicalLocationMap() {
     const details = document.getElementById('physical-location-coordinates');
     if (!details?.open || typeof L === 'undefined') return;
@@ -293,9 +310,7 @@ function initializePhysicalLocationMap() {
     let point;
     try { point = readPhysicalLocationCoordinates(); } catch (_) { point = null; }
     physicalLocationMap = L.map('physical-location-map').setView(point ? [point.lat, point.lon] : [0, 0], point ? 17 : 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
-    }).addTo(physicalLocationMap);
+    createBirdMonitorMapTiles().addTo(physicalLocationMap);
     const makeMarker = latlng => {
         physicalLocationMarker = L.marker(latlng, { draggable: true }).addTo(physicalLocationMap);
         physicalLocationMarker.on('dragend', () => setPoint(physicalLocationMarker.getLatLng()));
@@ -3780,9 +3795,7 @@ async function renderScienceView(container) {
 
                 const latLng = [Number(mapData.lat), Number(mapData.lon)];
                 const map = L.map('biodiversityMap').setView(latLng, 18);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; OpenStreetMap'
-                }).addTo(map);
+                createBirdMonitorMapTiles().addTo(map);
 
                 const configuredRadius = Number(mapData.reference_radius_m);
                 const radiusM = Math.max(

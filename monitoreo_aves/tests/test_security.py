@@ -60,6 +60,11 @@ def test_rechaza_api_anonima_y_permite_sesion_administradora(
 
     authenticated = client.get("/devices/")
     assert authenticated.status_code == 200
+    # La excepción de OSM es por imagen; no debe relajar la política global.
+    dashboard = client.get("/")
+    assert dashboard.status_code == 200
+    assert dashboard.headers["referrer-policy"] == "no-referrer"
+    assert authenticated.headers["referrer-policy"] == "no-referrer"
 
 
 def test_sesion_administradora_exige_csrf_para_modificaciones(
