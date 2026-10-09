@@ -3139,37 +3139,75 @@ function renderTable(data) {
     });
 }
 
+function sortedSpeciesEntries(counts) {
+    return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1] || cleanName(a[0]).localeCompare(cleanName(b[0]), 'es'));
+}
+
 function updateChart(counts) {
     const canvas = document.getElementById('speciesChart');
     if (!canvas) return;
 
     latestSpeciesCounts = { ...counts };
-    if (myChart) { myChart.destroy(); }
-
-    const ctx = canvas.getContext('2d');
-    const allEntries = Object.entries(counts)
-        .sort((a, b) => b[1] - a[1] || cleanName(a[0]).localeCompare(cleanName(b[0]), 'es'));
+    // Solo se recrea al cambiar de vista/canvas, nunca por el sondeo periódico.
+    if (myChart && myChart.canvas !== canvas) {
+        myChart.destroy();
+        myChart = null;
+    }
+    const allEntries = sortedSpeciesEntries(counts);
+    const signature = JSON.stringify(allEntries);
+    const legendPosition = window.innerWidth <= 576 ? 'bottom' : 'right';
+    if (myChart && myChart.$speciesSignature === signature) {
+        if (myChart.options.plugins.legend.position !== legendPosition) {
+            myChart.options.plugins.legend.position = legendPosition;
+            myChart.update('none');
+        }
+        return;
+    }
     const hasMoreSpecies = allEntries.length > SPECIES_CHART_INITIAL_LIMIT;
     if (!hasMoreSpecies) speciesChartExpanded = false;
-    const allDetectionsTotal = allEntries.reduce(
-        (sum, [, count]) => sum + count,
-        0
-    );
     const labels = allEntries.map(([species]) => cleanName(species));
     const values = allEntries.map(([, count]) => count);
     const colors = allEntries.map(([species]) => getSpeciesChartColor(species));
 
-    myChart = new Chart(ctx, {
+    if (myChart) {
+        // Chart.js guarda la visibilidad por índice; conservarla por especie
+        // evita ocultar otra ave si cambia el orden de los recuentos.
+        const visibility = new Map(myChart.$speciesKeys.map(
+            (species, index) => [species, myChart.getDataVisibility(index)]
+        ));
+        myChart.data.labels = labels;
+        myChart.data.datasets[0].data = values;
+        myChart.data.datasets[0].backgroundColor = colors;
+        allEntries.forEach(([species], index) => {
+            if (myChart.getDataVisibility(index) !== (visibility.get(species) ?? true)) {
+                myChart.toggleDataVisibility(index);
+            }
+        });
+        myChart.options.plugins.legend.position = legendPosition;
+        myChart.update('none');
+    } else {
+        myChart = createSpeciesChart(canvas, labels, values, colors, legendPosition);
+    }
+    myChart.$speciesSignature = signature;
+    myChart.$speciesKeys = allEntries.map(([species]) => species);
+
+    renderAllSpeciesPanel(allEntries, hasMoreSpecies);
+}
+
+function createSpeciesChart(canvas, labels, values, colors, legendPosition) {
+    return new Chart(canvas.getContext('2d'), {
         type: 'doughnut',
         data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: false,
             cutout: '62%',
             plugins: {
                 legend: {
                     display: true,
-                    position: window.innerWidth <= 576 ? 'bottom' : 'right',
+                    position: legendPosition,
                     labels: {
                         color: '#5f6f65',
                         boxWidth: 32,
@@ -3183,6 +3221,8 @@ function updateChart(counts) {
                 tooltip: {
                     callbacks: {
                         label(context) {
+                            const allDetectionsTotal = context.chart.data.datasets[0].data
+                                .reduce((sum, count) => sum + count, 0);
                             const percentage = allDetectionsTotal > 0
                                 ? ((context.parsed / allDetectionsTotal) * 100).toFixed(1)
                                 : '0.0';
@@ -3193,8 +3233,6 @@ function updateChart(counts) {
             }
         }
     });
-
-    renderAllSpeciesPanel(allEntries, hasMoreSpecies);
 }
 
 function renderAllSpeciesPanel(allEntries, hasMoreSpecies) {
@@ -3244,7 +3282,8 @@ function renderAllSpeciesPanel(allEntries, hasMoreSpecies) {
 
 function toggleSpeciesChartDetails() {
     speciesChartExpanded = !speciesChartExpanded;
-    updateChart(latestSpeciesCounts);
+    const entries = sortedSpeciesEntries(latestSpeciesCounts);
+    renderAllSpeciesPanel(entries, entries.length > SPECIES_CHART_INITIAL_LIMIT);
 }
 
 function getSpeciesChartColor(species) {
