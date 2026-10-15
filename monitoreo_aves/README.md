@@ -169,6 +169,19 @@ chmod +x tools/mediamtx/macos/mediamtx
 ```
 
 El instalador crea `~/Library/LaunchAgents/com.birdmonitor.services.plist`.
+Arranca al iniciar sesion y recupera los procesos si terminan. Comprueba
+`/health`, incluida la configuracion de red y credenciales, antes de confirmar
+la instalacion. Si actualizas desde una version antigua, ejecuta de nuevo el
+instalador para renovar las rutas del LaunchAgent.
+
+El Mac debe permanecer encendido, con la sesion iniciada y sin suspension.
+El lanzador evita la suspension automatica mientras esta conectado a corriente;
+no evita la suspension al cerrar la tapa ni mantiene despierto el Mac con bateria.
+Que la Raspberry este encendida no mantiene activo el servidor del Mac.
+Abre `http://localhost:8000` en el Mac o `http://IP_DEL_MAC:8000` desde otro
+equipo de la red elegida. El dashboard actualiza sus datos cada cuatro segundos;
+las nuevas grabaciones llegan al ritmo configurado en la Raspberry.
+
 Debe revisarse manualmente el Firewall de macOS, porque esa automatización no
 crea sus reglas.
 

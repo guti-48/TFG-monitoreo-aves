@@ -1,381 +1,410 @@
-﻿# Sistema IoT de Monitoreo Acústico de Aves (TFG)
+# BirdMonitor — TFG de monitorización acústica de aves
 
-Este repositorio contiene un sistema distribuido para la detección, clasificación y monitorización de avifauna mediante análisis acústico pasivo e inteligencia artificial. El proyecto combina un nodo Edge basado en Raspberry Pi, un backend FastAPI y un dashboard web para visualizar detecciones, métricas acústicas y análisis ecológicos.
+Sistema de monitorización con Raspberry Pi, BirdNET, una API FastAPI y un
+dashboard web. La Raspberry graba y analiza el audio; los ordenadores conservan
+el histórico y permiten consultar detecciones, métricas, evidencias y revisiones.
 
-La arquitectura está pensada para funcionar en escenarios de campo: el nodo graba audio, calcula métricas locales, ejecuta BirdNET, genera espectrogramas, conserva datos si no hay conexión y sincroniza las detecciones cuando recupera acceso al servidor central.
+Este README documenta el repositorio completo. Los comandos parten de
+`TFG-monitoreo-aves/`, salvo que se indique otro directorio.
 
-## Estado Del Proyecto
+## Arquitectura y estado actual
 
-El sistema se encuentra en fase de validación técnica con flujo completo de extremo a extremo:
-
-- Captura de audio en Raspberry Pi.
-- Inferencia local con BirdNET.
-- Registro automático de dispositivos.
-- Envío de detecciones y métricas acústicas al backend.
-- Subida de archivos `.wav` y espectrogramas `.png`.
-- Persistencia en SQLite.
-- Dashboard web servido desde FastAPI.
-- Control remoto de streaming HLS mediante el panel web.
-
-## Funcionalidades Principales
-
-### Nodo Edge
-
-- Grabación mono a `48 kHz` en ciclos configurados de `60 s` cada `5 min`.
-- Selección automática o manual del micrófono mediante `sounddevice`.
-- Generación de archivos WAV y espectrogramas Mel.
-- Cálculo de amplitud RMS para estimar nivel de ruido ambiental.
-- Cálculo de índices acústicos con `scikit-maad`: `ACI`, `ADI`, `AEI`, `BIO`, `NDSI`, `Ht`, `Hf` y `H`.
-- Inferencia con BirdNET mediante `birdnetlib`.
-- Filtrado por umbrales diferenciados para aves, humanos, motores y ruido ambiente.
-- Geolocalización manual, por IP pública o por caché local.
-- Envío opcional de detecciones de aves a BirdWeather.
-- Respaldo offline en CSV y resincronización posterior.
-- Limpieza automática de audios e imágenes antiguos para limitar el uso de disco.
-- Protección ante relojes no sincronizados, evitando datos con fechas inválidas tras cortes de energía.
-
-### Backend
-
-- API REST con FastAPI.
-- Base de datos SQLite gestionada con SQLAlchemy.
-- Validación de datos con Pydantic.
-- Recepción segura de uploads `.wav` y `.png`, con validación de extensión, nombre y tamaño.
-- Almacenamiento de detecciones biológicas o acústicas relevantes.
-- Almacenamiento independiente de métricas acústicas por ciclo, incluso cuando no hay detección de ave.
-- Endpoints de analítica para biodiversidad, mapa e informe diario.
-- Servicio de archivos estáticos para el dashboard y espectrogramas.
-- Control remoto del estado deseado y real del streaming HLS.
-
-### Dashboard Web
-
-- Interfaz SPA en HTML, CSS y JavaScript.
-- Bootstrap 5, Bootstrap Icons, Chart.js, Leaflet y HLS.js.
-- Vista de tiempo real con detecciones recientes.
-- Vista de escucha en directo con activación y parada del servicio `birdstream.service`.
-- Histórico de detecciones.
-- Panel de análisis ecológico con índices de biodiversidad.
-- Visualización de nodos registrados.
-- Informe diario por fecha con curva de actividad por horas.
-- Mapa con datos agregados por ubicación.
-
-## Arquitectura
-
-```text
-TFG-monitoreo-aves/
-├── README.md
-└── monitoreo_aves/
-    ├── README.md
-    ├── requirements.txt
-    ├── backend/
-    │   ├── analisisBiodiversidad.py
-    │   ├── comparativa_biodiversidad.png
-    │   └── app/
-    │       ├── main.py
-    │       ├── models.py
-    │       ├── schemas.py
-    │       ├── database.py
-    │       ├── birdmonitor.db
-    │       └── stream_control.json
-    ├── frontend/
-    │   ├── index.html
-    │   ├── css/
-    │   │   └── style.css
-    │   ├── js/
-    │   │   └── dashboard.js
-    │   └── assets/
-    │       └── placeholder.jpg
-    └── hardware/
-        └── raspberry_pi/
-            ├── mainNode.py
-            ├── analyzer.py
-            ├── supervisor.py
-            ├── backup_data.csv
-            ├── model/
-            │   ├── birdnet_model.tflite
-            │   └── birdnet_labels.txt
-            ├── records/
-            └── spectrograms/
+```mermaid
+flowchart LR
+    MIC[Micrófono] --> PI[Raspberry Pi: captura y BirdNET]
+    PI -->|API y cola sin conexión| SERVER[Ordenador disponible: Mac o Windows]
+    SERVER --> DB[(SQLite y archivos locales)]
+    MAC[Servidor Mac] <-->|Sincronización de históricos por Tailscale| WIN[Servidor Windows]
+    MAC --> WEB1[Dashboard del Mac]
+    WIN --> WEB2[Dashboard de Windows]
 ```
 
-## Componentes
+Cada ordenador tiene su propia base SQLite. `localhost:8000` siempre abre el
+servidor de ese ordenador, no una base común. Tailscale proporciona conectividad
+privada; BirdMonitor implementa la transferencia y los reintentos.
 
-### 1. Nodo Sensor
+| Componente | Estado |
+|---|---|
+| Captura, BirdNET, métricas y cola offline del nodo | Implementado |
+| Dashboard, revisión humana, ubicaciones, exportaciones y directo | Implementado |
+| Arranque automático en Mac, Windows y Raspberry | Implementado; requiere instalar los servicios en cada equipo |
+| Sincronización incremental de detecciones y métricas entre ordenadores | Primera fase implementada; se activa configurando los pares |
+| Recuperación de WAV y PNG desde otro ordenador | Implementada, con comprobación SHA-256 y reintentos independientes |
+| Selección automática de un ordenador disponible por la Raspberry | Implementada para detecciones, métricas y archivos; requiere configurar los destinos de ingesta |
+| Retención de archivos en la Raspberry | Se mantiene la limpieza existente por días y la protección de archivos pendientes de envío; no se añade una cuota de GB |
+| Sincronización de revisiones, reglas de aprendizaje y cambios administrativos | Pendiente |
 
-Ruta: `monitoreo_aves/hardware/raspberry_pi/`
+La sincronización está implementada en el código y probada con bases independientes.
+Actualizar el código no activa por sí solo los pares ni los destinos de la Raspberry:
+hay que configurar las credenciales y reiniciar los servicios de cada instalación.
 
-El nodo se ejecuta en Raspberry Pi OS y se encarga de digitalizar el entorno acústico. El flujo principal está en `mainNode.py`:
+## Cómo se actualizan Mac y Windows
 
-1. Registra el dispositivo en el servidor.
-2. Detecta el micrófono disponible.
-3. Graba audio durante el intervalo configurado.
-4. Guarda el WAV y genera el espectrograma.
-5. Calcula métricas acústicas del paisaje sonoro.
-6. Ejecuta BirdNET.
-7. Filtra detecciones por umbrales.
-8. Envía detecciones, métricas y archivos al backend.
-9. Guarda respaldo local si el servidor no está disponible.
+Cada servidor consulta los pares configurados al arrancar y después cada 60
+segundos. Descarga únicamente los registros posteriores al último cursor guardado.
+Las páginas se aplican en una transacción junto con el cursor; un fallo permite
+reintentar sin dar por recibido lo que no se guardó.
 
-`analyzer.py` encapsula el uso de BirdNET. `supervisor.py` controla el servicio de streaming consultando periódicamente el backend.
+Los identificadores numéricos de una base no se copian a la otra. Los registros
+se relacionan mediante el nombre del nodo, el código del sitio y el UUID del
+despliegue. La identidad del evento utiliza ese contexto, la fecha, el archivo y,
+en las detecciones, la especie. Los reintentos y la retransmisión de un mismo
+registro desde un tercer ordenador no crean una detección adicional.
 
-### 2. Servidor Central
+Los archivos se descargan por separado, por bloques, a un temporal en el disco de
+destino. Solo se publican después de comprobar su SHA-256. Un archivo ausente,
+una desconexión o un error de integridad conserva el trabajo pendiente. Un archivo
+local con contenido diferente no se sobrescribe.
 
-Ruta: `monitoreo_aves/backend/`
+### Ejemplo: Windows lleva diez días apagado
 
-El backend expone la API REST, genera la base de datos si no existe y sirve el dashboard desde la carpeta `frontend`. La base de datos se guarda en `monitoreo_aves/backend/app/birdmonitor.db`.
+1. El Mac recibe y conserva los registros y los archivos enviados por la Raspberry.
+2. Windows vuelve a arrancar con su backend y Tailscale activos.
+3. Si el Mac está conectado, Windows recupera su histórico pendiente, aunque esos
+   audios ya no estén en la Raspberry.
+4. Si el Mac está apagado, la recuperación espera. Haberlo encendido el día anterior
+   no hace accesible su disco mientras está apagado.
+5. Cuando ambos coinciden conectados, la transferencia se reanuda automáticamente.
 
-Tablas principales:
+Para que la comunicación funcione en ambos sentidos, cada ordenador debe incluir
+al otro en su configuración. Un servidor puede retransmitir los datos que recibió
+de otro. No se propagan eliminaciones: esta fase añade histórico y conserva las
+copias que ya existen.
 
-- `devices`: nodos registrados.
-- `detections`: detecciones de aves, humanos, motores o ruido relevante.
-- `audio_metrics`: métricas acústicas agregadas por ciclo de grabación.
+### Límites de esta primera fase
 
-### 3. Frontend
+- Se transfieren detecciones y métricas nuevas, incluido el histórico existente al
+  conectar un par por primera vez. No se replican posteriores modificaciones de
+  un registro ya descargado ni sus revisiones humanas.
+- Se incorpora el contexto de sitio y despliegue necesario para interpretar cada
+  registro. Las órdenes de cambio de ubicación, el control del directo y las
+  credenciales de acceso no se copian entre servidores.
+- Si un UUID de despliegue corresponde a otro nodo/sitio, o un sitio tiene
+  coordenadas distintas, la importación se detiene para ese par. Se conserva el
+  contenido local y no se avanza su cursor sobre la página conflictiva.
+- Los nombres de nodo distintos no se fusionan automáticamente. Si se ha comprobado
+  que son el mismo hardware, `scripts/reconcile_legacy_replica.py` permite revisar
+  y aplicar una reconciliación concreta, con copia de seguridad y comprobación de
+  integridad. Una identidad de hardware independiente del nombre queda pendiente.
+- La disponibilidad de registros no garantiza que existan sus WAV y PNG. Si nunca
+  se subieron o se borraron de todas las copias, no pueden reconstruirse.
+- No copies un archivo SQLite para crear una segunda réplica activa: copiarías
+  también su identidad y sus cursores. Configura otra instalación e importa los
+  datos mediante la sincronización.
+- La sincronización no sustituye una copia de seguridad externa.
 
-Ruta: `monitoreo_aves/frontend/`
+### Reconciliar una migración antigua
 
-El frontend no necesita servidor propio en el despliegue actual. FastAPI monta `frontend/index.html` y sus archivos estáticos en `/`, por lo que el dashboard queda disponible en el mismo puerto que la API.
+La migración legacy calculaba el UUID del despliegue a partir del sitio y del
+identificador numérico local del dispositivo. Por ello, compartir ese UUID no
+demuestra por sí solo que dos bases describan el mismo hardware. Antes de unirlas,
+comprueba el nodo físico, el sitio y los intervalos de observación de ambos equipos.
 
-## Endpoints Principales
+`scripts/reconcile_legacy_replica.py --help` muestra los parámetros del plan:
+base de datos, UUID, nombre común, alias, sitio y fechas de inicio y cierre.
+Sin `--apply` solo muestra el cambio previsto. Con `--apply`, guarda una copia
+SQLite, comprueba que ninguna observación quede fuera del intervalo y aplica la
+reconciliación en una transacción. Conserva las detecciones, las métricas y las
+revisiones locales, y comprueba las referencias entre tablas. Si el alias tiene
+otros despliegues, se detiene para exigir una revisión individual.
 
-| Método | Ruta | Descripción |
-| --- | --- | --- |
-| `POST` | `/devices/` | Registra o actualiza un nodo. |
-| `GET` | `/devices/` | Lista dispositivos registrados. |
-| `POST` | `/detections/` | Guarda una detección. |
-| `GET` | `/detections/` | Devuelve detecciones recientes. |
-| `POST` | `/audio-metrics/` | Guarda métricas acústicas de un ciclo. |
-| `GET` | `/audio-metrics/` | Lista métricas acústicas recientes. |
-| `POST` | `/upload/` | Sube WAV y/o espectrograma PNG. |
-| `GET` | `/analytics/biodiversity` | Devuelve índices ecológicos y acústicos. |
-| `GET` | `/analytics/map` | Devuelve datos para el mapa. |
-| `GET` | `/analytics/daily-activity` | Devuelve actividad diaria por horas. |
-| `GET` | `/stream/control` | Consulta estado deseado y real del streaming. |
-| `POST` | `/stream/control` | Activa o desactiva el streaming desde el dashboard. |
-| `POST` | `/stream/status` | Recibe estado real reportado por la Raspberry Pi. |
+Aplica el mismo contexto verificado a ambos históricos antes de reintentar la
+sincronización. Las diferencias de formato de fechas legacy y los eventos
+repetidos dentro de una página no crean una observación adicional al importarlos.
 
-## Instalación
+## Almacenamiento de la Raspberry
 
-Desde la raíz del repositorio:
+La Raspberry conserva una cola SQLite en `offline_outbox.db`. Actualmente elimina
+cada evento pendiente cuando el servidor configurado lo acepta. Esa cola **no es
+un histórico completo ni una confirmación de que ambos ordenadores tengan copia**.
+
+Los medios locales tienen una retención configurable con
+`BIRDMONITOR_RETENTION_DAYS` (valor inicial: 9 días). La limpieza omite los WAV y
+PNG cuyo nombre aparece en eventos pendientes de tipo `detection` o
+`file_upload`, aunque superen esa antigüedad. Los demás archivos se eliminan
+cuando superan los días configurados. No es una protección de todos los audios
+por el simple hecho de estar sin conexión.
+
+Se reutiliza esa retención para conectar los ordenadores: no se añade una cuota
+de GB ni se amplía el plazo para esperar al ordenador que lleva días apagado.
+Una vez que un ordenador conserva los registros y archivos, el otro puede
+recuperarlos de él cuando ambos estén conectados, aunque la Raspberry ya los
+haya eliminado. La sincronización entre ordenadores no exige guardar una copia
+adicional en la Raspberry.
+
+La retención por días no limita los GB: los archivos pendientes pueden seguir
+acumulándose si el nodo no consigue entregarlos. Mientras ambos ordenadores están
+apagados, la captura continúa y los envíos quedan en espera. Al volver uno, se
+vacía la cola por lotes; no se espera a que ambos tengan copia para confirmar un
+envío. Si la cola no puede leerse, la limpieza se aplaza para no borrar archivos
+cuya entrega no se puede comprobar.
+
+El almacenamiento ocupado no es la principal fuente de calor: la carga de
+inferencia, la actividad de escritura y la refrigeración también importan. La
+replicación de históricos de esta fase se ejecuta en los ordenadores.
+
+## Preparar un servidor
+
+### Dependencias
+
+Python 3.11 o posterior para el backend y MediaMTX para el audio en directo.
+La inferencia BirdNET se instala por separado en la Raspberry.
+
+macOS, desde la raíz del repositorio:
 
 ```bash
 cd monitoreo_aves
 python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+./venv/bin/python -m pip install -r requirements.txt
+./venv/bin/python scripts/configure_security.py
+./venv/bin/python scripts/configure_network_mode.py --mode tailscale --server-host IP_TAILSCALE_DE_ESTE_MAC
+./venv/bin/python scripts/configure_stream_security.py
 ```
 
-En Windows PowerShell:
+Windows, desde la raíz del repositorio:
 
-```bash
-cd monitoreo_aves
+```powershell
+Set-Location monitoreo_aves
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe scripts\configure_security.py
+.\venv\Scripts\python.exe scripts\configure_network_mode.py --mode tailscale --server-host IP_TAILSCALE_DE_ESTE_PC
+.\venv\Scripts\python.exe scripts\configure_stream_security.py
 ```
 
-En Windows con Git Bash:
+Utiliza la IP del propio ordenador, no la de la Raspberry. Conserva el token del
+nodo y la contraseña RTSP de publicación para configurar la Raspberry. No vuelvas
+a generar esas credenciales en una instalación existente salvo que quieras rotarlas.
 
-```bash
-cd monitoreo_aves
-python -m venv venv
-source ./venv/Scripts/activate
-pip install -r requirements.txt
-```
+### Arranque automático en macOS
 
-## Ejecución Del Servidor
+El proyecto operativo debe estar fuera de `Desktop`, `Documents` y `Downloads`,
+por ejemplo en `~/Projects/TFG-monitoreo-aves`. Coloca el binario Darwin de MediaMTX
+en `monitoreo_aves/tools/mediamtx/macos/mediamtx`.
 
 Desde `monitoreo_aves/`:
 
 ```bash
-uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+chmod +x tools/mediamtx/macos/mediamtx
+bash scripts/macos/install_birdmonitor_macos.sh
+bash scripts/macos/check_birdmonitor_macos.sh
 ```
 
-Accesos:
+La tarea `com.birdmonitor.services` arranca al iniciar sesión y recupera el backend
+y MediaMTX si uno termina. El instalador comprueba el servicio HTTP y su
+configuración antes de confirmar el éxito. El lanzador evita la suspensión
+automática mientras el Mac está conectado a corriente; no evita la suspensión
+por cerrar la tapa.
 
-```text
-Dashboard local: http://localhost:8000
-API docs:        http://localhost:8000/docs
-```
+### Arranque automático en Windows
 
-En el despliegue usado por el proyecto, el servidor Windows queda accesible para la Raspberry Pi mediante Tailscale:
-
-```text
-http://100.98.248.58:8000
-```
-
-La base de datos SQLite se crea automáticamente si no existe. Solo conviene eliminar `backend/app/birdmonitor.db` cuando se quiera reiniciar completamente el histórico de pruebas.
-
-## Despliegue Automático En Windows
-
-Para evitar tener terminales abiertas manualmente, el proyecto incluye scripts de automatización en `monitoreo_aves/scripts/windows/`. Estos scripts crean tareas programadas de Windows para arrancar los servicios principales del servidor central:
-
-- `BirdMonitor Backend`: arranca FastAPI/Uvicorn en el puerto `8000`.
-- `BirdMonitor MediaMTX`: arranca MediaMTX en el puerto `8888` para servir el stream HLS.
-
-La instalación se realiza una sola vez desde PowerShell como administrador, desde la carpeta `monitoreo_aves/`:
+Coloca MediaMTX en `monitoreo_aves/tools/mediamtx/mediamtx.exe`. Desde
+`monitoreo_aves/`, abre PowerShell como administrador:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\install_birdmonitor_windows.ps1
+.\scripts\windows\install_birdmonitor_windows.ps1
+.\scripts\windows\check_birdmonitor_windows.ps1
 ```
 
-Una vez creada la tarea, no hace falta ejecutar `uvicorn` ni `mediamtx` manualmente cada vez. Al iniciar sesión en Windows, las tareas quedan registradas y pueden arrancar los servicios automáticamente. También pueden lanzarse manualmente cuando se quiera con:
+Se registran las tareas `BirdMonitor Backend` y `BirdMonitor MediaMTX`. Los logs
+están en `%LOCALAPPDATA%\BirdMonitor`; en macOS, en
+`~/Library/Application Support/BirdMonitor`.
+
+### Acceso
+
+- Dashboard local: `http://localhost:8000`.
+- Dashboard remoto: `http://IP_TAILSCALE_DEL_ORDENADOR:8000`.
+- Salud del servidor: `http://localhost:8000/health`.
+
+El dashboard se sirve desde FastAPI y consulta datos nuevos cada cuatro segundos.
+La frecuencia de captura de la Raspberry es independiente: inicialmente, 60
+segundos de audio cada cinco minutos.
+
+## Configurar la sincronización entre ordenadores
+
+Instala esta misma versión del backend en ambos equipos y conserva una copia de
+seguridad de sus bases y medios antes de la primera sincronización. Los servicios
+deben ser accesibles por sus IP privadas mediante Tailscale o una LAN privada.
+
+Todos los comandos siguientes se ejecutan desde `monitoreo_aves/`. En macOS se usa
+`./venv/bin/python`; en Windows, `.\venv\Scripts\python.exe`.
+
+### 1. Crear una credencial de réplica en cada servidor
+
+```bash
+./venv/bin/python scripts/configure_replication.py
+```
+
+El script conserva las credenciales de administrador, nodo y streaming. Crea una
+credencial independiente, guardada en `backend/replication-access.secret`, y su
+hash en `backend/birdmonitor.env`. Repetir el comando no rota el token existente.
+
+Ese token autoriza únicamente la lectura de los datos y medios de replicación;
+no permite modificar detecciones, acceder al dashboard ni controlar la Raspberry.
+
+### 2. Añadir Windows como origen en el Mac
+
+```bash
+./venv/bin/python scripts/configure_replication.py --peer-name windows --peer-url http://IP_TAILSCALE_WINDOWS:8000
+```
+
+Cuando lo solicite, introduce el token del archivo `replication-access.secret`
+**de Windows**. No lo incluyas como argumento del comando.
+
+### 3. Añadir el Mac como origen en Windows
 
 ```powershell
-Start-ScheduledTask -TaskName "BirdMonitor Backend"
-Start-ScheduledTask -TaskName "BirdMonitor MediaMTX"
+.\venv\Scripts\python.exe scripts\configure_replication.py --peer-name mac --peer-url http://IP_TAILSCALE_MAC:8000
 ```
 
-El estado puede comprobarse con:
+Introduce el token **del Mac**. Los pares se guardan en
+`backend/replication-peers.secret`, excluido de Git. Las variables utilizadas son:
+
+```dotenv
+BIRDMONITOR_REPLICATION_TOKEN_HASH=sha256$HASH_GENERADO
+BIRDMONITOR_REPLICATION_PEERS_FILE=replication-peers.secret
+BIRDMONITOR_REPLICATION_INTERVAL_SECONDS=60
+```
+
+Solo se admiten orígenes HTTP(S) con IPv4 de Tailscale, LAN privada o loopback.
+No se siguen redirecciones ni se utilizan proxies del entorno para estas peticiones.
+No hace falta abrir puertos en el router. Revisa el Firewall del equipo si el
+puerto `8000` no es accesible desde el otro ordenador.
+
+### 4. Reiniciar y comprobar
+
+macOS:
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.birdmonitor.services"
+```
+
+Windows:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\check_birdmonitor_windows.ps1
+.\scripts\windows\repair_backend_task.ps1
 ```
 
-Si `Get-ScheduledTaskInfo -TaskName "BirdMonitor Backend"` muestra:
+La sincronización se ejecuta dentro del backend y utiliza un bloqueo por base de
+datos para que dos procesos no importen simultáneamente. Cada ciclo limita las
+páginas y los archivos descargados; los pendientes continúan en ciclos posteriores.
 
-```text
-LastTaskResult : 267009
-```
+Con una sesión administradora abierta, consulta `/sync/status` en el mismo origen
+del dashboard. Muestra la identidad de la réplica, los cursores por origen y los
+archivos pendientes. Los logs indican qué par está pendiente si está apagado,
+falla su autenticación o hay un conflicto.
 
-no indica necesariamente un error. En una tarea programada de Windows, ese código suele indicar que la tarea sigue en ejecución. Para `uvicorn` es normal, porque el backend queda levantado como proceso continuo mientras el puerto `8000` responda.
+## Configurar la Raspberry
 
-La desinstalación de las tareas se realiza con:
+La guía de hardware está en
+[monitoreo_aves/hardware/raspberry_pi/README.md](monitoreo_aves/hardware/raspberry_pi/README.md).
+Sus comandos deben adaptarse al clon real: en este repositorio, el código de la
+aplicación está dentro de `monitoreo_aves/`.
 
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\windows\uninstall_birdmonitor_windows.ps1
-```
+Los tres procesos son:
 
-Esto elimina las tareas programadas y detiene MediaMTX, pero no borra el repositorio, la base de datos ni los archivos de configuración.
+| Unidad | Función |
+|---|---|
+| `birdmonitor.service` | Captura, BirdNET, métricas y cola offline |
+| `birdstream.service` | Publicación RTSP autenticada |
+| `birdmonitor-stream-supervisor.service` | Aplica las órdenes de directo del servidor |
 
-### MediaMTX Y Stream HLS
+La configuración privada se guarda en `/etc/birdmonitor/birdmonitor.env`. El
+micrófono compartido `micshared` permite que captura y directo lo usen a la vez.
 
-MediaMTX debe estar activo en el servidor, pero el stream HLS solo estará disponible cuando la Raspberry Pi publique audio hacia MediaMTX con el path configurado:
+### Enviar al ordenador disponible
 
-```text
-birdmonitor-audio
-```
-
-Por tanto, si MediaMTX escucha en `8888` pero el dashboard muestra `Stream no disponible`, el problema no suele ser la tarea de Windows, sino que la Raspberry no está publicando audio todavía o `birdstream.service` no está enviando al path correcto.
-
-Comprobación en Raspberry Pi:
+Primero actualiza los dos backends a esta versión y configura su sincronización
+mutua. En cada servidor puedes crear una credencial adicional exclusiva para
+recibir datos del nodo, sin cambiar el usuario, la contraseña ni el token anterior:
 
 ```bash
-sudo systemctl status birdstream.service
-journalctl -u birdstream.service -f
+./venv/bin/python scripts/configure_replication.py --enable-node-ingest
 ```
 
-El backend genera la URL HLS usando el host con el que se accede al servidor. Por ejemplo:
+En Windows usa `.\venv\Scripts\python.exe`. El token se guarda en
+`backend/ingest-access.secret`; solo permite registrar el contexto de despliegue
+y subir detecciones, métricas y archivos. No permite leer el histórico ni controlar
+el directo. El token de réplica y el de ingesta tienen funciones distintas.
 
-- Si se entra por `localhost`, usará `localhost:8888`.
-- Si se entra por IP LAN, usará esa IP LAN.
-- Si se entra por Tailscale, usará la IP Tailscale correspondiente.
-
-También puede forzarse una URL concreta mediante variable de entorno:
+En la Raspberry, desde `monitoreo_aves/hardware/raspberry_pi/`, utiliza el Python
+del entorno del nodo para ejecutar:
 
 ```bash
-BIRDMONITOR_STREAM_BASE_URL="http://IP_DEL_SERVIDOR:8888"
+sudo /RUTA/AL/ENTORNO/bin/python configure_delivery.py --name windows --url http://IP_TAILSCALE_WINDOWS:8000
+sudo systemctl restart birdmonitor.service
 ```
 
-El acceso esperado al stream es:
+Introduce en el terminal el token de ingesta de Windows. El configurador conserva
+el servidor y el token actuales como primer destino, añade Windows y guarda
+`ingest-targets.secret` con permisos restringidos y lectura para el propietario
+de la carpeta del nodo. La variable `BIRDMONITOR_INGEST_TARGETS_FILE` de
+`/etc/birdmonitor/birdmonitor.env` apunta a ese archivo. Puedes repetir el comando
+con la misma IP para actualizar su credencial. Reinicia el nodo tras cambiarla.
 
-```text
-http://IP_DEL_SERVIDOR:8888/birdmonitor-audio/index.m3u8
-```
-## Ejecución Del Nodo Edge
+Con esta opción activa, cada detección o métrica se guarda primero en la cola
+SQLite, junto con su contexto original. El nodo prueba los destinos disponibles
+y prefiere el último que aceptó una entrega. Si falla la conexión, espera al menos
+60 segundos antes de volver a probar ese destino. La cola se procesa por lotes de
+50 eventos en los ciclos de captura y al enviar nuevas observaciones.
 
-En Raspberry Pi:
+Las peticiones de metadatos usan tres segundos para conectar. Las subidas WAV/PNG
+permiten 60 segundos: `requests` también aplica ese tiempo al envío del cuerpo,
+y tres segundos pueden cortar un WAV válido cuando Tailscale transfiere despacio.
+La espera de respuesta es de 60 segundos en ambos casos. El histórico multimedia
+se copia por lotes; ver una detección sincronizada no significa que su WAV ya haya
+llegado. Un archivo ausente en ambos ordenadores solo puede recuperarse si aún
+existe en la Raspberry o en una copia de seguridad.
+
+Una detección solo sale de la cola cuando un mismo ordenador confirma el registro
+y la subida de su WAV y los PNG disponibles. Si el envío se interrumpe, se conserva
+el evento completo y puede reenviarse al otro ordenador sin duplicar la detección.
+Las métricas requieren confirmar también su versión cuando son `maad-v2`.
+El registro del despliegue respeta su UUID y no reactiva una campaña histórica.
+
+Los antiguos pendientes `file_upload` que solo conservan un nombre de archivo
+se entregan al servidor original: no contienen la detección completa para crearla
+en otro. Los eventos antiguos sin contexto completo necesitan que el destino ya
+conozca su despliegue; si no lo conoce, quedan pendientes hasta sincronizarlo.
+
+Sin `BIRDMONITOR_INGEST_TARGETS_FILE`, el nodo conserva el funcionamiento con un
+único servidor. El directo RTSP y las órdenes de cambio de ubicación siguen usando
+el servidor principal; esta selección automática afecta a la entrega de datos.
+
+## Datos, pruebas y estructura
+
+| Contenido | Ubicación dentro de `monitoreo_aves/` |
+|---|---|
+| Backend y migraciones | `backend/app/` |
+| Base SQLite | `backend/app/birdmonitor.db` |
+| Configuración privada | `backend/birdmonitor.env` |
+| Dashboard | `frontend/` |
+| Nodo e inferencia | `hardware/raspberry_pi/` |
+| Audios y espectrogramas del servidor | `hardware/raspberry_pi/records/` y `spectrograms/` |
+| Replicación | `backend/app/features/replication/` |
+| Instaladores | `scripts/macos/`, `scripts/windows/`, `scripts/raspberry_pi/` |
+| Pruebas | `tests/` |
+
+Los WAV, PNG, SQLite y secretos no se versionan. No sincronices el archivo SQLite
+mediante una carpeta compartida: la transferencia de esta fase utiliza la API y
+transacciones locales, no una sustitución de bases de datos.
+
+Pruebas del nuevo flujo, desde `monitoreo_aves/` y con `pytest` instalado:
 
 ```bash
-cd ~/birdmonitor/monitoreo_aves/hardware/raspberry_pi
-source ~/birdmonitor/birdnet-env/bin/activate
-python mainNode.py
+./venv/bin/python -m pytest tests/test_replication.py tests/test_node_delivery.py tests/test_reconcile_legacy_replica.py tests/test_security.py tests/test_network_security.py -q
 ```
 
-Variables de entorno útiles:
+Se comprueban bases con identificadores distintos, recuperación del histórico sin
+la Raspberry, retransmisión desde otro ordenador, reintentos, archivos tardíos,
+conflictos de contexto, integridad de archivos, autorización independiente,
+conservación de la cola al reiniciar y entrega completa al ordenador disponible.
+Las pruebas usan bases temporales y desactivan los pares de una instalación real.
 
-```bash
-export BIRDMONITOR_NODE_NAME="birdmonitor"
-export BIRDMONITOR_SERVER_URL="http://100.98.248.58:8000"
-export BIRDMONITOR_NODE_LOCATION="Sevilla, Andalucía, España"
-export BIRDMONITOR_NODE_LAT="37.3891"
-export BIRDMONITOR_NODE_LON="-5.9845"
-export BIRDMONITOR_MIC_DEVICE="1"
-export BIRDWEATHER_ID="token-opcional"
-```
+Una clasificación de BirdNET es una hipótesis: la confianza, la evidencia acústica
+y la revisión humana forman parte de su interpretación. No equivale por sí sola
+a un censo de aves.
 
-Si no se define ubicación manual, el nodo intenta geolocalizarse por IP pública y guarda una caché local en `node_location_cache.json`.
-
-## Servicio Systemd Del Nodo
-
-En despliegue real, el nodo puede ejecutarse como servicio:
-
-```bash
-sudo systemctl start birdmonitor.service
-sudo systemctl status birdmonitor.service
-journalctl -u birdmonitor.service -f
-```
-
-Para la escucha en directo, `supervisor.py` consulta el backend y arranca o detiene el servicio configurado en `BIRDMONITOR_STREAM_SERVICE`, por defecto:
-
-```text
-birdstream.service
-```
-
-Comandos habituales:
-
-```bash
-sudo systemctl start birdstream.service
-sudo systemctl stop birdstream.service
-sudo systemctl status birdstream.service
-```
-
-## Configuración Del Streaming
-
-El backend construye las URLs HLS usando el host con el que se accede al servidor. Opcionalmente, se puede forzar una URL concreta con estas variables:
-
-```bash
-export BIRDMONITOR_STREAM_BASE_URL="http://IP_DEL_SERVIDOR:8888"
-export BIRDMONITOR_STREAM_PATH="birdmonitor-audio"
-```
-
-El estado del streaming se persiste en:
-
-```text
-monitoreo_aves/backend/app/stream_control.json
-```
-
-## Acceso Remoto Al Nodo
-
-Para administrar la Raspberry Pi en modo headless:
-
-```bash
-ssh usuario@IP_DE_LA_RASPBERRY
-```
-
-Si se usa Tailscale, puede emplearse la IP virtual asignada al nodo. Desde SSH se pueden revisar logs, actualizar código, reiniciar servicios o comprobar el estado del micrófono.
-
-## Notas De Desarrollo
-
-- El frontend está integrado en FastAPI; no es necesario ejecutar `python -m http.server` para el dashboard actual.
-- Los endpoints del frontend contienen algunas referencias directas a la IP de Tailscale usada en el despliegue. Si cambia el servidor, conviene actualizar `frontend/js/dashboard.js` o sustituirlas por rutas relativas.
-- `records/` y `spectrograms/` contienen datos generados por el nodo. En producción deben tratarse como almacenamiento temporal.
-- El modelo BirdNET y sus etiquetas están en `hardware/raspberry_pi/model/`.
-
-## Dependencias Principales
-
-- `fastapi`
-- `uvicorn`
-- `sqlalchemy`
-- `pydantic`
-- `numpy`
-- `scipy`
-- `pandas`
-- `matplotlib`
-- `librosa`
-- `sounddevice`
-- `soundfile`
-- `tensorflow`
-- `birdnetlib`
-- `scikit-maad`
-- `python-multipart`
-- `geocoder`
+Referencias técnicas: [ciclo de vida de FastAPI](https://fastapi.tiangolo.com/advanced/events/),
+[transporte HTTPX y pruebas](https://www.python-httpx.org/advanced/transports/),
+[conectividad de Tailscale](https://tailscale.com/docs/how-to/connect-to-devices).

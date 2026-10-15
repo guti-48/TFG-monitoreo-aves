@@ -21,6 +21,8 @@ from .features.streaming.security import (
     router as stream_security_router,
 )
 from .features.uploads.routes import router as uploads_router
+from .features.replication.routes import router as replication_router, status_router as sync_status_router
+from .features.replication.worker import replication_lifespan
 
 def asegurar_esquema_runtime() -> None:
     ensure_database_schema(database.engine)
@@ -28,7 +30,7 @@ def asegurar_esquema_runtime() -> None:
 
 asegurar_esquema_runtime()
 
-app = FastAPI(title="BirdMonitor API", version="1.0")
+app = FastAPI(title="BirdMonitor API", version="1.0", lifespan=replication_lifespan)
 app.middleware("http")(security_middleware)
 app.middleware("http")(network_middleware)
 
@@ -52,6 +54,8 @@ app.include_router(detections_router)
 app.include_router(learning_router)
 app.include_router(audio_metrics_router)
 app.include_router(analytics_router)
+app.include_router(replication_router)
+app.include_router(sync_status_router)
 
 
 @app.get("/health", include_in_schema=False)

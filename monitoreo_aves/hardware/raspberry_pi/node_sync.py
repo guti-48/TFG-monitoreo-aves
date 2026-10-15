@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 
 import requests
+import node_delivery
 
 from node_config import (
     CSV_BACKUP,
@@ -275,6 +276,11 @@ def guardarEventoOffline(event_type, payload, error=""):
     El payload se serializa ordenado para evitar duplicados exactos pendientes.
     """
     inicializarOutboxOffline()
+    if node_delivery.enabled() and event_type != "deployment_start":
+        context = getCurrentDeploymentContext()
+        if all(payload.get(key) == value for key, value in context.event_fields().items()):
+            payload = dict(payload)
+            payload.setdefault(node_delivery.CONTEXT_KEY, context.activation_payload())
     payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     ahora = _outbox_now()
 
@@ -444,6 +450,14 @@ def migrarContextoOutboxLegacy(legacy_context=None):
 def activarDespliegue(context=None, queue_on_failure=True):
     context = context or getCurrentDeploymentContext()
     payload = context.activation_payload()
+    if node_delivery.enabled() and queue_on_failure:
+        guardarEventoOffline("deployment_start", payload)
+        sincronizarRespaldo()
+        with sqlite3.connect(OUTBOX_DB) as con:
+            return con.execute(
+                "SELECT 1 FROM outbox_events WHERE event_type = 'deployment_start' AND payload = ?",
+                (json.dumps(payload, ensure_ascii=False, sort_keys=True),),
+            ).fetchone() is None
     try:
         response = requests.post(
             f"{SERVER_URL}/node/deployments/activate",
@@ -493,11 +507,11 @@ def obtenerFilenameBasesPendientes():
                 filename = payload.get("filename")
                 if filename:
                     pendientes.add(normalizarFilenameBase(filename))
-            except Exception:
-                continue
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise RuntimeError("No se puede comprobar la proteccion de archivos pendientes") from exc
 
     except Exception as e:
-        print(f"No se pudieron consultar archivos pendientes: {e}")
+        raise RuntimeError("No se pudieron consultar archivos pendientes") from e
 
     return pendientes
 
@@ -525,6 +539,11 @@ def enviarDatosServidor(
     if audio_start_seconds is not None and audio_end_seconds is not None:
         datos["audio_start_seconds"] = float(audio_start_seconds)
         datos["audio_end_seconds"] = float(audio_end_seconds)
+
+    if node_delivery.enabled():
+        guardarEventoOffline("detection", datos)
+        sincronizarRespaldo()
+        return
 
     try:
         r = requests.post(
@@ -618,6 +637,11 @@ def enviarMetricasAcusticas(
     }
     datos.update(context.event_fields())
 
+    if node_delivery.enabled():
+        guardarEventoOffline("audio_metric", datos)
+        sincronizarRespaldo()
+        return
+
     try:
         r = requests.post(
             f"{SERVER_URL}/audio-metrics/",
@@ -695,7 +719,11 @@ def limpiarArchivosAntiguos():
     carpetas = [OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG]
     ahora = time.time()
     tiempo_vida = 86400 * RETENTION_DAYS
-    pendientes = obtenerFilenameBasesPendientes()
+    try:
+        pendientes = obtenerFilenameBasesPendientes()
+    except Exception as exc:
+        print(f"Limpieza aplazada para proteger archivos pendientes: {exc}")
+        return
 
     print(f"Iniciando limpieza de disco: conservando archivos de los ultimos {RETENTION_DAYS} dias...")
     archivos_borrados = 0
@@ -751,7 +779,11 @@ def sincronizarRespaldo():
                 payload = json.loads(payload_json)
                 ok = False
 
-                if event_type == "deployment_start":
+                delivery = node_delivery.get_delivery() if node_delivery.enabled() else None
+                if delivery is not None:
+                    ok = delivery.deliver(event_type, payload)
+
+                elif event_type == "deployment_start":
                     response = requests.post(
                         f"{SERVER_URL}/node/deployments/activate",
                         json=payload,
@@ -822,7 +854,7 @@ def sincronizarRespaldo():
                             SET attempts = ?, last_error = ?, updated_at = ?
                             WHERE id = ?
                             """,
-                            (attempts + 1, "Backend rechazo o no completo el evento", _outbox_now(), event_id),
+                            (attempts + 1, delivery.last_error if delivery else "Backend rechazo o no completo el evento", _outbox_now(), event_id),
                         )
                     con.commit()
 

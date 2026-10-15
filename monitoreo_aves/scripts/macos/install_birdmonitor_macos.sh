@@ -81,14 +81,21 @@ if [[ ! -f "$BACKEND_ENV" ]]; then
 fi
 
 for required_key in \
+  BIRDMONITOR_ADMIN_USERNAME \
+  BIRDMONITOR_ADMIN_PASSWORD_HASH \
+  BIRDMONITOR_NODE_TOKEN_HASH \
+  BIRDMONITOR_SESSION_SECRET \
+  BIRDMONITOR_STREAM_PUBLISH_USER \
   BIRDMONITOR_STREAM_PUBLISH_PASSWORD_HASH \
+  BIRDMONITOR_STREAM_READER_USER \
   BIRDMONITOR_STREAM_READER_PASSWORD \
+  BIRDMONITOR_STREAM_PROXY_USER \
   BIRDMONITOR_STREAM_PROXY_PASSWORD \
   BIRDMONITOR_NETWORK_MODE \
   BIRDMONITOR_SERVER_HOST; do
   if ! grep -q "^${required_key}=." "$BACKEND_ENV"; then
     echo "Falta $required_key en backend/birdmonitor.env."
-    echo "Ejecuta python scripts/configure_stream_security.py."
+    echo "Completa configure_security.py, configure_network_mode.py y configure_stream_security.py."
     exit 1
   fi
 done
@@ -100,7 +107,12 @@ if [[ "$NETWORK_MODE" != "local" && "$NETWORK_MODE" != "tailscale" ]]; then
   exit 1
 fi
 
-if [[ -x "$LOCAL_MEDIAMTX" ]]; then
+if [[ -n "${MEDIAMTX_BIN:-}" ]]; then
+  if [[ ! -x "$MEDIAMTX_BIN" ]]; then
+    echo "MEDIAMTX_BIN no es ejecutable: $MEDIAMTX_BIN"
+    exit 1
+  fi
+elif [[ -x "$LOCAL_MEDIAMTX" ]]; then
   MEDIAMTX_BIN="$LOCAL_MEDIAMTX"
 elif command -v mediamtx >/dev/null 2>&1; then
   MEDIAMTX_BIN="$(command -v mediamtx)"
@@ -110,11 +122,15 @@ else
   exit 1
 fi
 
-if [[ -d "$PROJECT_DIR/venv" ]]; then
+if [[ -x "$PROJECT_DIR/venv/bin/python" ]]; then
   echo "Entorno virtual detectado: $PROJECT_DIR/venv"
 else
-  echo "Aviso: no se ha encontrado venv. Se usara python del sistema que vea launchd."
+  echo "Falta venv/bin/python. Crea el entorno e instala requirements.txt."
+  exit 1
 fi
+
+# Comprobar dependencias antes de sustituir una tarea existente.
+"$PROJECT_DIR/venv/bin/python" -c 'import uvicorn, fastapi, sqlalchemy, httpx, pandas, scipy, matplotlib, soundfile, openpyxl'
 
 mkdir -p "$PLIST_DIR" "$RUNTIME_DIR"
 chmod +x "$START_SCRIPT"
@@ -138,6 +154,7 @@ echo "$PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Add :WorkingDirectory string $PROJECT_DIR" "$PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "$PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Add :KeepAlive bool true" "$PLIST_PATH"
+/usr/libexec/PlistBuddy -c "Add :ThrottleInterval integer 15" "$PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Add :StandardOutPath string $RUNTIME_DIR/birdmonitor.out.log" "$PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string $RUNTIME_DIR/birdmonitor.err.log" "$PLIST_PATH"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "$PLIST_PATH"
@@ -149,16 +166,20 @@ echo "$PLIST_PATH"
 
 echo "Cargando LaunchAgent..."
 launchctl bootstrap "gui/$UID" "$PLIST_PATH"
-launchctl kickstart -k "gui/$UID/$PLIST_LABEL"
 
 echo "Esperando a que arranquen los servicios..."
-wait_for_tcp_port 8888 "MediaMTX" 20 || true
-wait_for_tcp_port "${BIRDMONITOR_BACKEND_PORT:-8000}" "Backend" 30 || true
+if ! wait_for_tcp_port 8888 "MediaMTX" 20 ||
+   ! wait_for_tcp_port "${BIRDMONITOR_BACKEND_PORT:-8000}" "Backend" 30; then
+  echo "La tarea se ha registrado, pero el arranque ha fallado. Revisa $RUNTIME_DIR."
+  exit 1
+fi
+"$PROJECT_DIR/venv/bin/python" "$SCRIPT_DIR/verify_backend.py" \
+  --port "${BIRDMONITOR_BACKEND_PORT:-8000}" --network-mode "$NETWORK_MODE"
 
 echo ""
 echo "Instalacion completada."
 echo "Modo de red: $NETWORK_MODE"
-echo "Backend:  http://$SERVER_HOST:8000"
+echo "Backend:  http://$SERVER_HOST:${BIRDMONITOR_BACKEND_PORT:-8000}"
 echo "MediaMTX HLS interno: http://127.0.0.1:8888"
 echo "HLS autenticado:     http://127.0.0.1:8000/stream/hls/..."
 echo "Logs:     $RUNTIME_DIR"

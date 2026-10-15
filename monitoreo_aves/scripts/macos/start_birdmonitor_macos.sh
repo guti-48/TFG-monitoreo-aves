@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -74,15 +75,39 @@ else
 fi
 
 cleanup() {
+  trap - EXIT INT TERM
+  if [[ -n "${CAFFEINATE_PID:-}" ]]; then
+    kill "$CAFFEINATE_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${BACKEND_PID:-}" ]]; then
+    kill "$BACKEND_PID" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${MEDIAMTX_PID:-}" ]]; then
     kill "$MEDIAMTX_PID" >/dev/null 2>&1 || true
   fi
+  wait || true
 }
 trap cleanup EXIT
+trap 'exit 0' INT TERM
+
+# Mantener el servidor disponible con el Mac conectado a la corriente.
+# -s no impide la suspension al funcionar con bateria ni cambia ajustes globales.
+/usr/bin/caffeinate -s -w "$$" &
+CAFFEINATE_PID=$!
 
 echo "Arrancando MediaMTX: RTSP ${SERVER_HOST}:8554 y HLS interno 127.0.0.1:8888..."
 (cd "$STREAM_CONFIG_DIR" && exec "$MEDIAMTX_BIN" "$STREAM_CONFIG") &
 MEDIAMTX_PID=$!
 
 echo "Arrancando backend en http://$BACKEND_HOST:$BACKEND_PORT"
-"$PYTHON_BIN" -m uvicorn backend.app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"
+"$PYTHON_BIN" -m uvicorn backend.app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
+BACKEND_PID=$!
+
+# launchd supervisa este script: si muere un hijo, debe poder recuperar ambos.
+# Sin esta comprobacion, MediaMTX podia morir y dejar el directo caido para siempre.
+while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$MEDIAMTX_PID" 2>/dev/null; do
+  sleep 2 &
+  wait $! || true
+done
+echo "Backend o MediaMTX ha terminado; launchd reintentara el arranque." >&2
+exit 1

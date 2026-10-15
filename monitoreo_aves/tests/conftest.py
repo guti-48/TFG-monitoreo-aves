@@ -20,6 +20,8 @@ os.environ["BIRDMONITOR_DB_PATH"] = str(TEST_DB_PATH)
 
 os.environ["BIRDMONITOR_SECURITY_MODE"] = "disabled"
 os.environ["BIRDMONITOR_NETWORK_MODE"] = "disabled"
+os.environ["BIRDMONITOR_REPLICATION_PEERS_FILE"] = ""
+os.environ["BIRDMONITOR_INGEST_TARGETS_FILE"] = ""
 # Las pruebas no deben heredar direcciones de una instalacion real desde
 # backend/birdmonitor.env. Las URL se construyen con el host del TestClient.
 os.environ["BIRDMONITOR_STREAM_BASE_URL"] = ""

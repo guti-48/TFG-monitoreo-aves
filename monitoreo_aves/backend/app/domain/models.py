@@ -449,3 +449,32 @@ class AudioMetric(Base):
         index=True,
     )
     deployment = relationship("Deployment", back_populates="audio_metrics")
+
+class ReplicaIdentity(Base):
+    __tablename__ = "replica_identity"
+
+    id = Column(Integer, primary_key=True)
+    public_id = Column(String(36), nullable=False, unique=True)
+
+
+class ReplicaCursor(Base):
+    __tablename__ = "replica_cursors"
+
+    source_id = Column(String(36), primary_key=True)
+    kind = Column(String(16), primary_key=True)
+    position = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class ReplicaMedia(Base):
+    __tablename__ = "replica_media"
+
+    source_id = Column(String(36), primary_key=True)
+    kind = Column(String(16), primary_key=True)
+    record_id = Column(Integer, primary_key=True)
+    media_kind = Column(String(16), primary_key=True)
+    relative_path = Column(String, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=True)
+    last_error = Column(String, nullable=True)
+    completed = Column(Boolean, nullable=False, default=False)

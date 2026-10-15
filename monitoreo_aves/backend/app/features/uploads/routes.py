@@ -1,4 +1,6 @@
 import re
+import os
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -57,9 +59,11 @@ async def guardar_upload_seguro(
         raise HTTPException(status_code=400, detail="Ruta de archivo no permitida")
 
     bytes_leidos = 0
+    temporal = None
 
     try:
-        with open(destino_path, "wb") as buffer:
+        with tempfile.NamedTemporaryFile(dir=destino_dir, prefix=".upload-", delete=False) as buffer:
+            temporal = Path(buffer.name)
             while True:
                 chunk = await upload.read(1024 * 1024)
 
@@ -69,19 +73,19 @@ async def guardar_upload_seguro(
                 bytes_leidos += len(chunk)
 
                 if bytes_leidos > max_bytes:
-                    try:
-                        destino_path.unlink()
-                    except FileNotFoundError:
-                        pass
-
                     raise HTTPException(
                         status_code=413,
                         detail=f"Archivo demasiado grande: {nombre_seguro}",
                     )
 
                 buffer.write(chunk)
+            buffer.flush()
+            os.fsync(buffer.fileno())
+        os.replace(temporal, destino_path)
 
     finally:
+        if temporal is not None:
+            temporal.unlink(missing_ok=True)
         await upload.close()
 
     return nombre_seguro

@@ -28,11 +28,18 @@ NODE_PERMISSIONS = {
     ("POST", "/audio-metrics/"),
     ("POST", "/upload/"),
     ("POST", "/node/deployments/activate"),
+    ("POST", "/node/deployments/register"),
     ("GET", "/node/deployments/legacy-context"),
     ("GET", "/node/location-command"),
     ("POST", "/node/location-command/ack"),
     ("GET", "/stream/control"),
     ("POST", "/stream/status"),
+}
+INGEST_PERMISSIONS = {
+    ("POST", "/node/deployments/register"),
+    ("POST", "/detections/"),
+    ("POST", "/audio-metrics/"),
+    ("POST", "/upload/"),
 }
 
 
@@ -252,6 +259,13 @@ async def security_middleware(request: Request, call_next):
     settings = get_security_settings()
     path = request.url.path
 
+    if path.startswith("/replication/v1/"):
+        replica_hash = os.getenv("BIRDMONITOR_REPLICATION_TOKEN_HASH", "")
+        if request.method != "GET" or not verify_node_token(_extract_bearer_token(request), replica_hash):
+            return _add_security_headers(JSONResponse(status_code=403, content={"detail": "Replica no autorizada"}))
+        request.state.security_role = "replica"
+        return _add_security_headers(await call_next(request))
+
     if not settings.enabled:
         request.state.security_role = "disabled"
         response = await call_next(request)
@@ -275,6 +289,11 @@ async def security_middleware(request: Request, call_next):
         )
 
     node_token = _extract_bearer_token(request)
+    if verify_node_token(node_token, os.getenv("BIRDMONITOR_INGEST_TOKEN_HASH", "")):
+        if (request.method, path) not in INGEST_PERMISSIONS:
+            return _add_security_headers(JSONResponse(status_code=403, content={"detail": "Token limitado a ingesta"}))
+        request.state.security_role = "node"
+        return _add_security_headers(await call_next(request))
     if verify_node_token(node_token, settings.node_token_hash):
         if not _node_request_allowed(request):
             return _add_security_headers(
