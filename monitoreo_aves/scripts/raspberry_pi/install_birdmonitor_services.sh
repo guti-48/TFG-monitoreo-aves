@@ -93,7 +93,10 @@ if [[ -z "$SERVICE_HOME" || ! -d "$SERVICE_HOME" ]]; then
   exit 1
 fi
 NODE_DIR="$PROJECT_DIR/hardware/raspberry_pi"
-for required in "$NODE_DIR/mainNode.py" "$NODE_DIR/supervisor.py"; do
+for relative in mainNode.py supervisor.py node/__init__.py node/main.py node/supervisor.py \
+  node/node_config.py node/node_sync.py node/node_delivery.py node/deployment_context.py \
+  node/node_location.py node/analyzer.py node/audio_processing.py node/birdweather_client.py; do
+  required="$NODE_DIR/$relative"
   if [[ ! -f "$required" ]]; then
     echo "No se encuentra $required." >&2
     exit 1

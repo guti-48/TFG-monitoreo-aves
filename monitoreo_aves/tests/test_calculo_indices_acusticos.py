@@ -3,7 +3,7 @@ import pytest
 import soundfile as sf
 from maad import features, sound
 
-from audio_processing import calcularMetricasAcusticas
+from hardware.raspberry_pi.node.audio_processing import calcularMetricasAcusticas
 
 
 def test_metricas_maad_v2_respetan_unidades_funciones_y_bandas(tmp_path):

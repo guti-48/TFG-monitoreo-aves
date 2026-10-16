@@ -1,7 +1,7 @@
 import numpy as np
 
-import audio_processing
-from audio_processing import analizarCalidadAudio
+from hardware.raspberry_pi.node import audio_processing
+from hardware.raspberry_pi.node.audio_processing import analizarCalidadAudio
 
 
 def test_calidad_audio_acepta_senal_limpia():

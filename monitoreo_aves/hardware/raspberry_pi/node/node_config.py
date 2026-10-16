@@ -1,7 +1,7 @@
 import os
 
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+CURRENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOCAL_ENV_FILE = os.path.join(CURRENT_DIR, "birdmonitor.env")
 
 

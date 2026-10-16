@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 from getpass import getpass
+import os
 from pathlib import Path
 import re
 import secrets
 import sys
+import tempfile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +24,11 @@ OUTPUT_FILE = PROJECT_ROOT / "backend" / "birdmonitor.env"
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Configura el acceso privado de BirdMonitor.",
+    )
+    parser.add_argument(
+        "--password-only",
+        action="store_true",
+        help="Cambia solo la contrasena del dashboard y cierra sus sesiones; conserva las claves del nodo y la sincronizacion.",
     )
     parser.add_argument(
         "--https",
@@ -42,8 +49,8 @@ def ask_username() -> str:
 def ask_password() -> str:
     while True:
         password = getpass("Contrasena administradora (minimo 12 caracteres): ")
-        if len(password) < 12:
-            print("La contrasena es demasiado corta.")
+        if not 12 <= len(password) <= 256:
+            print("La contrasena debe tener entre 12 y 256 caracteres.")
             continue
         if password != getpass("Repite la contrasena: "):
             print("Las contrasenas no coinciden.")
@@ -51,8 +58,51 @@ def ask_password() -> str:
         return password
 
 
+def change_admin_password(path: Path, password: str) -> None:
+    if not 12 <= len(password) <= 256:
+        raise ValueError("La contrasena debe tener entre 12 y 256 caracteres.")
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    pattern = re.compile(r"^\s*(?:export\s+)?(BIRDMONITOR_ADMIN_PASSWORD_HASH|BIRDMONITOR_SESSION_SECRET)\s*=")
+    keys = {match.group(1) for line in lines if (match := pattern.match(line))}
+    if keys != {"BIRDMONITOR_ADMIN_PASSWORD_HASH", "BIRDMONITOR_SESSION_SECRET"}:
+        raise ValueError("Falta la configuracion de acceso; no se ha cambiado nada.")
+    updates = {
+        "BIRDMONITOR_ADMIN_PASSWORD_HASH": hash_admin_password(password),
+        "BIRDMONITOR_SESSION_SECRET": secrets.token_urlsafe(48),
+    }
+    content = "".join(
+        f"{match.group(1)}={updates[match.group(1)]}\n" if (match := pattern.match(line)) else line
+        for line in lines
+    )
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".password-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     args = parse_args()
+
+    if args.password_only:
+        if not OUTPUT_FILE.is_file():
+            print("No existe una configuracion de acceso para actualizar.")
+            return 1
+        try:
+            change_admin_password(OUTPUT_FILE, ask_password())
+        except (OSError, ValueError) as exc:
+            print(f"No se pudo cambiar la contrasena: {exc}")
+            return 1
+        print("Contrasena actualizada. Reinicia el backend y vuelve a iniciar sesion.")
+        print("Las claves del nodo, streaming y sincronizacion se conservan.")
+        return 0
 
     if OUTPUT_FILE.exists():
         answer = input(

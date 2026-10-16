@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from hardware.raspberry_pi import supervisor
+from hardware.raspberry_pi.node import supervisor
 
 
 class FakeResponse:

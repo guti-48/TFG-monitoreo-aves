@@ -2,7 +2,7 @@ import json
 
 import requests
 
-from node_config import (
+from .node_config import (
     AUTO_GEOLOCATION,
     GEO_CACHE_FILE,
     NODE_LAT,

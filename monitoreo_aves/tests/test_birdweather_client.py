@@ -1,6 +1,6 @@
 from datetime import datetime
 
-import birdweather_client
+from hardware.raspberry_pi.node import birdweather_client
 
 
 def test_envia_deteccion_con_ruta_y_campos_oficiales(monkeypatch):

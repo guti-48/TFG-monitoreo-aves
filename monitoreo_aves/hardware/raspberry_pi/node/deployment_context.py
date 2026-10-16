@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
-from node_config import (
+from .node_config import (
     DEPLOYMENT_ID,
     DEPLOYMENT_NOTES,
     DEPLOYMENT_STATE_FILE,

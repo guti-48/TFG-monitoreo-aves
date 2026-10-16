@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from node_config import CURRENT_DIR, OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG, SERVER_URL
+from .node_config import CURRENT_DIR, OUTPUT_FOLDER_AUDIO, OUTPUT_FOLDER_IMG, SERVER_URL
 
 
 CONTEXT_KEY = "_deployment_context"

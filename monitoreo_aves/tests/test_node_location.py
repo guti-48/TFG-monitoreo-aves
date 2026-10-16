@@ -1,4 +1,4 @@
-import node_location
+from hardware.raspberry_pi.node import node_location
 
 
 def test_parsea_coordenadas_validas_y_rechaza_valores_inseguros():

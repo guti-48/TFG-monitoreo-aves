@@ -1,4 +1,4 @@
-import node_sync
+from hardware.raspberry_pi.node import node_sync
 
 
 def test_deteccion_conserva_tiempos_en_la_cola_offline(monkeypatch):

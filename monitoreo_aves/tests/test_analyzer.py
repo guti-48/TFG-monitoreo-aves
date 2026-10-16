@@ -1,5 +1,5 @@
-import analyzer
-import node_config
+from hardware.raspberry_pi.node import analyzer
+from hardware.raspberry_pi.node import node_config
 
 
 def test_birdnet_usa_ubicacion_del_nodo_y_umbral_mas_bajo(monkeypatch):

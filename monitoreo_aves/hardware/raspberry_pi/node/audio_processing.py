@@ -14,7 +14,7 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
-from node_config import (
+from .node_config import (
     MIC_CLIPPING_LEVEL,
     MIC_ALSA_CARD,
     MIC_AUTO_GAIN,

@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-HARDWARE_DIR = PROJECT_ROOT / "hardware" / "raspberry_pi"
 PYTEST_TMP_DIR = PROJECT_ROOT / ".tmp"
 PYTEST_TMP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -51,8 +50,6 @@ os.environ["BIRDMONITOR_DEPLOYMENT_STATE_FILE"] = str(
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-if str(HARDWARE_DIR) not in sys.path:
-    sys.path.insert(0, str(HARDWARE_DIR))
 
 
 @pytest.fixture(scope="session")

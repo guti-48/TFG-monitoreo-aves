@@ -176,6 +176,25 @@ Utiliza la IP del propio ordenador, no la de la Raspberry. Conserva el token del
 nodo y la contraseña RTSP de publicación para configurar la Raspberry. No vuelvas
 a generar esas credenciales en una instalación existente salvo que quieras rotarlas.
 
+Para cambiar únicamente la contraseña del dashboard, desde `monitoreo_aves/`:
+
+```bash
+./venv/bin/python scripts/configure_security.py --password-only
+```
+
+En Windows usa `.\venv\Scripts\python.exe` en lugar de `./venv/bin/python`.
+Introduce la nueva contraseña dos veces en el terminal (entre 12 y 256 caracteres;
+no se muestra al escribir). Este modo conserva el usuario, la red y todas las
+claves del nodo, streaming y sincronización. Guarda únicamente el hash de la
+contraseña y renueva la clave de sesión para cerrar las sesiones anteriores.
+Reinicia el backend para aplicar el cambio. En macOS, con el servicio instalado:
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/com.birdmonitor.services"
+```
+
+Cada ordenador mantiene su propia contraseña: cambiarla en uno no modifica el otro.
+
 ### Arranque automático en macOS
 
 El proyecto operativo debe estar fuera de `Desktop`, `Documents` y `Downloads`,
@@ -331,7 +350,7 @@ En la Raspberry, desde `monitoreo_aves/hardware/raspberry_pi/`, utiliza el Pytho
 del entorno del nodo para ejecutar:
 
 ```bash
-sudo /RUTA/AL/ENTORNO/bin/python configure_delivery.py --name windows --url http://IP_TAILSCALE_WINDOWS:8000
+sudo /RUTA/AL/ENTORNO/bin/python tools/configure_delivery.py --name windows --url http://IP_TAILSCALE_WINDOWS:8000
 sudo systemctl restart birdmonitor.service
 ```
 
@@ -379,11 +398,41 @@ el servidor principal; esta selección automática afecta a la entrega de datos.
 | Base SQLite | `backend/app/birdmonitor.db` |
 | Configuración privada | `backend/birdmonitor.env` |
 | Dashboard | `frontend/` |
-| Nodo e inferencia | `hardware/raspberry_pi/` |
+| Código del nodo e inferencia | `hardware/raspberry_pi/node/` |
+| Configuradores del nodo | `hardware/raspberry_pi/tools/` |
 | Audios y espectrogramas del servidor | `hardware/raspberry_pi/records/` y `spectrograms/` |
 | Replicación | `backend/app/features/replication/` |
 | Instaladores | `scripts/macos/`, `scripts/windows/`, `scripts/raspberry_pi/` |
 | Pruebas | `tests/` |
+
+La carpeta de hardware separa el código y las herramientas de los datos:
+
+```text
+hardware/raspberry_pi/
+├── mainNode.py              # Entrada del servicio de captura
+├── supervisor.py            # Entrada del supervisor de streaming
+├── node/                    # Captura, BirdNET, configuración, ubicación y envío
+├── tools/                   # configure_site.py y configure_delivery.py
+├── model/                   # Archivos de modelos y etiquetas
+├── records/                 # WAV locales, fuera de Git
+├── spectrograms/            # PNG locales, fuera de Git
+├── birdmonitor.env.example
+└── README.md
+```
+
+Dentro de `node/`, `main.py` coordina el ciclo; `audio_processing.py` y
+`analyzer.py` capturan y analizan; `node_sync.py` y `node_delivery.py` gestionan
+la cola y el envío; `node_config.py`, `deployment_context.py` y `node_location.py`
+mantienen la configuración y el despliegue. `birdweather_client.py` integra
+BirdWeather y `supervisor.py` controla el directo.
+
+Los puntos de entrada de systemd mantienen sus nombres y rutas. El archivo local
+`birdmonitor.env`, la cola `offline_outbox.db`, `deployment_state.json`, la caché
+de ubicación y `ingest-targets.secret` siguen en `hardware/raspberry_pi/` cuando
+existen. Mover el código no crea una cola nueva ni cambia dónde se buscan los WAV.
+Los configuradores se ejecutan ahora desde `tools/`; al actualizar una instalación
+hay que copiar el paquete `node/` completo junto con los puntos de entrada y
+reiniciar los servicios. Sustituir únicamente `mainNode.py` no es suficiente.
 
 Los WAV, PNG, SQLite y secretos no se versionan. No sincronices el archivo SQLite
 mediante una carpeta compartida: la transferencia de esta fase utiliza la API y

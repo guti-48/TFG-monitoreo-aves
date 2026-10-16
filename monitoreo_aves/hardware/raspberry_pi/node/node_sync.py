@@ -6,9 +6,9 @@ import time
 from datetime import datetime, timezone
 
 import requests
-import node_delivery
+from . import node_delivery
 
-from node_config import (
+from .node_config import (
     CSV_BACKUP,
     DURATION,
     NODE_NAME,
@@ -20,7 +20,7 @@ from node_config import (
     SERVER_URL,
     getBackendAuthHeaders,
 )
-from deployment_context import (
+from .deployment_context import (
     DeploymentConfigurationError,
     DeploymentContext,
     EventContext,

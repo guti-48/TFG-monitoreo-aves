@@ -235,7 +235,7 @@ conecta la Raspberry a la misma *tailnet* antes de continuar.
 Registra el primer sitio. Valida primero con `--dry-run`:
 
 ```bash
-sudo ./venv/bin/python hardware/raspberry_pi/configure_site.py \
+sudo ./venv/bin/python hardware/raspberry_pi/tools/configure_site.py \
   --site-code mi-sitio \
   --site-name "Nombre de la ubicación" \
   --municipality "Municipio" \

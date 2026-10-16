@@ -9,9 +9,9 @@ from uuid import uuid4
 import pytest
 import requests
 
-from deployment_context import getCurrentDeploymentContext
-import node_delivery
-import node_sync
+from hardware.raspberry_pi.node.deployment_context import getCurrentDeploymentContext
+from hardware.raspberry_pi.node import node_delivery
+from hardware.raspberry_pi.node import node_sync
 
 
 MAC = node_delivery.Target("mac", "http://100.92.197.59:8000", "mac-token-" + "x" * 32)
@@ -225,7 +225,7 @@ def test_register_requires_node_or_admin_credentials(client, monkeypatch):
 
 
 def test_configurator_keeps_existing_credentials_and_is_repeatable(tmp_path):
-    from configure_delivery import configure
+    from hardware.raspberry_pi.tools.configure_delivery import configure
     env = tmp_path / "birdmonitor.env"
     env.write_text(f"BIRDMONITOR_SERVER_URL={MAC.url}\nBIRDMONITOR_NODE_API_TOKEN={MAC.token}\nKEEP=unchanged\n")
     targets = tmp_path / "ingest-targets.secret"

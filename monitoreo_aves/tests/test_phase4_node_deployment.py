@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-import configure_site
-import deployment_context
-import node_sync
+from hardware.raspberry_pi.tools import configure_site
+from hardware.raspberry_pi.node import deployment_context
+from hardware.raspberry_pi.node import node_sync
 
 
 def _context(site="algeciras", public_id="42000000-0000-4000-8000-000000000001"):

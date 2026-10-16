@@ -3,9 +3,9 @@ import os
 
 import pytest
 
-import deployment_context
-import node_location
-import node_sync
+from hardware.raspberry_pi.node import deployment_context
+from hardware.raspberry_pi.node import node_location
+from hardware.raspberry_pi.node import node_sync
 
 
 def _context(

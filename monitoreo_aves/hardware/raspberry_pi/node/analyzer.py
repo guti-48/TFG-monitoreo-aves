@@ -5,7 +5,7 @@ from pathlib import Path
 from birdnetlib import Recording
 from birdnetlib.analyzer import Analyzer
 
-from node_config import (
+from .node_config import (
     BIRDNET_MIN_CONFIDENCE,
     BIRDNET_MODEL_VERSION,
     BIRDNET_OVERLAP,

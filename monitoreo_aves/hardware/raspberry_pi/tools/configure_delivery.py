@@ -4,8 +4,13 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import sys
 
-from node_delivery import load_targets
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from hardware.raspberry_pi.node.node_delivery import load_targets
 
 
 def atomic_write(path, content, *, owner=None):
@@ -58,7 +63,7 @@ def configure(env_path, targets_path, name, url, token):
 def main():
     parser = argparse.ArgumentParser(description="Anade un servidor de ingesta conservando el servidor actual")
     parser.add_argument("--env-file", type=Path, default=Path("/etc/birdmonitor/birdmonitor.env"))
-    parser.add_argument("--targets-file", type=Path, default=Path(__file__).resolve().parent / "ingest-targets.secret")
+    parser.add_argument("--targets-file", type=Path, default=Path(__file__).resolve().parents[1] / "ingest-targets.secret")
     parser.add_argument("--name", required=True)
     parser.add_argument("--url", required=True)
     args = parser.parse_args()

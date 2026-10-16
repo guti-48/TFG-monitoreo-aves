@@ -12,10 +12,14 @@ directo. Los WAV no se envían a servicios de IA externos.
 | `birdstream.service` | Publicación RTSP autenticada mediante FFmpeg |
 | `birdmonitor-stream-supervisor.service` | Aplica el botón de emisión y recupera el directo |
 
-`mainNode.py` realiza el análisis, `supervisor.py` controla el streaming,
-`node_sync.py` mantiene la cola persistente y `configure_site.py` activa el
+`mainNode.py` arranca `node/main.py`, `supervisor.py` arranca `node/supervisor.py`,
+`node/node_sync.py` mantiene la cola persistente y `tools/configure_site.py` activa el
 sitio/despliegue. `deployment_state.json` se genera localmente y no se debe
 editar ni versionar.
+
+El código está en `node/` y los configuradores en `tools/`. `model/`, `records/`
+y `spectrograms/` conservan sus rutas. La estructura completa y las instrucciones
+de actualización se documentan en el [README principal](../../../README.md#datos-pruebas-y-estructura).
 
 ## Requisitos
 
@@ -73,7 +77,7 @@ Primero valida sin modificar el estado:
 
 ```bash
 sudo /home/pi/birdmonitor/venv/bin/python \
-  /home/pi/birdmonitor/hardware/raspberry_pi/configure_site.py \
+  /home/pi/birdmonitor/hardware/raspberry_pi/tools/configure_site.py \
   --site-code codigo-del-sitio \
   --site-name "Nombre legible" \
   --municipality "Municipio" \
