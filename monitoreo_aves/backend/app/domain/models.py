@@ -52,6 +52,18 @@ class Device(Base):
     )
 
 
+class NodeStorage(Base):
+    __tablename__ = "node_storage"
+
+    device_id = Column(Integer, ForeignKey("devices.id"), primary_key=True)
+    measured_at = Column(DateTime, nullable=False)
+    received_at = Column(DateTime, nullable=False)
+    total_bytes = Column(Integer, nullable=False)
+    free_bytes = Column(Integer, nullable=False)
+    recordings_bytes = Column(Integer, nullable=True)
+    recordings_count = Column(Integer, nullable=True)
+
+
 class Site(Base):
     """Lugar geográfico estable que puede reutilizarse en varias campañas."""
 
@@ -288,6 +300,25 @@ class Detection(Base):
         uselist=False,
         cascade="all, delete-orphan"
     )
+    review_sync = relationship("ReviewSyncState", uselist=False, cascade="all, delete-orphan")
+
+
+class ReviewEvent(Base):
+    __tablename__ = "review_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    public_id = Column(String(36), unique=True, nullable=False)
+    detection_key = Column(String(64), nullable=False, index=True)
+    content = Column(String, nullable=False)
+
+
+class ReviewSyncState(Base):
+    __tablename__ = "review_sync_state"
+
+    detection_id = Column(Integer, ForeignKey("detections.id"), primary_key=True)
+    detection_key = Column(String(64), nullable=False, index=True)
+    heads = Column(String, nullable=False)
+    conflict = Column(Boolean, nullable=False)
 
 '''
 Esta clase resperenta la revision humana sobre el una detreccion automatica

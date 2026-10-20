@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from ...core import database
 from ...domain import models, schemas
-from ..learning import service as learning
 from ..locations import service as locations
 from . import media as review_media
 from .serializers import serializar_deteccion
+from ..replication import reviews as review_sync
 
 
 router = APIRouter()
@@ -131,6 +131,7 @@ def read_detections(
         db.query(models.Detection)
         .options(
             joinedload(models.Detection.review),
+            joinedload(models.Detection.review_sync),
             joinedload(models.Detection.deployment).joinedload(
                 models.Deployment.site
             ),
@@ -258,44 +259,11 @@ def update_detection_review(
             detail="corrected_species is required when status is corrected",
         )
 
-    review = (
-        db.query(models.DetectionReview)
-        .filter(models.DetectionReview.detection_id == detection_id)
-        .first()
-    )
+    try:
+        return review_sync.write_review(db, detection, review_data)
+    except review_sync.ReplicaConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    now = datetime.now(timezone.utc)
-
-    if review is None:
-        review = models.DetectionReview(
-            detection_id=detection_id,
-            status=review_data.status,
-            corrected_species=review_data.corrected_species,
-            note=review_data.note,
-            reviewer=review_data.reviewer,
-            reviewed_at=now,
-            updated_at=now,
-        )
-        db.add(review)
-    else:
-        review.status = review_data.status
-        review.corrected_species = review_data.corrected_species
-        review.note = review_data.note
-        review.reviewer = review_data.reviewer
-        review.reviewed_at = now
-        review.updated_at = now
-
-    learning.sync_learning_from_review(
-        db,
-        detection,
-        review_data.status,
-        review_data.corrected_species,
-    )
-
-    db.commit()
-    db.refresh(review)
-
-    return review
 
 
 @router.get(
@@ -384,3 +352,21 @@ def get_detection_spectrogram(
         media_type="image/png",
         headers={"Cache-Control": "private, max-age=86400"},
     )
+
+
+@router.get("/detections/{detection_id}/review-sync")
+def get_review_sync(detection_id: int, db: Session = Depends(database.get_db)):
+    detection = _get_detection_or_404(detection_id, db)
+    review_sync.bootstrap_reviews(db)
+    return review_sync.review_state(db, detection)
+
+
+@router.post("/detections/{detection_id}/review-resolve", response_model=schemas.DetectionReviewResponse)
+def resolve_review(detection_id: int, resolution: review_sync.ReviewResolution,
+                   db: Session = Depends(database.get_db)):
+    detection = _get_detection_or_404(detection_id, db)
+    try:
+        return review_sync.write_review(db, detection, None, chosen_id=str(resolution.chosen_id),
+                                        expected_heads=[str(v) for v in resolution.expected_heads])
+    except review_sync.ReplicaConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

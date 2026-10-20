@@ -23,6 +23,7 @@ PUBLIC_PATHS = {
     "/internal/mediamtx/auth",
 }
 NODE_PERMISSIONS = {
+    ("POST", "/node/storage"),
     ("POST", "/devices/"),
     ("POST", "/detections/"),
     ("POST", "/audio-metrics/"),
@@ -36,6 +37,7 @@ NODE_PERMISSIONS = {
     ("POST", "/stream/status"),
 }
 INGEST_PERMISSIONS = {
+    ("POST", "/node/storage"),
     ("POST", "/node/deployments/register"),
     ("POST", "/detections/"),
     ("POST", "/audio-metrics/"),

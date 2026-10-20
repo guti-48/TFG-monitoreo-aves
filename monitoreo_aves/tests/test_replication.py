@@ -364,3 +364,37 @@ def test_filename_case_survives_replication(stores):
         import_page(db, page)
         pending = db.scalar(select(models.ReplicaMedia).where(models.ReplicaMedia.media_kind == "audio"))
         assert pending.relative_path.endswith('/Historic.WAV')
+
+def test_media_queue_prioritizes_recent_detections_without_starving_metrics(stores):
+    _,target,_ = stores
+    source = str(uuid4())
+    with target() as db:
+        for kind in ('detections','audio_metrics'):
+            for number in range(1,31):
+                db.add(models.ReplicaMedia(source_id=source,kind=kind,record_id=number,
+                    media_kind='audio',relative_path=f'{kind}/{number}.wav'))
+        db.add(models.ReplicaMedia(source_id=source,kind='detections',record_id=31,
+            media_kind='audio',relative_path='detections/30.wav'))
+        db.commit()
+        chosen = worker.pending_media(db,source,datetime.now(),8)
+        assert len(chosen) == 8
+        assert len({item.relative_path for item in chosen}) == 8
+        assert [item.kind for item in chosen].count('detections') == 6
+        assert [item.kind for item in chosen].count('audio_metrics') == 2
+        assert chosen[0].record_id == 31
+        assert worker.pending_media(db,source,datetime.now(),0) == []
+
+
+def test_one_transfer_completes_all_references_to_same_file(stores,tmp_path,monkeypatch):
+    source,target,_=stores
+    add_capture(source)
+    transfers=[]
+    def save(client,item,*args):
+        transfers.append((item.media_kind,item.relative_path))
+    monkeypatch.setattr(worker,'save_media',save)
+    with source_client(source,monkeypatch,tmp_path,tmp_path) as client:
+        worker.sync_peer(peer(),target,client,media_budget=2)
+    assert len(transfers)==2
+    with target() as db:
+        assert db.query(models.ReplicaMedia).count()==4
+        assert db.query(models.ReplicaMedia).filter_by(completed=False).count()==0

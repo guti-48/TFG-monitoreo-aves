@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+import json
 
 from ...domain import models
 from ..learning import service as learning
@@ -40,5 +41,7 @@ def serializar_deteccion(detection: models.Detection, db: Session) -> dict:
         "audio_start_seconds": detection.audio_start_seconds,
         "audio_end_seconds": detection.audio_end_seconds,
         "review": serializar_review(detection.review),
+        "review_sync": {"conflict": detection.review_sync.conflict,
+                        "heads": json.loads(detection.review_sync.heads)} if detection.review_sync else {"conflict": False, "heads": []},
         "learned_suggestion": learning.find_suggestion(db, detection),
     }

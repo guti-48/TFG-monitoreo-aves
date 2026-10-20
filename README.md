@@ -32,7 +32,8 @@ privada; BirdMonitor implementa la transferencia y los reintentos.
 | Recuperación de WAV y PNG desde otro ordenador | Implementada, con comprobación SHA-256 y reintentos independientes |
 | Selección automática de un ordenador disponible por la Raspberry | Implementada para detecciones, métricas y archivos; requiere configurar los destinos de ingesta |
 | Retención de archivos en la Raspberry | Se mantiene la limpieza existente por días y la protección de archivos pendientes de envío; no se añade una cuota de GB |
-| Sincronización de revisiones, reglas de aprendizaje y cambios administrativos | Pendiente |
+| Sincronización de revisiones humanas | Versiones incrementales, conservación del historial y resolución explícita de conflictos |
+| Cambios administrativos de reglas de aprendizaje y ubicaciones | No se replican; el aprendizaje derivado se recalcula al aplicar revisiones |
 
 La sincronización está implementada en el código y probada con bases independientes.
 Actualizar el código no activa por sí solo los pares ni los destinos de la Raspberry:
@@ -56,6 +57,14 @@ destino. Solo se publican después de comprobar su SHA-256. Un archivo ausente,
 una desconexión o un error de integridad conserva el trabajo pendiente. Un archivo
 local con contenido diferente no se sobrescribe.
 
+Cada ciclo procesa hasta 20 archivos distintos por par. Prioriza las detecciones
+recientes y reserva una cuarta parte del lote para métricas cuando las hay;
+el espacio que no se utiliza se aprovecha para el otro grupo. Las referencias
+al mismo archivo de un mismo par comparten el resultado y el tiempo de reintento.
+Las transferencias admiten hasta 60 segundos sin recibir datos antes de fallar.
+Un HTTP 404 significa que ese par no tiene todavía el archivo; esperar solo
+ayudará si aparece en alguna de las copias disponibles.
+
 ### Ejemplo: Windows lleva diez días apagado
 
 1. El Mac recibe y conserva los registros y los archivos enviados por la Raspberry.
@@ -75,7 +84,8 @@ copias que ya existen.
 
 - Se transfieren detecciones y métricas nuevas, incluido el histórico existente al
   conectar un par por primera vez. No se replican posteriores modificaciones de
-  un registro ya descargado ni sus revisiones humanas.
+  un registro ya descargado. Las revisiones humanas tienen su propio historial
+  de sincronización, descrito a continuación.
 - Se incorpora el contexto de sitio y despliegue necesario para interpretar cada
   registro. Las órdenes de cambio de ubicación, el control del directo y las
   credenciales de acceso no se copian entre servidores.
@@ -112,7 +122,69 @@ Aplica el mismo contexto verificado a ambos históricos antes de reintentar la
 sincronización. Las diferencias de formato de fechas legacy y los eventos
 repetidos dentro de una página no crean una observación adicional al importarlos.
 
+## Revisiones humanas entre ordenadores
+
+Los servidores emparejados sincronizan validaciones, correcciones de especie,
+marcas de ruido, dudas, descartes y notas. Hay que actualizar ambos backends;
+no requiere nuevas claves ni guardar revisiones en la Raspberry. Cada par anuncia
+la capacidad `reviews-v1`; un servidor antiguo puede seguir intercambiando
+detecciones mientras espera su actualización.
+
+Cada edición crea una versión inmutable en `review_events`, con UUID propio,
+identidad del servidor, nombre del equipo y versiones que conocía el usuario al
+editar. La detección se identifica con su clave estable de despliegue, nodo,
+fecha, archivo y especie original, no con el ID numérico de la base local.
+Los servidores descargan versiones posteriores al último cursor y pueden
+retransmitirlas sin duplicarlas. Las revisiones anteriores a esta actualización
+se conservan como versiones iniciales mediante una migración idempotente.
+Al arrancar también se recuperan ediciones realizadas tras restaurar una versión
+antigua del programa: se incorporan al historial sin borrar versiones previas.
+
+Si una revisión continúa una versión conocida, se aplica normalmente. Si dos
+equipos editan sin haber recibido el cambio del otro y sus contenidos difieren,
+se conservan ambas y el dashboard muestra **Revisiones en conflicto**. Pulsa
+**Comparar y resolver** para ver sus notas, equipo y fecha, y elegir cuál aplicar.
+La elección crea otra versión que reúne ambas y también se sincroniza. No se
+escoge una ganadora por la hora del ordenador ni se eliminan versiones anteriores.
+Si llega otra revisión mientras comparas, debes volver a abrir el conflicto.
+
+Mientras está pendiente, la detección se presenta como dudosa y no alimenta el
+aprendizaje automático con una de las opciones en conflicto. El aprendizaje
+derivado se recalcula cuando se aplica una revisión o se resuelve el conflicto;
+una detección duplicada del histórico aporta un único ejemplo al aprendizaje.
+Los cambios administrativos manuales de las reglas siguen siendo locales.
+Volver a marcar una detección como `unreviewed` también genera una versión y
+retira su contribución al aprendizaje. No se sincronizan borrados físicos.
+
+Este diseño funciona con nombres e IP configurados por cada instalación y con
+más de dos servidores emparejados (hasta ocho pares configurados por servidor).
+No es un servicio central: los equipos deben
+coincidir conectados, directamente o mediante otro par que conserve el historial.
+SQLite y los lotes limitados son adecuados para instalaciones pequeñas; no se
+ha validado capacidad para despliegues masivos.
+
 ## Almacenamiento de la Raspberry
+
+La vista **Tiempo Real** muestra el espacio libre y la capacidad del disco de la
+Raspberry, junto con el tamaño y el número de sus grabaciones WAV. Son datos del
+nodo físico, independientes del sitio o la campaña histórica seleccionados; no
+representan el disco del Mac ni el de Windows. Los tamaños se muestran en GiB
+(1 GiB = 1024³ bytes).
+
+El nodo mide al arrancar y en sus ciclos, como máximo una vez cada cinco minutos.
+Consulta el espacio del sistema de archivos y suma los tamaños de los WAV sin
+leer su contenido ni seguir enlaces simbólicos. El recorrido tiene un límite de
+dos segundos; si no termina o falla, el tamaño de las grabaciones aparece como
+no disponible, nunca como cero.
+
+La medición se envía a cada destino de ingesta configurado mediante
+`POST /node/storage`, utilizando sus credenciales existentes. Un servidor apagado
+no impide probar el siguiente. Cada servidor conserva únicamente la última
+medición por nodo en `node_storage`; no se acumulan muestras en la cola de
+detecciones ni se replican como histórico. El dashboard consulta cada 30 segundos
+`GET /node/storage`, protegido por la sesión de administrador, y marca la lectura
+como antigua después de 15 minutos sin una nueva medición. Tras actualizar el
+código deben reiniciarse el backend de cada ordenador y `birdmonitor.service`.
 
 La Raspberry conserva una cola SQLite en `offline_outbox.db`. Actualmente elimina
 cada evento pendiente cuando el servidor configurado lo acepta. Esa cola **no es
@@ -442,6 +514,8 @@ Pruebas del nuevo flujo, desde `monitoreo_aves/` y con `pytest` instalado:
 
 ```bash
 ./venv/bin/python -m pytest tests/test_replication.py tests/test_node_delivery.py tests/test_reconcile_legacy_replica.py tests/test_security.py tests/test_network_security.py -q
+./venv/bin/python -m pytest tests/test_review_replication.py tests/test_learning.py tests/test_storage_telemetry.py tests/test_service_health.py -q
+node --test tests/test_review_sync_ui.cjs tests/test_storage_ui.cjs
 ```
 
 Se comprueban bases con identificadores distintos, recuperación del histórico sin
@@ -449,6 +523,12 @@ la Raspberry, retransmisión desde otro ordenador, reintentos, archivos tardíos
 conflictos de contexto, integridad de archivos, autorización independiente,
 conservación de la cola al reiniciar y entrega completa al ordenador disponible.
 Las pruebas usan bases temporales y desactivan los pares de una instalación real.
+
+Para verificar una instalación activa desde `monitoreo_aves/`, ejecuta
+`./venv/bin/python scripts/verify_service.py` en macOS/Linux o
+`.\venv\Scripts\python.exe scripts\verify_service.py` en Windows.
+La comprobación usa IPv4 local sin proxy, espera hasta 120 segundos y muestra
+la causa concreta si falla el acceso HTTP o la configuración de seguridad.
 
 Una clasificación de BirdNET es una hipótesis: la confianza, la evidencia acústica
 y la revisión humana forman parte de su interpretación. No equivale por sí sola

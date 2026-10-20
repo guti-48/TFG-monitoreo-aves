@@ -11,7 +11,7 @@ import threading
 from uuid import UUID
 
 import httpx
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 
 from ...core import database
 from ...core.config import MAX_AUDIO_BYTES, MAX_IMAGE_BYTES, SERVER_AUDIO_DIR, SPECTOGRAM_DIR
@@ -75,7 +75,7 @@ def save_media(client, item, audio_root, image_root, stopped=lambda: False):
     destination.relative_to(root)
     max_bytes = MAX_AUDIO_BYTES if item.media_kind == "audio" else MAX_IMAGE_BYTES
     path = f"/replication/v1/media/{item.kind}/{item.record_id}/{item.media_kind}"
-    with client.stream("GET", path) as response:
+    with client.stream("GET", path, timeout=httpx.Timeout(60, connect=3)) as response:
         response.raise_for_status()
         expected = response.headers.get("X-BirdMonitor-SHA256", "")
         if not re.fullmatch(r"[a-f0-9]{64}", expected):
@@ -118,6 +118,37 @@ def save_media(client, item, audio_root, image_root, stopped=lambda: False):
                 temporary.unlink(missing_ok=True)
 
 
+def pending_media(db, source, now, budget):
+    if budget <= 0:
+        return []
+    groups = {}
+    for kind in ("detections", "audio_metrics"):
+        query = select(models.ReplicaMedia).where(
+            models.ReplicaMedia.source_id == source, models.ReplicaMedia.kind == kind,
+            models.ReplicaMedia.completed.is_(False),
+            or_(models.ReplicaMedia.next_attempt_at.is_(None), models.ReplicaMedia.next_attempt_at <= now),
+        ).order_by(models.ReplicaMedia.attempts, models.ReplicaMedia.record_id.desc())
+        unique = {}
+        for item in db.scalars(query).yield_per(100):
+            unique.setdefault((item.media_kind, item.relative_path), item)
+            if len(unique) >= budget:
+                break
+        groups[kind] = list(unique.values())
+    selected, seen = [], set()
+    def take(items, limit):
+        for item in items:
+            key = (item.media_kind, item.relative_path)
+            if len(selected) >= limit:
+                break
+            if key not in seen:
+                selected.append(item)
+                seen.add(key)
+    take(groups['detections'], max(1, budget - budget // 4))
+    take(groups['audio_metrics'], budget)
+    take(groups['detections'], budget)
+    return selected
+
+
 def sync_peer(peer, sessions, client, *, audio_root=SERVER_AUDIO_DIR, image_root=SPECTOGRAM_DIR,
               stopped=lambda: False, page_budget=10, media_budget=20):
     info = read_json(client, "/replication/v1/info")
@@ -143,24 +174,48 @@ def sync_peer(peer, sessions, client, *, audio_root=SERVER_AUDIO_DIR, image_root
                 added += import_page(db, page)
             if len(page.records) < PAGE_SIZE:
                 break
+    try:
+        if "reviews-v1" in info.get("capabilities", []):
+            from .reviews import import_reviews, ReviewPage
+            for _ in range(page_budget):
+                if stopped():
+                    return added
+                with sessions() as db:
+                    cursor = db.get(models.ReplicaCursor, (source, "reviews"))
+                    after = cursor.position if cursor else 0
+                page = ReviewPage.model_validate(read_json(client, "/replication/v1/reviews",
+                                                           params={"after": after, "limit": PAGE_SIZE}))
+                if str(page.source_id) != source or page.after != after:
+                    raise ValueError("Respuesta de revisiones inconsistente")
+                try:
+                    with sessions() as db:
+                        added += import_reviews(db, page)
+                except ReplicaConflict as exc:
+                    logger.warning("Revisiones de %s pendientes: %s", peer.name, exc)
+                    break
+                if len(page.records) < PAGE_SIZE:
+                    break
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("No se pudieron sincronizar revisiones de %s: %s", peer.name, type(exc).__name__)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with sessions() as db:
-        items = db.scalars(select(models.ReplicaMedia).where(
-            models.ReplicaMedia.source_id == source, models.ReplicaMedia.completed.is_(False),
-            or_(models.ReplicaMedia.next_attempt_at.is_(None), models.ReplicaMedia.next_attempt_at <= now),
-        ).order_by(models.ReplicaMedia.attempts, models.ReplicaMedia.record_id).limit(media_budget)).all()
+        items = pending_media(db, source, now, media_budget)
         for item in items:
             if stopped():
                 break
             try:
                 save_media(client, item, audio_root, image_root, stopped)
-                item.completed = True
-                item.last_error = None
+                values = dict(completed=True, last_error=None, next_attempt_at=None)
             except (httpx.HTTPError, OSError, ValueError) as exc:
-                item.attempts += 1
-                item.last_error = (f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
-                                   else type(exc).__name__)
-                item.next_attempt_at = now + timedelta(seconds=min(3600, 30 * 2 ** min(item.attempts, 7)))
+                values = dict(attempts=models.ReplicaMedia.attempts + 1,
+                              last_error=(f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
+                                          else type(exc).__name__),
+                              next_attempt_at=datetime.now(timezone.utc).replace(tzinfo=None) +
+                              timedelta(seconds=min(3600, 30 * 2 ** min(item.attempts + 1, 7))))
+            db.execute(update(models.ReplicaMedia).where(
+                models.ReplicaMedia.source_id == source, models.ReplicaMedia.media_kind == item.media_kind,
+                models.ReplicaMedia.relative_path == item.relative_path, models.ReplicaMedia.completed.is_(False),
+            ).values(**values))
             db.commit()
     return added
 

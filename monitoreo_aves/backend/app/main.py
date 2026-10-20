@@ -23,9 +23,13 @@ from .features.streaming.security import (
 from .features.uploads.routes import router as uploads_router
 from .features.replication.routes import router as replication_router, status_router as sync_status_router
 from .features.replication.worker import replication_lifespan
+from .features.telemetry.routes import router as telemetry_router
 
 def asegurar_esquema_runtime() -> None:
     ensure_database_schema(database.engine)
+    from .features.replication.reviews import bootstrap_reviews
+    with database.SessionLocal() as db:
+        bootstrap_reviews(db, reconcile_legacy=True)
 
 
 asegurar_esquema_runtime()
@@ -56,6 +60,7 @@ app.include_router(audio_metrics_router)
 app.include_router(analytics_router)
 app.include_router(replication_router)
 app.include_router(sync_status_router)
+app.include_router(telemetry_router)
 
 
 @app.get("/health", include_in_schema=False)

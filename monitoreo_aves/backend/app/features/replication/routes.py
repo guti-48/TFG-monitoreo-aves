@@ -9,6 +9,7 @@ from ...domain import models, schemas
 from ..detections import media
 from .protocol import Context, Kind, MediaKind, PAGE_SIZE, PROTOCOL_VERSION
 from .service import MODELS, ReplicaConflict, export_page, import_context, replica_id
+from .reviews import export_reviews
 
 router = APIRouter(prefix="/replication/v1", tags=["replication"])
 status_router = APIRouter()
@@ -30,7 +31,13 @@ def register_deployment(payload: schemas.DeploymentActivate,
 
 @router.get("/info")
 def info(db: Session = Depends(database.get_db)):
-    return {"protocol": PROTOCOL_VERSION, "source_id": replica_id(db)}
+    return {"protocol": PROTOCOL_VERSION, "source_id": replica_id(db), "capabilities": ["reviews-v1"]}
+
+
+@router.get("/reviews")
+def reviews(after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100),
+            db: Session = Depends(database.get_db)):
+    return export_reviews(db, after, limit)
 
 
 @router.get("/records/{kind}")

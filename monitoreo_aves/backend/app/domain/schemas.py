@@ -39,6 +39,7 @@ class DetectionReviewUpdate(BaseModel):
     corrected_species: Optional[str] = None
     note: Optional[str] = None
     reviewer: Optional[str] = None
+    base_versions: list[UUID] | None = None
 
 class DetectionReviewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -345,6 +346,11 @@ class NodeLocationCommandResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+class ReviewSyncSummary(BaseModel):
+    conflict: bool = False
+    heads: list[UUID] = Field(default_factory=list)
+
+
 class DetectionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -364,6 +370,7 @@ class DetectionResponse(BaseModel):
     audio_start_seconds: Optional[float] = None
     audio_end_seconds: Optional[float] = None
     review: Optional[DetectionReviewResponse] = None
+    review_sync: ReviewSyncSummary = Field(default_factory=ReviewSyncSummary)
     learned_suggestion: Optional[LearningSuggestionResponse] = None
 
 class DetectionAudioDiagnostics(BaseModel):

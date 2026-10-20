@@ -23,6 +23,7 @@ from .node_config import (
     UMBRAL_RUIDO_ALTO,
 )
 from .birdweather_client import enviarDatosBirdWeather
+from .storage_telemetry import report_storage
 from .deployment_context import (
     DeploymentConfigurationError,
     getCurrentDeploymentContext,
@@ -91,6 +92,7 @@ def main():
     migrarContextoOutboxLegacy(legacy_context)
     activarDespliegue(deployment_context)
     sincronizarRespaldo()
+    report_storage()
 
     try:
         while True:
@@ -225,6 +227,7 @@ def main():
                 print(f"Error controlado en el ciclo principal (el nodo continuara en el siguiente ciclo): {e}")
                 device_index = resolverDispositivoEntrada()
             finally:
+                report_storage()
                 esperarSiguienteCiclo(inicio_ciclo)
 
     except KeyboardInterrupt:

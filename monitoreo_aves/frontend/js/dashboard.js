@@ -864,7 +864,7 @@ function switchView(viewName) {
     container.className = 'd-flex flex-column flex-grow-1 w-100';
     if (viewName === 'history') container.classList.add('view-history');
 
-    if (viewName === 'dashboard') { container.innerHTML = getDashboardHTML(); updateDashboard(); }
+    if (viewName === 'dashboard') { container.innerHTML = getDashboardHTML(); updateDashboard(); refreshNodeStorage(); }
     else if (viewName === 'live') renderLiveStreamView(container);
     else if (viewName === 'history') renderHistoryView(container);
     else if (viewName === 'nodes') renderNodesView(container);
@@ -1697,6 +1697,9 @@ function buildLearningSuggestionPanel(detection) {
 }
 
 function buildReviewBadge(detection) {
+    if (detection.review_sync?.conflict) {
+        return `<button class="btn btn-sm btn-warning" onclick="openReviewConflict(${detection.id})"><i class="bi bi-exclamation-triangle me-1"></i>Revisiones en conflicto</button>`;
+    }
     const status = getReviewStatus(detection);
     const meta = getReviewMeta(status);
 
@@ -1714,6 +1717,9 @@ function buildReviewBadge(detection) {
 }
 
 function buildReviewActions(detection) {
+    if (detection.review_sync?.conflict) {
+        return `<button class="btn btn-sm btn-outline-warning" onclick="openReviewConflict(${detection.id})">Comparar y resolver</button>`;
+    }
     const suggestion = getLearningSuggestion(detection);
     const suggestionAction = suggestion ? `
             <button class="btn btn-outline-success review-action-suggestion" title="Aplicar sugerencia aprendida" onclick="applyLearnedSuggestion(${detection.id})">
@@ -1844,6 +1850,7 @@ async function openDetectionAudioReview(detectionId) {
     const species = cleanName(getDisplaySpecies(detection || { species: "Deteccion" }));
     const dialog = document.createElement("div");
     dialog.id = "audio-review-dialog";
+    dialog.dataset.reviewVersions = JSON.stringify(detection?.review_sync?.heads || []);
     dialog.className = "audio-review-backdrop";
     dialog.innerHTML = `
         <section class="audio-review-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-review-title">
@@ -2232,6 +2239,9 @@ async function applyLearnedSuggestion(detectionId) {
 }
 
 async function patchDetectionReview(detectionId, payload) {
+    const dialog = document.getElementById('correction-dialog') || document.getElementById('audio-review-dialog');
+    const frozen = dialog?.dataset?.reviewVersions;
+    payload = { ...payload, base_versions: frozen ? JSON.parse(frozen) : (detectionCache.get(detectionId)?.review_sync?.heads || []) };
     const response = await fetch(`${DETECTION_REVIEW_BASE_URL}/${detectionId}/review`, {
         method: "PATCH",
         headers: {
@@ -2247,6 +2257,66 @@ async function patchDetectionReview(detectionId, payload) {
     }
 
     return await response.json();
+}
+
+async function openReviewConflict(detectionId) {
+    document.getElementById('review-conflict-dialog')?.remove();
+    try {
+        const response = await fetch(`/detections/${detectionId}/review-sync`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const state = await response.json();
+        if (!state.conflict) {
+            await refreshCurrentDetectionView();
+            alert('Este conflicto ya está resuelto. Se ha actualizado la detección.');
+            return;
+        }
+        const dialog = document.createElement('div');
+        dialog.id = 'review-conflict-dialog';
+        dialog.className = 'correction-dialog-backdrop';
+        dialog.reviewHeads = state.heads;
+        dialog.innerHTML = `<div class="correction-dialog" role="dialog" aria-modal="true" aria-labelledby="review-conflict-title">
+            <div class="correction-dialog-header">
+                <div><p class="correction-dialog-eyebrow">Revisión humana</p><h3 id="review-conflict-title">Revisiones diferentes</h3></div>
+                <button class="correction-dialog-close" onclick="document.getElementById('review-conflict-dialog').remove()" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="correction-dialog-body">
+                <p>La misma detección se revisó de forma distinta en varios equipos. Elige cuál aplicar; las versiones anteriores se conservarán.</p>
+                ${state.alternatives.map(version => `<div class="card p-3 mb-3">
+                    <strong>${escapeHtml(getReviewMeta(version.status).label)}${version.corrected_species ? ' · ' + escapeHtml(cleanName(version.corrected_species)) : ''}</strong>
+                    <span class="small text-muted">${escapeHtml(version.origin_name)} · ${escapeHtml(new Date(version.created_at).toLocaleString('es-ES'))}</span>
+                    <p class="mt-2 mb-2" style="white-space:pre-wrap">${escapeHtml(version.note || 'Sin notas')}</p>
+                    <button class="btn btn-outline-success" onclick="resolveReviewConflict(${detectionId}, '${version.public_id}', this)">Usar esta revisión</button>
+                </div>`).join('')}
+                <p id="review-conflict-feedback" class="text-warning mb-0" aria-live="polite"></p>
+            </div>
+        </div>`;
+        document.body.appendChild(dialog);
+    } catch (error) {
+        alert(`No se pudieron cargar las revisiones: ${error.message}`);
+    }
+}
+
+async function resolveReviewConflict(detectionId, chosenId, button) {
+    const dialog = document.getElementById('review-conflict-dialog');
+    if (!dialog) return;
+    button.disabled = true;
+    try {
+        const response = await fetch(`/detections/${detectionId}/review-resolve`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-BirdMonitor-CSRF': '1' },
+            body: JSON.stringify({ chosen_id: chosenId, expected_heads: dialog.reviewHeads })
+        });
+        if (!response.ok) {
+            if (response.status === 409) throw new Error('Han llegado más revisiones. Cierra y vuelve a abrir el conflicto para compararlas.');
+            throw new Error(`HTTP ${response.status}`);
+        }
+        dialog.remove();
+        closeCorrectionDialog();
+        closeDetectionAudioReview();
+        await refreshCurrentDetectionView();
+    } catch (error) {
+        document.getElementById('review-conflict-feedback').textContent = error.message;
+        button.disabled = false;
+    }
 }
 
 async function quickReviewDetection(detectionId, status) {
@@ -2301,6 +2371,7 @@ function openCorrectionDialog(detectionId, detection, speciesOptions = []) {
 
     const dialog = document.createElement("div");
     dialog.id = "correction-dialog";
+    dialog.dataset.reviewVersions = JSON.stringify(detection?.review_sync?.heads || []);
     dialog.className = "correction-dialog-backdrop";
     dialog.innerHTML = `
         <div class="correction-dialog" role="dialog" aria-modal="true" aria-labelledby="correction-dialog-title">
@@ -2632,6 +2703,71 @@ function renderEmptyDashboardState() {
     updateChart({});
 }
 
+let nodeStorageCache = null;
+let nodeStorageLoading = false;
+
+function formatStorageSize(bytes) {
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return 'No disponible';
+    return `${(bytes / 1024 ** 3).toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} GiB`;
+}
+
+function nodeStorageContent(nodes, failed = false) {
+    const title = '<h5 class="fw-bold mb-3"><i class="bi bi-device-hdd me-2 text-accent"></i>Almacenamiento de la Raspberry</h5>';
+    if (!nodes?.length) {
+        return title + `<p class="text-muted mb-0">${failed
+            ? 'No se pudo consultar el almacenamiento. Se reintentará automáticamente.'
+            : 'Esperando la primera medición de la Raspberry.'}</p>`;
+    }
+    const rows = nodes.map(node => {
+        const measured = new Date(node.measured_at);
+        const validDate = Number.isFinite(measured.getTime());
+        const stale = node.stale || !validDate || Date.now() - measured.getTime() > 15 * 60 * 1000;
+        const date = validDate ? measured.toLocaleString('es-ES') : 'fecha no disponible';
+        const count = typeof node.recordings_count === 'number'
+            ? `${node.recordings_count.toLocaleString('es-ES')} archivos WAV` : 'Medición no disponible';
+        return `<div class="row g-3 align-items-center mb-2">
+            <div class="col-12 col-lg-4">
+                <strong>${escapeHtml(node.device_name)}</strong>
+                <p class="small ${stale || failed ? 'text-warning' : 'text-muted'} mb-0">${stale ? 'Sin actualización reciente · ' : ''}Última medición: ${escapeHtml(date)}</p>
+            </div>
+            <div class="col-6 col-lg-4">
+                <div class="text-muted small">Espacio libre</div>
+                <div class="fs-4 fw-bold">${formatStorageSize(node.free_bytes)}</div>
+                <div class="text-muted small">de ${formatStorageSize(node.total_bytes)} totales</div>
+            </div>
+            <div class="col-6 col-lg-4">
+                <div class="text-muted small">Grabaciones guardadas</div>
+                <div class="fs-4 fw-bold">${formatStorageSize(node.recordings_bytes)}</div>
+                <div class="text-muted small">${count}</div>
+            </div>
+        </div>`;
+    }).join('');
+    return title + rows + (failed ? '<p class="small text-warning mb-0">No se pudo consultar una actualización. Se conserva la última medición recibida.</p>' : '');
+}
+
+function getNodeStorageHTML() {
+    return `<section id="node-storage-panel" class="card p-3 mb-4" aria-live="polite">${nodeStorageContent(nodeStorageCache)}</section>`;
+}
+
+async function refreshNodeStorage() {
+    if (!document.getElementById('node-storage-panel') || nodeStorageLoading) return;
+    nodeStorageLoading = true;
+    let failed = false;
+    try {
+        const response = await fetch('/node/storage', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        if (!Array.isArray(payload.nodes)) throw new Error('Respuesta de almacenamiento inválida');
+        nodeStorageCache = payload.nodes;
+    } catch (error) {
+        failed = true;
+    } finally {
+        nodeStorageLoading = false;
+    }
+    const panel = document.getElementById('node-storage-panel');
+    if (panel) panel.innerHTML = nodeStorageContent(nodeStorageCache, failed);
+}
+
 function getDashboardHTML() {
     return `
     <section class="card kpi-panel mb-4 animate-fade-in">
@@ -2674,6 +2810,8 @@ function getDashboardHTML() {
             </div>
         </div>
     </section>
+
+    ${getNodeStorageHTML()}
 
     <div class="row g-4 mb-5">
         <div class="col-lg-7">
@@ -4246,6 +4384,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await initializeLocationContext();
         switchView('dashboard');
         setInterval(updateDashboard, 4000);
+        setInterval(refreshNodeStorage, 30000);
         setInterval(refreshLocationCatalog, 15000);
         if (new URLSearchParams(window.location.search).get('location_setup') === '1') {
             await openPhysicalLocationDialog({ startup: true });
