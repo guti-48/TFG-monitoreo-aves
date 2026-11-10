@@ -332,3 +332,4 @@ Write-Host "Tarea MediaMTX: $($Task.State)"
 Write-Host "RTSP publicacion: protegido en ${ServerHost}:8554"
 Write-Host "HLS interno: 127.0.0.1:8888"
 Write-Host "HLS del dashboard: /stream/hls/... (requiere sesion)"
+& (Join-Path $ScriptDir "install_recovery_task.ps1")

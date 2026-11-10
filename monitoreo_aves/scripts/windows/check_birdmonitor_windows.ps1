@@ -8,6 +8,14 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 $InstallScript = Join-Path $ProjectDir "scripts\windows\install_birdmonitor_windows.ps1"
 $RuntimeDir = Join-Path $env:LOCALAPPDATA "BirdMonitor"
+Write-Host "Supervision tras reposo:" -ForegroundColor Yellow
+$RecoveryTask = Get-ScheduledTask -TaskName "BirdMonitor Recovery" -ErrorAction SilentlyContinue
+if ($RecoveryTask) {
+    $RecoveryTask | Select-Object TaskName, State
+    $RecoveryTask | Get-ScheduledTaskInfo | Select-Object LastRunTime, LastTaskResult, NextRunTime
+} else {
+    Write-Host "Falta BirdMonitor Recovery: ejecuta scripts/windows/install_recovery_task.ps1 como administrador." -ForegroundColor Yellow
+}
 $StreamNodeName = if ($env:BIRDMONITOR_NODE_NAME) { $env:BIRDMONITOR_NODE_NAME } else { "birdmonitor" }
 $StreamName = if ($env:BIRDMONITOR_STREAM_PATH) { $env:BIRDMONITOR_STREAM_PATH } elseif ($env:BIRDMONITOR_STREAM_NAME) { $env:BIRDMONITOR_STREAM_NAME } else { "$StreamNodeName-audio" }
 $BackendPort = if ($env:BIRDMONITOR_BACKEND_PORT) { $env:BIRDMONITOR_BACKEND_PORT } else { "8000" }

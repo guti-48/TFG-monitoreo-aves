@@ -47,10 +47,16 @@ def configure(env_path, targets_path, name, url, token):
     targets = [t for t in targets if t["url"].rstrip("/") != target["url"]]
     targets.append(target)
     content = json.dumps(targets, indent=2) + "\n"
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=targets_path.parent) as check:
-        check.write(content)
-        check.flush()
-        load_targets(check.name)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=targets_path.parent, delete=False) as check:
+            temporary = Path(check.name)
+            check.write(content)
+        # Windows no permite reabrir un temporal pendiente de borrado y abierto.
+        load_targets(temporary)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     owner_stat = targets_path.stat() if targets_path.exists() else targets_path.parent.stat()
     atomic_write(targets_path, content, owner=(owner_stat.st_uid, owner_stat.st_gid))
     key = "BIRDMONITOR_INGEST_TARGETS_FILE"

@@ -226,3 +226,4 @@ if (-not $HealthOk -or -not $Stable -or $Task.State -ne "Running") {
 
 Write-Host "Backend BirdMonitor operativo y protegido." -ForegroundColor Green
 Write-Host "Health: http://127.0.0.1:$BackendPort/health"
+& (Join-Path $ScriptDir "install_recovery_task.ps1")

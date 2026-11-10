@@ -238,4 +238,27 @@ def test_configurator_keeps_existing_credentials_and_is_repeatable(tmp_path):
     assert f"BIRDMONITOR_NODE_API_TOKEN={MAC.token}" in env.read_text()
     assert "KEEP=unchanged" in env.read_text()
     assert env.read_text().count("BIRDMONITOR_INGEST_TARGETS_FILE=") == 1
-    assert targets.stat().st_mode & 0o777 == 0o600
+    assert set(tmp_path.iterdir()) == {env, targets}
+    if os.name != "nt":
+        assert targets.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("existing_targets", [False, True])
+def test_invalid_target_preserves_configuration_and_removes_temporary_file(tmp_path, existing_targets):
+    from hardware.raspberry_pi.tools.configure_delivery import configure
+    env = tmp_path / "birdmonitor.env"
+    original_env = f"BIRDMONITOR_SERVER_URL={MAC.url}\nBIRDMONITOR_NODE_API_TOKEN={MAC.token}\nKEEP=unchanged\n"
+    env.write_text(original_env)
+    targets = tmp_path / "ingest-targets.secret"
+    original_targets = json.dumps([{"name": MAC.name, "url": MAC.url, "token": MAC.token}])
+    if existing_targets:
+        targets.write_text(original_targets)
+    original_files = set(tmp_path.iterdir())
+
+    with pytest.raises(ValueError, match="Configuracion de destinos invalida"):
+        configure(env, targets, WINDOWS.name, "http://8.8.8.8:8000", WINDOWS.token)
+
+    assert env.read_text() == original_env
+    assert set(tmp_path.iterdir()) == original_files
+    if existing_targets:
+        assert targets.read_text() == original_targets

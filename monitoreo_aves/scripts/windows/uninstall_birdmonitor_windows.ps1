@@ -3,6 +3,8 @@
 
 Write-Host ""
 Write-Host "Eliminando tareas de BirdMonitor..." -ForegroundColor Cyan
+Stop-ScheduledTask -TaskName "BirdMonitor Recovery" -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "BirdMonitor Recovery" -Confirm:$false -ErrorAction SilentlyContinue
 
 Unregister-ScheduledTask -TaskName "BirdMonitor MediaMTX" -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "BirdMonitor Backend" -Confirm:$false -ErrorAction SilentlyContinue

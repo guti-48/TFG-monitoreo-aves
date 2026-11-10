@@ -24,9 +24,10 @@ BirdMonitor no necesita un backend en una nube pública:
 | Servidor | MediaMTX | Convierte el RTSP del nodo en HLS interno |
 | Navegador | Dashboard responsive | Cliente oficial para ordenador, tableta y móvil |
 
-En Windows, el instalador registra dos tareas ocultas al iniciar sesión:
-`BirdMonitor Backend` y `BirdMonitor MediaMTX`. No instala servicios de terceros
-ni abre puertos en el router.
+En Windows, el instalador registra las tareas ocultas `BirdMonitor Backend`
+y `BirdMonitor MediaMTX` al iniciar sesión, más `BirdMonitor Recovery`, que
+comprueba su disponibilidad cada minuto y permite recuperarlas tras el reposo
+o un fallo de arranque. No instala servicios de terceros ni abre puertos en el router.
 
 ## Funcionalidades
 
@@ -411,6 +412,49 @@ Si sospechas que también se filtró la contraseña de publicación, rota todo c
 ```
 
 Los logs están en `%LOCALAPPDATA%\BirdMonitor`.
+
+#### Recuperación tras reposo o pérdida de red (Windows)
+
+Para actualizar una instalación existente, ejecuta una vez **PowerShell como
+administrador**, desde la raíz del proyecto:
+
+```powershell
+.\scripts\windows\install_recovery_task.ps1
+```
+
+No reinicia los servicios que funcionan ni modifica datos, tokens o Firewall.
+La tarea `BirdMonitor Recovery` comprueba `/health` y los puertos de MediaMTX
+cada minuto, con el mismo usuario y sin elevar privilegios. Requiere dos
+comprobaciones fallidas y deja tres minutos de margen desde el último arranque.
+Si Tailscale aún no tiene su IP local, espera para recuperar el streaming;
+no reinicia Tailscale ni interpreta la ausencia de audio del nodo como un fallo.
+Solo puede detener procesos identificados como pertenecientes a esta instalación.
+Los errores HTTP de configuración no provocan reinicios continuos.
+
+Mientras Windows está suspendido, el servidor **no es accesible**. Esta mejora
+recupera los procesos al volver, no evita la suspensión ni despierta el equipo.
+La recuperación suele requerir 1–3 minutos una vez disponible la red, y puede
+tardar más si persiste un fallo de configuración. A diferencia de Windows, el
+lanzador macOS utiliza `caffeinate -s` para evitar el reposo automático conectado
+a corriente. Ambos requieren iniciar sesión con el usuario de la instalación.
+
+Diagnóstico, sin mostrar secretos:
+
+```powershell
+Get-ScheduledTask -TaskName "BirdMonitor*" | Select-Object TaskName, State
+curl.exe --max-time 5 http://127.0.0.1:8000/health
+Get-Content "$env:LOCALAPPDATA\BirdMonitor\recovery.log" -Tail 20
+```
+
+Si `/health` responde localmente pero no desde otro equipo, comprueba Tailscale,
+la dirección configurada y el Firewall: reiniciar el backend no arregla un enlace
+de red caído. El registro de recuperación rota a `recovery.log.1` al superar 1 MiB.
+Para mantenimiento, deshabilita `BirdMonitor Recovery` antes de parar las tareas;
+habilítala al terminar. También respeta tareas Backend/MediaMTX deshabilitadas.
+La desinstalación de Windows elimina la tarea de recuperación.
+
+Referencias técnicas: [disparadores de tareas de Windows](https://learn.microsoft.com/en-us/powershell/module/scheduledtasks/new-scheduledtasktrigger)
+y [repetición indefinida sin duración](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskschedulerschema-duration-repetitiontype-element).
 
 ### Raspberry Pi
 
