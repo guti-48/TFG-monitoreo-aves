@@ -23,6 +23,7 @@ os.environ["BIRDMONITOR_REPLICATION_PEERS_FILE"] = ""
 os.environ["BIRDMONITOR_INGEST_TARGETS_FILE"] = ""
 # Las pruebas no deben heredar direcciones de una instalacion real desde
 # backend/birdmonitor.env. Las URL se construyen con el host del TestClient.
+os.environ["BIRDMONITOR_STREAM_MODE"] = "push"
 os.environ["BIRDMONITOR_STREAM_BASE_URL"] = ""
 os.environ["BIRDMONITOR_STREAM_RTSP_BASE_URL"] = ""
 os.environ["BIRDMONITOR_NODE_NAME"] = "birdmonitor"

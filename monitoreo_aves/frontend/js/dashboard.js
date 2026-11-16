@@ -1096,7 +1096,18 @@ async function refreshLiveStreamControlStatus() {
 
         if (hlsLabel) hlsLabel.textContent = hlsUrl;
 
-        if (data.status_stale) {
+        const independent = data.stream_mode === 'pull';
+        document.querySelectorAll('.live-global-control, [onclick="setLiveStreamEnabled(true)"]').forEach(el => {
+            el.hidden = independent;
+        });
+        if (independent) {
+            const player = document.getElementById('live-audio-player');
+            if (!player || !player.getAttribute('src') && !hlsInstance) {
+                setLiveStreamStatus(data.connection_allowed ? 'checking' : 'offline',
+                    data.connection_allowed ? 'Escucha independiente' : 'Sin fuente configurada');
+                setLiveStreamMessage(data.detail);
+            }
+        } else if (data.status_stale) {
             const age = formatLiveStreamStatusAge(data.last_status_age_seconds);
             setLiveStreamStatus('offline', 'Nodo sin conexión');
             setLiveStreamMessage(
@@ -1135,6 +1146,12 @@ function formatLiveStreamStatusAge(value) {
 
 async function setLiveStreamEnabled(enabled) {
     try {
+        const current = await fetchLiveStreamControlStatus();
+        if (current.stream_mode === 'pull') {
+            if (enabled) await initLiveStreamPlayer(true);
+            else stopLiveStreamPlayer();
+            return;
+        }
         setLiveStreamStatus('checking', enabled ? 'Activando...' : 'Deteniendo...');
         setLiveStreamMessage(enabled
             ? 'Solicitando a la Raspberry que arranque birdstream.service...'
@@ -1301,7 +1318,7 @@ async function initLiveStreamPlayer(autoplay = false) {
             return;
         }
 
-        if (!control.playback_ready) {
+        if (!(control.stream_mode === 'pull' ? control.connection_allowed : control.playback_ready)) {
             setLiveStreamStatus('warning', control.actual_running ? 'Preparando HLS...' : 'Stream no disponible');
             setLiveStreamMessage(
                 control.detail || 'El flujo HLS todavía no está listo para reproducirse.',
@@ -1325,6 +1342,11 @@ async function initLiveStreamPlayer(autoplay = false) {
         startLiveSpectrum(audio);
     };
     audio.onplaying = () => setLiveStreamStatus('online', 'En directo');
+    audio.onwaiting = () => setLiveStreamStatus('warning', 'Esperando audio');
+    audio.onstalled = () => {
+        setLiveStreamStatus('warning', 'Audio interrumpido');
+        setLiveStreamMessage('No llegan nuevos datos de audio. Comprueba la conexión con la Raspberry.', true);
+    };
     audio.onpause = () => setLiveSpectrumState('Pausado');
     audio.onwaiting = () => {
         setTimeout(() => moveLivePlayerToEdge(audio), 500);
@@ -1400,10 +1422,12 @@ async function initLiveStreamPlayer(autoplay = false) {
             }
         });
 
+        let networkRetries = 0;
+        hlsInstance.on(HlsPlayer.Events.FRAG_BUFFERED, () => { networkRetries = 0; });
         hlsInstance.on(HlsPlayer.Events.ERROR, (_, data) => {
             if (!data || !data.fatal) return;
 
-            if (data.type === HlsPlayer.ErrorTypes.NETWORK_ERROR && hlsInstance) {
+            if (data.type === HlsPlayer.ErrorTypes.NETWORK_ERROR && hlsInstance && networkRetries++ < 3) {
                 setLiveStreamStatus('warning', 'Reconectando...');
                 setLiveStreamMessage('Se perdió la conexión con el directo. Reintentando...');
                 hlsInstance.startLoad();
@@ -1417,7 +1441,7 @@ async function initLiveStreamPlayer(autoplay = false) {
             }
 
             setLiveStreamStatus('offline', 'Stream no disponible');
-            setLiveStreamMessage('No se pudo cargar el HLS protegido. Comprueba la red y la sesión.', true);
+            setLiveStreamMessage('No llega audio desde la Raspberry. Comprueba el micrófono, la red y las credenciales del origen; pulsa Escuchar para reintentar.', true);
 
             if (hlsInstance) hlsInstance.destroy();
             hlsInstance = null;

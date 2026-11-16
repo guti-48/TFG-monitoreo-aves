@@ -74,6 +74,8 @@ else
   exit 1
 fi
 
+"$PYTHON_BIN" "$PROJECT_DIR/scripts/independent_stream.py" render --env "$BACKEND_ENV" --template "$STREAM_CONFIG_TEMPLATE" --out "$STREAM_CONFIG"
+
 cleanup() {
   trap - EXIT INT TERM
   if [[ -n "${CAFFEINATE_PID:-}" ]]; then

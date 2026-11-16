@@ -41,3 +41,6 @@ tools/mediamtx/*.tar.gz
 .codex/
 AGENTS.MD
 graphify-out/
+stream-private/
+*.before-independent
+mobile/

@@ -250,6 +250,10 @@ def grabacionAudio(duration, fs, device_index):
     Graba audio mono durante `duration` segundos a frecuencia `fs`.
     Con 60s BirdNET analiza ~40 ventanas solapadas.
     """
+    if sys.platform.startswith("linux") and not MIC_DEVICE:
+        from .bounded_capture import capture
+        raw = capture(duration, fs, os.getenv("BIRDMONITOR_CAPTURE_PCM", "plug:micshared"))
+        return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
     if device_index is None:
         raise RuntimeError("No hay microfono de entrada disponible.")
 

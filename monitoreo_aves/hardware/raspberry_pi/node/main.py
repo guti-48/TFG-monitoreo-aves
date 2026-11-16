@@ -1,3 +1,5 @@
+import os
+import sys
 import time
 from datetime import datetime
 from .audio_processing import (
@@ -120,7 +122,7 @@ def main():
                 filenameWAV = f"{filename}.wav"
 
                 # Grabación (60 segundos)
-                if device_index is None:
+                if device_index is None and not (sys.platform.startswith("linux") and not os.getenv("BIRDMONITOR_MIC_DEVICE", "").strip()):
                     print("Modo centinela: no hay micrófono disponible, se reintentara en el siguiente ciclo.")
                     device_index = resolverDispositivoEntrada()
                     continue
@@ -225,7 +227,8 @@ def main():
             
             except Exception as e:
                 print(f"Error controlado en el ciclo principal (el nodo continuara en el siguiente ciclo): {e}")
-                device_index = resolverDispositivoEntrada()
+                if not (sys.platform.startswith("linux") and not os.getenv("BIRDMONITOR_MIC_DEVICE", "").strip()):
+                    device_index = resolverDispositivoEntrada()
             finally:
                 report_storage()
                 esperarSiguienteCiclo(inicio_ciclo)

@@ -166,16 +166,10 @@ if (
 ) {
     throw "No se encontro una unica directiva rtspAddress en MediaMTX."
 }
-$RuntimeConfigContent = [regex]::Replace(
-    $SecureConfigContent,
-    $RtspAddressPattern,
-    "rtspAddress: ${ServerHost}:8554"
-)
-[IO.File]::WriteAllText(
-    $RuntimeMediaMtxConfig,
-    $RuntimeConfigContent,
-    (New-Object Text.UTF8Encoding($false))
-)
+$RenderPython = Join-Path $ProjectDir "venv\Scripts\python.exe"
+& $RenderPython (Join-Path $ProjectDir "scripts\independent_stream.py") render --env $BackendEnv --template $SecureMediaMtxConfig --out $RuntimeMediaMtxConfig
+if ($LASTEXITCODE -ne 0) { throw "No se pudo preparar el receptor de audio" }
+
 $MediaMtxConfig = $RuntimeMediaMtxConfig
 
 $MediaMtxStartScript = Join-Path $RuntimeDir "start_mediamtx.ps1"

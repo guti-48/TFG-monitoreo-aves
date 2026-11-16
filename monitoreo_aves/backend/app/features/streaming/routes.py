@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from threading import Lock
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from ...core.config import (
@@ -196,6 +196,20 @@ def _apply_stream_urls(current: dict, request: Request | None = None) -> dict:
     current["page_url"] = f"{base_url}/{stream_path}/"
     current["rtsp_url"] = f"{rtsp_base_url}/{stream_path}"
 
+    # Pull mode has no remote start/stop command and no dependency on a
+    # supervisor reporting to this particular laptop. Actual readiness is
+    # established by the player receiving advancing HLS fragments.
+    if os.getenv("BIRDMONITOR_STREAM_MODE", "push") == "pull":
+        configured_node = os.getenv("BIRDMONITOR_STREAM_SOURCE_NODE", "birdmonitor")
+        allowed = node_name == configured_node
+        current.update(stream_mode="pull", connection_allowed=allowed,
+                       stream_enabled=False, actual_running=False,
+                       hls_available=False, playback_ready=False,
+                       status_stale=False, last_status_age_seconds=None,
+                       detail=("Escucha independiente disponible; conecta el reproductor"
+                               if allowed else "Este nodo no tiene una fuente de audio configurada"))
+        return current
+
     status_stale, status_age = _status_freshness(current.get("last_status_at"))
     reported_running = bool(current.get("actual_running", False))
     reported_hls_available = bool(current.get("hls_available", False))
@@ -277,6 +291,8 @@ def set_stream_control(payload: StreamControlUpdate, request: Request):
     El dashboard llama a este endpoint.
     La Raspberry lo consulta mediante streamSupervisor.py.
     """
+    if os.getenv("BIRDMONITOR_STREAM_MODE", "push") == "pull":
+        raise HTTPException(status_code=409, detail="La escucha es local a cada reproductor; no hay control global")
     with stream_lock:
         state = _load_stream_state()
 
