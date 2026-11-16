@@ -832,7 +832,7 @@ function switchView(viewName) {
 
     ['btn-dashboard', 'btn-live', 'btn-nodes', 'btn-history', 'btn-science', 'btn-daily'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.className = 'nav-link';
+        if (el) { el.className = 'nav-link'; el.removeAttribute('aria-current'); }
     });
 
     const map = {
@@ -845,7 +845,7 @@ function switchView(viewName) {
     };
 
     const titleMap = {
-        dashboard: 'Monitorización Global',
+        dashboard: 'Resumen',
         live: 'Escucha en directo',
         history: 'Histórico de detecciones',
         nodes: 'Red de Nodos',
@@ -854,7 +854,7 @@ function switchView(viewName) {
     };
 
     const active = document.getElementById(map[viewName]);
-    if (active) active.className = 'nav-link active';
+    if (active) { active.className = 'nav-link active'; active.setAttribute('aria-current', 'page'); }
 
     safeSetText('topbar-view-title', titleMap[viewName] || 'Monitorización Global');
 
@@ -862,7 +862,7 @@ function switchView(viewName) {
     if (!container) return;
 
     container.className = 'd-flex flex-column flex-grow-1 w-100';
-    if (viewName === 'history') container.classList.add('view-history');
+    container.classList.add(`view-${viewName}`);
 
     if (viewName === 'dashboard') { container.innerHTML = getDashboardHTML(); updateDashboard(); refreshNodeStorage(); }
     else if (viewName === 'live') renderLiveStreamView(container);
@@ -881,46 +881,73 @@ function renderLiveStreamView(container) {
         : 'La escucha en directo pertenece al despliegue activo del nodo.';
 
     container.innerHTML = `
-        <div class="row justify-content-center animate-fade-in">
-            <div class="col-12 col-xl-9">
-                <div class="alert alert-info small mb-3">
-                    <i class="bi bi-broadcast-pin me-2"></i>${liveScopeNotice}
-                    La selección histórica no modifica la fuente de audio en vivo.
+        <div class="live-workspace animate-fade-in">
+            <header class="page-intro live-page-intro">
+                <div>
+                    <p class="section-eyebrow">Observación acústica</p>
+                    <h1>Escucha en directo</h1>
+                    <p>${activeSite ? escapeHtml(activeSite.name) : 'Estación activa'} · El sonido del entorno, desde este dispositivo.</p>
                 </div>
-                <div class="card live-stream-card live-console">
-                    <div class="card-body">
-                        <div class="live-console-head">
-                            <div class="live-stream-hero">
-                                <div class="live-stream-icon">
-                                    <i class="bi bi-soundwave"></i>
-                                </div>
-                                <div class="min-w-0">
-                                    <p class="text-muted small text-uppercase fw-bold mb-1">Escucha en directo</p>
-                                    <h4 class="fw-bold text-white mb-1"><span id="live-stream-title">${escapeHtml(selectedStreamPath)}</span></h4>
-                                    <p class="text-muted mb-0 small">
-                                        <span id="live-hls-url" class="font-monospace">${escapeHtml(getCurrentHlsUrl())}</span>
-                                    </p>
-                                </div>
-                            </div>
-                            <span id="live-stream-status" class="badge bg-secondary px-3 py-2">
-                                <i class="bi bi-circle-fill me-1"></i>Consultando...
-                            </span>
+                <span id="live-stream-status" class="badge bg-secondary px-3 py-2" role="status">
+                    <i class="bi bi-circle-fill me-1" aria-hidden="true"></i>Consultando...
+                </span>
+            </header>
+            <section class="card live-stream-card live-console" aria-label="Reproductor de la estación">
+                <div class="card-body">
+                    <div class="live-listening-layout">
+                        <div class="live-controls-column">
+                            <p class="section-eyebrow">Fuente de audio</p>
+                            <label for="live-node-select" class="form-label">Estación de escucha</label>
+                            <select id="live-node-select" class="form-select" onchange="handleLiveNodeChange(this.value)">
+                                <option value="${escapeHtml(selectedStreamNodeName)}">${escapeHtml(selectedStreamNodeName)}</option>
+                            </select>
+                            <p class="live-source-caption">Señal <span id="live-stream-title">${escapeHtml(selectedStreamPath)}</span></p>
+                        <div class="live-actions">
+                            <button class="btn btn-outline-secondary" onclick="setLiveStreamEnabled(true)">
+                                <i class="bi bi-broadcast me-2"></i>Iniciar emisión
+                            </button>
+                            <button class="btn btn-success" onclick="initLiveStreamPlayer(true)">
+                                <i class="bi bi-headphones me-2"></i>Escuchar en este dispositivo
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
+                                <i class="bi bi-stop-circle me-2"></i>Dejar de escuchar
+                            </button>
+
                         </div>
 
-                        <div class="row g-2 mb-3">
-                            <div class="col-md-6">
-                                <label for="live-node-select" class="form-label text-muted small mb-1">Nodo</label>
-                                <select id="live-node-select" class="form-select bg-dark text-white border-secondary" onchange="handleLiveNodeChange(this.value)">
-                                    <option value="${escapeHtml(selectedStreamNodeName)}">${escapeHtml(selectedStreamNodeName)}</option>
-                                </select>
+
+                            <div class="live-audio-panel">
+                                <audio id="live-audio-player" class="w-100" aria-label="Audio en directo de la estación" controls preload="none" playsinline crossorigin="anonymous"></audio>
                             </div>
-                            <div class="col-md-6">
-                                <label for="live-stream-path-input" class="form-label text-muted small mb-1">Path MediaMTX</label>
+                            <p id="live-stream-message" role="status" aria-live="polite" class="live-feedback">
+                                Consultando la disponibilidad de la estación…
+                            </p>
+                            <p class="live-listening-note"><i class="bi bi-headphones" aria-hidden="true"></i>Los controles afectan solo a la escucha en este dispositivo.</p>
+                        </div>
+                        <figure class="live-visual-column">
+                            <div class="live-spectrum-panel">
+                                <div class="live-spectrum-head">
+                                    <h2>Espectro en directo</h2>
+                                    <small id="live-spectrum-state">Esperando audio</small>
+                                </div>
+                                <canvas id="live-spectrum-canvas" width="900" height="300" role="img" aria-label="Evolución visual de las frecuencias del audio recibido"></canvas>
+                                <div class="live-spectrum-caption"><span>Historial visual</span><span>Sonido más reciente →</span></div>
+                            </div>
+                            <figcaption>La visualización se genera con el audio recibido en este navegador. No identifica especies.</figcaption>
+                        </figure>
+                    </div>
+                        <details class="live-technical-details">
+                            <summary>Conexión y reproductores externos</summary>
+                            <div class="live-technical-body">
+                                <p class="text-muted small">Usa estas opciones para abrir la señal en otro reproductor o configurar una ruta personalizada.</p>
+                                                            <div class="live-path-control">
+                                <label for="live-stream-path-input" class="form-label text-muted small mb-1">Ruta de la señal (MediaMTX)</label>
                                 <input id="live-stream-path-input" class="form-control bg-dark text-white border-secondary" value="${escapeHtml(selectedStreamPath)}" onchange="handleLiveStreamPathChange(this.value)">
                             </div>
-                        </div>
-
-                        <div class="live-client-access">
+                                                                    <p class="text-muted mb-0 small">
+                                        <span id="live-hls-url" class="font-monospace">${escapeHtml(getCurrentHlsUrl())}</span>
+                                    </p>
+                                                        <div class="live-client-access">
                             <div class="live-client-access-item">
                                 <span><i class="bi bi-phone me-1"></i>Navegador móvil · HLS</span>
                                 <code id="live-client-hls-url">${escapeHtml(getCurrentHlsUrl())}</code>
@@ -931,43 +958,12 @@ function renderLiveStreamView(container) {
                             </div>
                         </div>
 
-                        <div class="live-player-shell">
-                            <div class="audio-panel live-audio-panel">
-                                <audio id="live-audio-player" class="w-100" controls preload="none" playsinline crossorigin="anonymous"></audio>
-                            </div>
 
-                            <div class="live-spectrum-panel">
-                                <div class="live-spectrum-head">
-                                    <span><i class="bi bi-soundwave me-1"></i>Espectro en directo</span>
-                                    <small id="live-spectrum-state">Esperando audio</small>
-                                </div>
-                                <canvas id="live-spectrum-canvas" width="900" height="220"></canvas>
-                            </div>
-                        </div>
-
-                        <div class="live-actions">
-                            <button class="btn btn-success" onclick="setLiveStreamEnabled(true)">
-                                <i class="bi bi-broadcast me-2"></i>Iniciar emisión
-                            </button>
-                            <button class="btn btn-outline-info" onclick="initLiveStreamPlayer(true)">
-                                <i class="bi bi-headphones me-2"></i>Escuchar en este dispositivo
-                            </button>
-                            <button class="btn btn-outline-secondary" onclick="stopLiveStreamPlayer()">
-                                <i class="bi bi-stop-circle me-2"></i>Desconectar este dispositivo
-                            </button>
-                            <button class="btn btn-outline-primary" onclick="copyLiveStreamUrl('rtsp')">
+                                                            <button class="btn btn-outline-secondary" onclick="copyLiveStreamUrl('rtsp')">
                                 <i class="bi bi-clipboard me-2"></i>Copiar URL para VLC
                             </button>
-                        </div>
-
-                        <p id="live-stream-message" class="text-muted small mb-0 mt-3">
-                            Inicia la emisión si está detenida y después conecta este reproductor.
-                        </p>
-
-                        <div class="live-mini-note">
-                            La Raspberry publica una sola señal. El servidor la distribuye a todos los móviles,
-                            navegadores y VLC conectados; desconectar este dispositivo no afecta a los demás.
-                        </div>
+                            </div>
+                        </details>
 
                         <details class="live-global-control">
                             <summary>Control global de la estación</summary>
@@ -976,9 +972,10 @@ function renderLiveStreamView(container) {
                                 <i class="bi bi-power me-2"></i>Detener emisión para todos
                             </button>
                         </details>
-                    </div>
+
                 </div>
-            </div>
+            </section>
+            <p class="live-context-note"><i class="bi bi-geo-alt me-1" aria-hidden="true"></i>${liveScopeNotice} La selección histórica no cambia la fuente del directo.</p>
         </div>`;
 
     populateLiveNodeSelector().finally(() => refreshLiveStreamControlStatus());
@@ -2794,6 +2791,14 @@ async function refreshNodeStorage() {
 
 function getDashboardHTML() {
     return `
+    <header class="page-intro">
+        <div>
+            <p class="section-eyebrow">Observación acústica</p>
+            <h1>El entorno, a través del sonido</h1>
+            <p>${escapeHtml(locationLabel())} · Detecciones y actividad de la estación</p>
+        </div>
+        <button class="btn btn-outline-secondary" onclick="switchView('live')"><i class="bi bi-headphones me-2" aria-hidden="true"></i>Escucha en directo</button>
+    </header>
     <section class="card kpi-panel mb-4 animate-fade-in">
         <div class="kpi-grid">
             <div class="kpi-item kpi-item-success">
@@ -2808,7 +2813,7 @@ function getDashboardHTML() {
             <div class="kpi-item kpi-item-earth">
                 <div class="kpi-content">
                     <div>
-                        <p class="text-muted small text-uppercase mb-1 fw-bold">Especie Dominante</p>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Especie más detectada</p>
                         <h4 class="fw-bold mb-0 fs-5 text-truncate" id="top-species">-</h4>
                     </div>
                     <div class="icon-box bg-earth-subtle text-earth"><i class="bi bi-trophy-fill fs-3"></i></div>
@@ -2817,7 +2822,7 @@ function getDashboardHTML() {
             <div class="kpi-item kpi-item-info">
                 <div class="kpi-content">
                     <div>
-                        <p class="text-muted small text-uppercase mb-1 fw-bold">Última Actividad</p>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Última detección</p>
                         <h4 class="fw-bold mb-0 fs-5" id="last-activity">--:--</h4>
                     </div>
                     <div class="icon-box bg-info-subtle text-info"><i class="bi bi-clock-history fs-3"></i></div>
@@ -2826,7 +2831,7 @@ function getDashboardHTML() {
             <div class="kpi-item kpi-item-secondary" id="noise-card">
                 <div class="kpi-content">
                     <div>
-                        <p class="text-muted small text-uppercase mb-1 fw-bold">Nivel de Ruido</p>
+                        <p class="text-muted small text-uppercase mb-1 fw-bold">Ruido del entorno</p>
                         <h4 class="fw-bold mb-0 fs-5" id="noise-metric">Calculando...</h4>
                     </div>
                     <div class="icon-box bg-secondary-subtle" id="noise-icon-box"><i class="bi bi-boombox fs-3" id="noise-icon"></i></div>
@@ -2835,9 +2840,8 @@ function getDashboardHTML() {
         </div>
     </section>
 
-    ${getNodeStorageHTML()}
 
-    <div class="row g-4 mb-5">
+    <div class="row g-4 mb-4">
         <div class="col-lg-7">
             <div class="card shadow-sm border-0 bg-dark overflow-hidden dashboard-live-card" style="min-height:420px;">
                 <div class="card-body p-0 d-flex flex-column h-100" id="live-feed-container">
@@ -2852,7 +2856,7 @@ function getDashboardHTML() {
         <div class="col-lg-5">
             <div class="card h-100 shadow-sm border-0 chart-card">
                 <div class="card-header bg-transparent border-0 py-3">
-                    <h5 class="fw-bold m-0"><i class="bi bi-pie-chart-fill me-2 text-accent"></i>Distribución de Especies</h5>
+                    <h5 class="fw-bold m-0"><i class="bi bi-pie-chart-fill me-2 text-accent"></i>Distribución de especies</h5>
                 </div>
                 <div class="card-body species-chart-body">
                     <div class="species-chart-canvas-wrap">
@@ -2888,7 +2892,7 @@ function getDashboardHTML() {
         <div class="col-12">
             <div class="card shadow-sm border-0 bg-dark recent-table-card">
                 <div class="card-header bg-transparent border-0 py-3">
-                    <h5 class="fw-bold text-white m-0"><i class="bi bi-list-check me-2 text-accent"></i>Registro Reciente</h5>
+                    <h5 class="fw-bold text-white m-0"><i class="bi bi-list-check me-2 text-accent"></i>Detecciones recientes</h5>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-dark table-hover align-middle mb-0">
@@ -2896,7 +2900,7 @@ function getDashboardHTML() {
                             <tr>
                                 <th class="ps-4">Hora</th>
                                 <th>Especie</th>
-                                <th>Confianza</th>
+                                <th title="Puntuación del modelo; no equivale a una identificación validada">Puntuación</th>
                                 <th>Revisión</th>
                                 <th>Acciones</th>
                                 <th>Audio</th>
@@ -2908,7 +2912,8 @@ function getDashboardHTML() {
                 </div>
             </div>
         </div>
-    </div>`;
+    </div>
+    <div class="station-summary mt-4">${getNodeStorageHTML()}</div>`;
 }
 
 function csvCell(value) {
@@ -4381,6 +4386,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function toggleMenu() {
         sidebar.classList.toggle('show-mobile');
         overlay.classList.toggle('show');
+        menuToggle?.setAttribute('aria-expanded', String(sidebar.classList.contains('show-mobile')));
     }
 
     if (menuToggle) menuToggle.addEventListener('click', toggleMenu);
@@ -4391,6 +4397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (window.innerWidth <= 768) {
                 sidebar.classList.remove('show-mobile');
                 overlay.classList.remove('show');
+                menuToggle?.setAttribute('aria-expanded', 'false');
             }
         });
     });

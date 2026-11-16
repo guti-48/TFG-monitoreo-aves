@@ -12,10 +12,11 @@
     <link rel="icon" type="image/png" href="assets/birdmonitor-ostrero.png">
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=1031">
+    <link rel="stylesheet" href="css/style.css?v=1033">
 </head>
 
 <body>
+    <a class="skip-link" href="#main-content">Saltar al contenido</a>
     <div id="app-shell">
 
         <aside id="sidebar-wrapper">
@@ -24,13 +25,14 @@
                 <span class="brand-icon" aria-hidden="true">
                     <img src="assets/birdmonitor-ostrero.png" alt="">
                 </span>
-                <div class="brand-text">BirdMonitor</div>
+                <div class="brand-text">BirdMonitor<small>Observatorio acústico</small></div>
             </div>
 
-            <nav class="sidebar-nav">
+            <nav class="sidebar-nav" aria-label="Navegación principal">
+                <span class="nav-section-label">Observación</span>
                 <a href="#" id="btn-dashboard" class="nav-link active" onclick="switchView('dashboard'); return false;">
                     <i class="bi bi-activity"></i>
-                    <span>Tiempo Real</span>
+                    <span>Resumen</span>
                 </a>
                 <a href="#" id="btn-live" class="nav-link" onclick="switchView('live'); return false;">
                     <i class="bi bi-broadcast-pin"></i>
@@ -44,12 +46,13 @@
                     <i class="bi bi-bar-chart-line-fill"></i>
                     <span>Análisis ecológico</span>
                 </a>
+                <span class="nav-section-label">Estación</span>
                 <a href="#" id="btn-nodes" class="nav-link" onclick="switchView('nodes'); return false;">
                     <i class="bi bi-hdd-network"></i>
                     <span>Nodos</span>
                 </a>
-                <a href="#" id="btn-daily" class="nav-link" onclick="switchView('daily')">
-                    <i class="bi bi-calendar-check me-2"></i>Informe diario
+                <a href="#" id="btn-daily" class="nav-link" onclick="switchView('daily'); return false;">
+                    <i class="bi bi-calendar-check"></i><span>Informe diario</span>
                 </a>
             </nav>
 
@@ -70,7 +73,7 @@
             <!-- Topbar -->
             <header id="topbar">
                 <div class="topbar-left d-flex align-items-center">
-                    <button id="mobile-menu-toggle" class="btn text-white p-0 me-3 d-md-none" style="border: none; background: transparent;">
+                    <button id="mobile-menu-toggle" aria-label="Abrir navegación" aria-controls="sidebar-wrapper" aria-expanded="false" class="btn text-white p-0 me-3 d-md-none" style="border: none; background: transparent;">
                         <i class="bi bi-list fs-1"></i>
                     </button>
                     <span id="topbar-view-title" class="fw-bold">Monitorización global</span>
@@ -102,12 +105,12 @@
                 </div>
             </header>
             <!-- Contenido dinámico -->
-            <main id="main-content"></main>
+            <main id="main-content" tabindex="-1"></main>
 
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"></script>
-    <script src="js/dashboard.js?v=1050"></script>
+    <script src="js/dashboard.js?v=1052"></script>
 </body>
 </html>
