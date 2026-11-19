@@ -70,3 +70,83 @@
   /* Fila de aviso ("no hay datos"): sin rejilla ni etiqueta. */
   #main-content table tbody tr:has(td[colspan]) { display: block; }
 }
+
+/* Visor de espectrograma (lo crea mobile.js). */
+#spectro-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: #0a120e;
+  touch-action: none;
+}
+#spectro-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: #fff;
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+.spectro-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 8px);
+  right: calc(env(safe-area-inset-right) + 8px);
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font-size: 1.1rem;
+}
+.spectro-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  margin: 0;
+  color: rgba(255, 255, 255, .72);
+  font-size: .8rem;
+  text-align: center;
+  pointer-events: none;
+}
+@media (max-width: 767.98px), (orientation: landscape) and (max-height: 500px) {
+  #main-content .spectrogram-img { cursor: zoom-in; }
+}
+
+/* Barra de navegacion inferior (la crea mobile.js). */
+#bottom-nav { display: none; }
+@media (max-width: 767.98px) {
+  #app-shell { padding-bottom: 0; }
+  #bottom-nav {
+    display: flex;
+    flex-shrink: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-subtle);
+  }
+  #bottom-nav button {
+    flex: 1;
+    min-width: 0;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: .68rem;
+    font-weight: 600;
+  }
+  #bottom-nav button i { font-size: 1.25rem; line-height: 1; }
+  #bottom-nav button[aria-current="page"] { color: var(--green-strong); }
+}
