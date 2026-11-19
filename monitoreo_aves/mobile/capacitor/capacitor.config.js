@@ -7,7 +7,9 @@ module.exports = {
   appName: 'BirdMonitor',
   webDir: 'www',
   // Los margenes seguros los gestiona mobile.css con env(safe-area-inset-*); el fondo coincide con --bg-base.
-  ios: { contentInset: 'never', backgroundColor: '#f4f6f1' },
+  // La pantalla de arranque se oculta cuando el dashboard carga (mobile.js); 4 s como maximo si no llega a cargar.
+  plugins: { SplashScreen: { launchAutoHide: true, launchShowDuration: 4000, backgroundColor: '#f0ebe2', showSpinner: false } },
+  ios: { contentInset: 'never', backgroundColor: '#f0ebe2' },
   server: {
     url,
     // shortcut: HTTP en claro solo mientras no haya HTTPS; quitar al forzar HTTPS.

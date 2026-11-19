@@ -6,7 +6,7 @@ const NOISE_MAP = {
     'Human vocal': 'noise-placeholder.svg',
     'Motor': 'noise-placeholder.svg',
 };
-const PLACEHOLDER_IMG = ASSETS_PATH + 'birdmonitor-ostrero.png';
+const PLACEHOLDER_IMG = ASSETS_PATH + 'birdmonitor-ostrero.png?v=2';
 
 // HLS se consume por el proxy autenticado del backend. MediaMTX permanece
 // accesible solo desde el propio servidor.

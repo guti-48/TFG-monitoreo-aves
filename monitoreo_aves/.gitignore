@@ -15,7 +15,7 @@ secrets/
 *.wav
 *.png
 !frontend/assets/birdmonitor-ostrero.png
-!mobile/birdmonitor_app/assets/birdmonitor-ostrero.png
+!mobile/capacitor/**/*.png
 *.jpg
 *.db
 *.sqlite3
