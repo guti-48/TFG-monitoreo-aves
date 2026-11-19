@@ -1,0 +1,72 @@
+/* Capa movil: solo aplica en movil (vertical y horizontal). Escritorio no cambia. */
+/* Margenes seguros (notch, isla dinamica, barra inferior). env() vale 0 en escritorio. */
+#app-shell {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+#topbar {
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+
+#sidebar-wrapper { padding-top: env(safe-area-inset-top); }
+
+@media (max-width: 767.98px) {
+  #topbar { height: auto; padding-top: calc(12px + env(safe-area-inset-top)); }
+}
+
+/* Tablas -> tarjetas en movil vertical y en movil horizontal (alto <= 500 px). */
+@media (max-width: 767.98px), (orientation: landscape) and (max-height: 500px) {
+  /* style.css deja #main-content.view-history con overflow:hidden; en movil scrollea la pagina. */
+  #main-content.view-history { overflow-y: auto; }
+  /* Tablas -> tarjetas: cada fila es una tarjeta con etiqueta + valor (data-label lo pone mobile.js). */
+  #main-content .table-responsive,
+  #main-content .table-container { overflow: visible; max-height: none; }
+  #main-content table,
+  #main-content table tbody { display: block; width: 100%; }
+  #main-content .history-card-container,
+  #main-content .history-card-container .card-body {
+    flex: none !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+  #main-content.view-history > .history-card-container { flex-shrink: 0; }
+  #main-content table thead { display: none; }
+  #main-content table tbody tr {
+    display: grid;
+    /* 2 columnas en vertical, 3-4 en horizontal. */
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px 14px;
+    margin: 0 12px 12px;
+    padding: 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+  }
+  #main-content table tbody td {
+    display: block;
+    min-width: 0;
+    /* !important: style.css fija padding y borde de .table-dark td con !important. */
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent;
+    text-align: left !important;
+    overflow-wrap: anywhere;
+  }
+  #main-content table tbody td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-secondary);
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  /* La ultima columna (texto largo o ID) ocupa toda la tarjeta; los botones comparten fila. */
+  #main-content table tbody td:last-child { grid-column: 1 / -1; }
+  #main-content table tbody td .btn { min-height: 44px; }
+  /* Fila de aviso ("no hay datos"): sin rejilla ni etiqueta. */
+  #main-content table tbody tr:has(td[colspan]) { display: block; }
+}

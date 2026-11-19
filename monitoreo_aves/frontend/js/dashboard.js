@@ -2533,10 +2533,10 @@ async function renderHistoryView(container) {
         });
         const data = await response.json();
         if (requestedScope !== locationScopeKey()) return;
-        const sortedData = data.reverse();
+        const sortedData = [...data].sort((x, y) => new Date(y.timestamp) - new Date(x.timestamp));
         cacheDetections(sortedData);
-        let rowsHtml = '';
-        sortedData.forEach(d => {
+        const HISTORY_PAGE_SIZE = 50;
+        const buildRow = (d) => {
             const timeDate = new Date(d.timestamp);
             const dateStr = timeDate.toLocaleDateString();
             const timeStr = timeDate.toLocaleTimeString();
@@ -2546,7 +2546,7 @@ async function renderHistoryView(container) {
             let icon = '<i class="bi bi-music-note-beamed text-success"></i>';
             if (d.species.includes("Human") || d.species.includes("Motor") || d.species.includes("Noise"))
                 icon = '<i class="bi bi-boombox text-warning"></i>';
-                rowsHtml += `
+                return `
                 <tr>
                     <td class="text-white-50 small">${d.id}</td>
                     <td>
@@ -2577,7 +2577,8 @@ async function renderHistoryView(container) {
                     <td>${buildReviewActions(d)}</td>
                     <td>${buildAudioEvidenceButton(d)}</td>
                 </tr>`;
-        });
+        };
+        const rowsHtml = sortedData.slice(0, HISTORY_PAGE_SIZE).map(buildRow).join('');
         container.innerHTML = `
             <div class="row mb-4 animate-fade-in">
                 <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -2619,9 +2620,24 @@ async function renderHistoryView(container) {
                                 </tr>`}</tbody>
                         </table>
                     </div>
+                    <div class="text-center py-3"><button type="button" id="history-load-more" class="btn btn-outline-success" hidden></button></div>
                 </div>
             </div>`;
-    } catch (e) {
+        const tbody = container.querySelector('.table-container tbody');
+        const moreBtn = container.querySelector('#history-load-more');
+        let shown = Math.min(HISTORY_PAGE_SIZE, sortedData.length);
+        const syncMoreButton = () => {
+            const left = sortedData.length - shown;
+            moreBtn.hidden = left <= 0;
+            moreBtn.textContent = `Cargar más (${left} restantes)`;
+        };
+        moreBtn.addEventListener('click', () => {
+            tbody.insertAdjacentHTML('beforeend', sortedData.slice(shown, shown + HISTORY_PAGE_SIZE).map(buildRow).join(''));
+            shown = Math.min(shown + HISTORY_PAGE_SIZE, sortedData.length);
+            syncMoreButton();
+        });
+        syncMoreButton();
+        } catch (e) {
         container.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`;
     }
 }
@@ -3311,6 +3327,18 @@ function sortedSpeciesEntries(counts) {
         .sort((a, b) => b[1] - a[1] || cleanName(a[0]).localeCompare(cleanName(b[0]), 'es'));
 }
 
+const OTHER_SPECIES_KEY = 'Otras especies';
+
+// En movil el donut muestra las principales y agrupa el resto; el panel "Mostrar mas" sigue listando todas.
+// shortcut: se decide al actualizar el grafico; al girar el movil se reagrupa en la siguiente actualizacion.
+function speciesChartEntries(allEntries) {
+    // Mismo criterio que mobile.css: movil en vertical o en horizontal.
+    const compact = window.matchMedia('(max-width: 767.98px), (orientation: landscape) and (max-height: 500px)').matches;
+    if (!compact || allEntries.length <= SPECIES_CHART_INITIAL_LIMIT + 1) return allEntries;
+    const rest = allEntries.slice(SPECIES_CHART_INITIAL_LIMIT).reduce((sum, [, count]) => sum + count, 0);
+    return [...allEntries.slice(0, SPECIES_CHART_INITIAL_LIMIT), [OTHER_SPECIES_KEY, rest]];
+}
+
 function updateChart(counts) {
     const canvas = document.getElementById('speciesChart');
     if (!canvas) return;
@@ -3322,7 +3350,8 @@ function updateChart(counts) {
         myChart = null;
     }
     const allEntries = sortedSpeciesEntries(counts);
-    const signature = JSON.stringify(allEntries);
+    const chartEntries = speciesChartEntries(allEntries);
+    const signature = JSON.stringify(chartEntries);
     const legendPosition = window.innerWidth <= 576 ? 'bottom' : 'right';
     if (myChart && myChart.$speciesSignature === signature) {
         if (myChart.options.plugins.legend.position !== legendPosition) {
@@ -3333,9 +3362,9 @@ function updateChart(counts) {
     }
     const hasMoreSpecies = allEntries.length > SPECIES_CHART_INITIAL_LIMIT;
     if (!hasMoreSpecies) speciesChartExpanded = false;
-    const labels = allEntries.map(([species]) => cleanName(species));
-    const values = allEntries.map(([, count]) => count);
-    const colors = allEntries.map(([species]) => getSpeciesChartColor(species));
+    const labels = chartEntries.map(([species]) => cleanName(species));
+    const values = chartEntries.map(([, count]) => count);
+    const colors = chartEntries.map(([species]) => getSpeciesChartColor(species));
 
     if (myChart) {
         // Chart.js guarda la visibilidad por índice; conservarla por especie
@@ -3346,7 +3375,7 @@ function updateChart(counts) {
         myChart.data.labels = labels;
         myChart.data.datasets[0].data = values;
         myChart.data.datasets[0].backgroundColor = colors;
-        allEntries.forEach(([species], index) => {
+        chartEntries.forEach(([species], index) => {
             if (myChart.getDataVisibility(index) !== (visibility.get(species) ?? true)) {
                 myChart.toggleDataVisibility(index);
             }
@@ -3357,7 +3386,7 @@ function updateChart(counts) {
         myChart = createSpeciesChart(canvas, labels, values, colors, legendPosition);
     }
     myChart.$speciesSignature = signature;
-    myChart.$speciesKeys = allEntries.map(([species]) => species);
+    myChart.$speciesKeys = chartEntries.map(([species]) => species);
 
     renderAllSpeciesPanel(allEntries, hasMoreSpecies);
 }
@@ -3381,7 +3410,8 @@ function createSpeciesChart(canvas, labels, values, colors, legendPosition) {
                         boxHeight: 12,
                         padding: 14,
                         filter(legendItem) {
-                            return legendItem.index < SPECIES_CHART_INITIAL_LIMIT;
+                            return legendItem.index < SPECIES_CHART_INITIAL_LIMIT
+                                || legendItem.text === OTHER_SPECIES_KEY;
                         }
                     }
                 },
@@ -3455,6 +3485,7 @@ function toggleSpeciesChartDetails() {
 
 function getSpeciesChartColor(species) {
     const key = String(species || 'Desconocido');
+    if (key === OTHER_SPECIES_KEY) return '#a9b5ac';
     if (speciesChartColorMap.has(key)) return speciesChartColorMap.get(key);
 
     const index = speciesChartColorMap.size;

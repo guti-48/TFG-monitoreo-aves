@@ -2206,10 +2206,11 @@ code {
   #app-shell, #page-content-wrapper, #sidebar-wrapper { height: 100dvh; }
   #topbar { height: auto; min-height: 64px; flex-wrap: wrap; gap: 10px; padding-top: 12px; padding-bottom: 12px; }
   .topbar-left { flex: 1; }
-  .location-switcher { width: 100%; justify-content: flex-start; }
-  .location-site-control { flex: 1; min-width: 0; }
+  .location-switcher { width: 100%; justify-content: flex-start; flex-wrap: nowrap; }
+  .location-site-control { flex: 1 1 0; min-width: 0; }
   .location-switcher #location-site-select { width: 100%; max-width: none; }
-  .location-switcher #location-deployment-select { display: block; width: 45%; max-width: none; }
+  .location-switcher #location-deployment-select { display: block; flex: 1 1 0; width: auto; min-width: 0; max-width: none; }
+  #main-content { overflow-x: hidden; }
   .page-intro { flex-direction: column; gap: 16px; margin-bottom: 22px; }
   .page-intro h1 { font-size: 1.6rem; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
