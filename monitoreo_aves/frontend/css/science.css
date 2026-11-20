@@ -1,0 +1,62 @@
+/* Pestanas y pestana "Sonido" del Analisis cientifico (web y movil; lo crea js/science.js). */
+.science-tabs {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 18px;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+.science-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: .9rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.science-tab[aria-selected="true"] {
+  background: var(--bg-surface);
+  color: var(--green-strong);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12);
+}
+.science-panel[hidden] { display: none; }
+
+.science-loading { display: flex; align-items: center; gap: 10px; padding: 24px 0; color: var(--text-secondary); }
+.science-sound-head h4 { margin: 0 0 4px; font-size: 1.05rem; font-weight: 700; }
+.science-sound-head p { margin: 0 0 14px; color: var(--text-secondary); font-size: .85rem; }
+
+.science-chips { display: flex; gap: 8px; margin-bottom: 10px; padding-bottom: 4px; overflow-x: auto; }
+.science-chip {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: .85rem;
+  font-weight: 700;
+}
+.science-chip[aria-checked="true"] { border-color: var(--green-strong); background: var(--green-strong); color: #fff; }
+.science-index-note { margin: 0 0 14px; color: var(--text-secondary); font-size: .85rem; line-height: 1.45; }
+
+.science-figure {
+  margin: 0 0 20px;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+.science-canvas { position: relative; height: 260px; }
+.science-figure figcaption { margin-top: 10px; color: var(--text-secondary); font-size: .78rem; line-height: 1.4; }

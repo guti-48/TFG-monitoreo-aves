@@ -15,6 +15,11 @@ except ModuleNotFoundError:
         obtener_reporte_biodiversidad,
     )
 
+try:
+    from backend.analisisCientifico import serie_indices_acusticos, actividad_por_hora
+except ModuleNotFoundError:
+    from analisisCientifico import serie_indices_acusticos, actividad_por_hora
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -70,3 +75,32 @@ def get_daily_activity(
     except Exception:
         logger.exception("No se pudo generar el informe diario")
         return []
+
+
+@router.get("/analytics/acoustic-series")
+def get_acoustic_series(
+    site_id: int | None = Query(default=None, ge=1),
+    deployment_id: int | None = Query(default=None, ge=1),
+    device_id: int | None = Query(default=None, ge=1),
+):
+    try:
+        return serie_indices_acusticos(
+            site_id=site_id,
+            deployment_id=deployment_id,
+            device_id=device_id,
+        )
+    except Exception:
+        logger.exception("No se pudo generar la serie de indices acusticos")
+        return {"available": False, "reason": "No se pudo generar la serie", "indices": [], "daily": [], "hourly": []}
+
+
+@router.get("/analytics/activity")
+def get_activity(site_id: int | None = Query(default=None, ge=1),
+                 deployment_id: int | None = Query(default=None, ge=1),
+                 device_id: int | None = Query(default=None, ge=1)):
+
+    try:
+        return actividad_por_hora(site_id=site_id, deployment_id=deployment_id, device_id=device_id)
+    except Exception:
+        logger.exception("No se pudo generar el informe de actividad por hora")
+        return{"available":False, "reason": "No se pudo generar el informe de actividad por hora", "hourly":[]}
