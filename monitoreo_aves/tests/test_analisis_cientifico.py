@@ -149,3 +149,54 @@ def test_actividad_por_hora_sin_detecciones_devuelve_no_disponible(client):
     assert actividad["available"] is False
     assert actividad["hourly"] == []
     assert "reason" in actividad
+
+
+def test_diversidad_semanal_agrupa_por_semana_y_calcula_shannon(client):
+    node = "raspberry-diversidad"
+    _crear_nodo(client, node)
+    base = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)  # jueves; su semana empieza el lunes 2026-09-28
+
+    # semana 1: dos especies repartidas a partes iguales (+ ruido, que no cuenta) -> Shannon = ln(2)
+    _detection(client, node, base, "Species one", "a.wav")
+    _detection(client, node, base + timedelta(minutes=1), "Species one", "b.wav")
+    _detection(client, node, base + timedelta(minutes=2), "Species two", "c.wav")
+    _detection(client, node, base + timedelta(minutes=3), "Species two", "d.wav")
+    _detection(client, node, base + timedelta(minutes=4), "Noise_Ruido Ambiente", "ruido.wav")
+    # semana 2 (lunes 2026-10-05): una sola especie -> Shannon = 0
+    _detection(client, node, base + timedelta(days=7), "Species one", "e.wav")
+    # semana 4 (lunes 2026-10-19): 10 detecciones de una especie; la semana 3 queda vacia
+    for i in range(10):
+        device_id = _detection(client, node, base + timedelta(days=21, minutes=i), "Species one", f"s4-{i}.wav")["device_id"]
+
+    diversidad = client.get("/analytics/diversity", params={"device_id": device_id}).json()
+
+    assert diversidad["available"] is True
+    assert diversidad["total"] == 15  # el ruido no es una deteccion de ave
+    assert diversidad["species"] == 2
+    assert diversidad["weeks"] == 3  # la semana sin detecciones no aparece
+
+    semanas = {fila["week"]: fila for fila in diversidad["weekly"]}
+    assert list(semanas) == ["2026-09-28", "2026-10-05", "2026-10-19"]
+    assert semanas["2026-09-28"]["detections"] == 4
+    assert semanas["2026-09-28"]["richness"] == 2
+    assert semanas["2026-09-28"]["shannon"] == pytest.approx(0.693, abs=0.001)
+    assert semanas["2026-09-28"]["low_sample"] is True
+    assert semanas["2026-10-05"]["richness"] == 1
+    assert semanas["2026-10-05"]["shannon"] == 0
+    assert semanas["2026-10-19"]["low_sample"] is False  # justo en el minimo de 10 detecciones
+
+
+def test_diversidad_semanal_sin_detecciones_devuelve_no_disponible(client):
+    node = "raspberry-diversidad-vacia"
+    _crear_nodo(client, node)
+    metrica = client.post(
+        "/audio-metrics/",
+        json=_metric(node, datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc), "solo-metrica.wav", "maad-v2"),
+    )
+    assert metrica.status_code == 200
+
+    diversidad = client.get("/analytics/diversity", params={"device_id": metrica.json()["device_id"]}).json()
+
+    assert diversidad["available"] is False
+    assert diversidad["weekly"] == []
+    assert "reason" in diversidad

@@ -16,9 +16,9 @@ except ModuleNotFoundError:
     )
 
 try:
-    from backend.analisisCientifico import serie_indices_acusticos, actividad_por_hora
+    from backend.analisisCientifico import serie_indices_acusticos, actividad_por_hora, diversidad_semanal
 except ModuleNotFoundError:
-    from analisisCientifico import serie_indices_acusticos, actividad_por_hora
+    from analisisCientifico import serie_indices_acusticos, actividad_por_hora, diversidad_semanal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -104,3 +104,19 @@ def get_activity(site_id: int | None = Query(default=None, ge=1),
     except Exception:
         logger.exception("No se pudo generar el informe de actividad por hora")
         return{"available":False, "reason": "No se pudo generar el informe de actividad por hora", "hourly":[]}
+
+
+@router.get("/analytics/diversity")
+def get_diversity(site_id: int | None = Query(default=None, ge=1,),
+                  deployment_id : int | None = Query(default=None, ge=1), 
+                  device_id : int | None = Query(default = None, ge=1)):
+
+    try:
+        return diversidad_semanal(
+            site_id=site_id,
+            deployment_id=deployment_id,
+            device_id=device_id
+        )
+    except Exception:
+        logger.exception("No se pudo generar el informe de diversidad semanal")
+        return {"available": False, "reason": "No se pudo generar el informe de diversidad semanal", "weekly": []}

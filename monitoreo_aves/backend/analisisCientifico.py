@@ -1,5 +1,5 @@
 import sqlite3
-
+import numpy as np
 import pandas as pd
 
 try:
@@ -20,6 +20,8 @@ _CLAVES = [clave for clave, _, _ in INDICES_ACUSTICOS]
 # Por debajo de este numero de muestras en un dia (unos 12 min a 60 s cada una) la media diaria
 # se marca como poco fiable en lugar de ocultarla.
 MUESTRAS_MINIMAS_DIA = 12
+#Lo mismo con menos detecciones de 10, se marcara como poco fiable
+DETECCIONES_MINIMAS_SEMANA = 10
 
 def _vacio(motivo, legacy_excluidas=0):
     return {
@@ -112,7 +114,7 @@ def serie_indices_acusticos(
 
 
 def actividad_por_hora(site_id=None, deployment_id=None, device_id=None):
-    #deteccion de aves y espeices distitnas por hora del dia
+    #deteccion de aves y especies distintas por hora del dia
     df = _limpiar_detecciones(conectar_db(site_id, deployment_id, device_id))
     df["ts"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = df.dropna(subset=["ts"])
@@ -136,4 +138,39 @@ def actividad_por_hora(site_id=None, deployment_id=None, device_id=None):
         "period_start": df["ts"].min().isoformat(),
         "period_end": df["ts"].max().isoformat(),
         "hourly": horas,
+    }
+
+def _shannon(conteos):
+    #conteos: serie de detecciones por especie
+    p = conteos / conteos.sum()
+    return max(0.0, float(-(p * np.log(p)).sum())) 
+
+def diversidad_semanal(site_id = None, deployment_id = None, device_id = None):
+    #riqueza por semana (shannon)
+    df = _limpiar_detecciones(conectar_db(site_id, deployment_id, device_id))
+    df["ts"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df = df.dropna(subset=["ts"])
+    if df.empty:
+        return {"available":False, "reason": "Sin detecciones de ave en este alacance", "weekly":[]}
+    df["semana"] = df["ts"].dt.to_period("W-SUN").dt.start_time
+    semanal = []
+    for semana, grupo in df.groupby("semana"):
+        conteos = grupo["species"].value_counts()
+        semanal.append({
+            "week": semana.date().isoformat(),
+            "detections": int(len(grupo)),
+            "richness": int(len(conteos)),
+            "shannon": round(_shannon(conteos), 3),
+            "low_sample": bool(len(grupo) < DETECCIONES_MINIMAS_SEMANA),
+        })
+
+    return {
+        "available": True,
+        "total": int(len(df)),
+        "species": int(df["species"].nunique()),
+        "weeks": len(semanal),
+        "period_start": df["ts"].min().isoformat(),
+        "period_end": df["ts"].max().isoformat(),
+        "min_detections_per_week": DETECCIONES_MINIMAS_SEMANA,
+        "weekly": semanal,
     }

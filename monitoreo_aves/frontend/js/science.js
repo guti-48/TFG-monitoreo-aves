@@ -8,6 +8,8 @@
   const TABS = [
     ['resumen', 'Resumen', 'bi-speedometer2'],
     ['sonido', 'Sonido', 'bi-soundwave'],
+    ['actividad', 'Actividad', 'bi-bar-chart'],
+    ['diversidad', 'Diversidad', 'bi-flower1']
   ];
   const GREEN = '#2f6f4f';
   let activeTab = 'resumen';
@@ -28,18 +30,26 @@
         ${TABS.map(([id, label, icon]) => `<button type="button" role="tab" class="science-tab" data-tab="${id}" aria-selected="false"><i class="bi ${icon}" aria-hidden="true"></i><span>${label}</span></button>`).join('')}
       </div>
       <div id="science-panel-resumen" class="science-panel" role="tabpanel"></div>
-      <div id="science-panel-sonido" class="science-panel" role="tabpanel" hidden></div>`;
+      <div id="science-panel-sonido" class="science-panel" role="tabpanel" hidden></div>
+      <div id="science-panel-actividad" class="science-panel" role="tabpanel" hidden></div>
+      <div id="science-panel-diversidad" class="science-panel" role="tabpanel" hidden></div>`;
     const panels = {
       resumen: container.querySelector('#science-panel-resumen'),
       sonido: container.querySelector('#science-panel-sonido'),
+      actividad: container.querySelector('#science-panel-actividad'),
+      diversidad: container.querySelector('#science-panel-diversidad')
     };
     let soundLoaded = false;
+    let activityLoaded = false;
+    let diversityLoaded = false;
 
     const show = (tab) => {
       activeTab = tab;
       container.querySelectorAll('.science-tab').forEach((button) => button.setAttribute('aria-selected', String(button.dataset.tab === tab)));
       Object.entries(panels).forEach(([id, panel]) => { panel.hidden = id !== tab; });
       if (tab === 'sonido' && !soundLoaded) { soundLoaded = true; loadSound(panels.sonido); }
+      if (tab === 'actividad' && !activityLoaded) { activityLoaded = true; loadActivity(panels.actividad); }
+      if (tab === 'diversidad' && !diversityLoaded) { diversityLoaded = true; loadDiversity(panels.diversidad); }
       window.dispatchEvent(new Event('resize')); // graficos y mapa se reajustan al volver a mostrarse
     };
     container.querySelector('.science-tabs').addEventListener('click', (event) => {
@@ -74,6 +84,175 @@
       return;
     }
     renderSound(panel, data);
+  }
+
+  async function loadActivity(panel) {
+    const ticket = ++request;
+    panel.innerHTML = '<div class="science-loading"><div class="spinner-border spinner-border-sm" role="status"></div><span>Cargando la actividad por hora...</span></div>';
+    let data;
+    try {
+      const params = selectedScienceDeviceId ? { device_id: selectedScienceDeviceId } : {};
+      const response = await fetch(locationAwareUrl('/analytics/activity', params), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      data = await response.json();
+    } catch (error) {
+      if (ticket === request && panel.isConnected) panel.innerHTML = `<div class="alert alert-warning">No se pudo cargar la actividad: ${escapeHtml(error.message)}</div>`;
+      return;
+    }
+    if (ticket !== request || !panel.isConnected) return;
+    if (!data.available) {
+      panel.innerHTML = `<div class="alert alert-secondary">${escapeHtml(data.reason || 'Sin datos')}.</div>`;
+      return;
+    }
+    renderActivity(panel, data);
+  }
+
+  function renderActivity(panel, data) {
+    panel.innerHTML = `
+      <section class="science-sound">
+        <header class="science-sound-head">
+          <h4>Actividad de aves por hora</h4>
+          <p>${number(data.total, 0)} detecciones · ${data.days} días</p>
+        </header>
+        <figure class="science-figure">
+          <div class="science-canvas"><canvas id="science-activity-chart" role="img" aria-label="Detecciones y especies distintas por hora del día"></canvas></div>
+          <figcaption>Fig. 1 — Detecciones (barras, eje izquierdo) y especies distintas (línea, eje derecho) por hora del día.</figcaption>
+        </figure>
+      </section>`;
+
+    destroyCharts();
+    const animation = reducedMotion() ? false : { duration: 300 };
+    const grid = { color: 'rgba(95, 111, 101, .15)' };
+    const font = { family: "'DM Sans', system-ui, sans-serif" };
+
+    charts.push(new Chart(panel.querySelector('#science-activity-chart'), {
+      type: 'bar',
+      data: {
+        labels: data.hourly.map((row) => `${row.hour}`),
+        datasets: [
+          {
+            label: 'Detecciones',
+            data: data.hourly.map((row) => row.detections),
+            backgroundColor: 'rgba(47, 111, 79, .65)',
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: 'Especies distintas',
+            data: data.hourly.map((row) => row.species),
+            borderColor: '#b5651d',
+            backgroundColor: '#b5651d',
+            borderWidth: 2,
+            pointRadius: 3,
+            tension: 0.3,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation,
+        plugins: {
+          legend: { display: true, labels: { font } },
+          tooltip: { callbacks: { title: (items) => `${items[0].label}:00 h` } },
+        },
+        scales: {
+          x: { grid: { display: false }, title: { display: true, text: 'Hora del día', font }, ticks: { font, maxTicksLimit: 12 } },
+          y: { beginAtZero: true, grid, title: { display: true, text: 'Detecciones', font }, ticks: { font, precision: 0 } },
+          y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Especies', font }, ticks: { font, precision: 0 } },
+        },
+      },
+    }));
+  }
+
+  async function loadDiversity(panel) {
+    const ticket = ++request;
+    panel.innerHTML = '<div class="science-loading"><div class="spinner-border spinner-border-sm" role="status"></div><span>Cargando la diversidad semanal...</span></div>';
+    let data;
+    try {
+      const params = selectedScienceDeviceId ? { device_id: selectedScienceDeviceId } : {};
+      const response = await fetch(locationAwareUrl('/analytics/diversity', params), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      data = await response.json();
+    } catch (error) {
+      if (ticket === request && panel.isConnected) panel.innerHTML = `<div class="alert alert-warning">No se pudo cargar la diversidad: ${escapeHtml(error.message)}</div>`;
+      return;
+    }
+    if (ticket !== request || !panel.isConnected) return;
+    if (!data.available) {
+      panel.innerHTML = `<div class="alert alert-secondary">${escapeHtml(data.reason || 'Sin datos')}.</div>`;
+      return;
+    }
+    renderDiversity(panel, data);
+  }
+
+  function renderDiversity(panel, data) {
+    panel.innerHTML = `
+      <section class="science-sound">
+        <header class="science-sound-head">
+          <h4>Diversidad de aves por semana</h4>
+          <p>${number(data.total, 0)} detecciones · ${data.species} especies · ${data.weeks} semanas con datos</p>
+        </header>
+        <figure class="science-figure">
+          <div class="science-canvas"><canvas id="science-diversity-chart" role="img" aria-label="Índice de Shannon y riqueza de especies por semana"></canvas></div>
+          <figcaption>Fig. 1 — Índice de Shannon H′ (eje izquierdo) y número de especies (eje derecho) por semana. Un punto hueco indica menos de ${data.min_detections_per_week} detecciones esa semana, por lo que el valor es poco fiable; la línea discontinua une semanas separadas por huecos sin datos.</figcaption>
+        </figure>
+      </section>`;
+
+    destroyCharts();
+    const animation = reducedMotion() ? false : { duration: 300 };
+    const grid = { color: 'rgba(95, 111, 101, .15)' };
+    const font = { family: "'DM Sans', system-ui, sans-serif" };
+    const ORANGE = '#b5651d';
+
+    const weekly = data.weekly.map((row) => ({ x: dayNumber(row.week), shannon: row.shannon, richness: row.richness, n: row.detections, low: row.low_sample }));
+    const gap = { borderDash: (ctx) => (ctx.p1.parsed.x - ctx.p0.parsed.x > 7.5 ? [4, 4] : undefined) }; // semanas consecutivas distan 7 días
+
+    const serie = (label, key, color, axis) => ({
+      label,
+      data: weekly.map((row) => ({ x: row.x, y: row[key], n: row.n, low: row.low })),
+      borderColor: color,
+      borderWidth: 2,
+      pointRadius: 4,
+      pointBackgroundColor: (ctx) => (ctx.raw?.low ? '#ffffff' : color),
+      pointBorderColor: color,
+      segment: gap,
+      yAxisID: axis,
+    });
+
+    charts.push(new Chart(panel.querySelector('#science-diversity-chart'), {
+      type: 'line',
+      data: { datasets: [serie("Shannon H′", 'shannon', GREEN, 'y'), serie('Especies', 'richness', ORANGE, 'y1')] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation,
+        plugins: {
+          legend: { display: true, labels: { font } },
+          tooltip: {
+            callbacks: {
+              title: (items) => `Semana del ${dayLabel(items[0].parsed.x)}`,
+              label: (item) => `${item.dataset.label}: ${number(item.parsed.y, 3)} (${item.raw.n} detecciones)`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            bounds: 'data',
+            grid,
+            afterBuildTicks: (scale) => {
+              const count = window.innerWidth < 600 ? 4 : 7;
+              scale.ticks = Array.from({ length: count }, (_, i) => ({ value: Math.round(scale.min + ((scale.max - scale.min) * i) / (count - 1)) }));
+            },
+            ticks: { maxRotation: 0, callback: (value) => dayLabel(value), font },
+          },
+          y: { beginAtZero: true, grid, title: { display: true, text: "Shannon H′", font }, ticks: { font } },
+          y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Especies', font }, ticks: { font, precision: 0 } },
+        },
+      },
+    }));
   }
 
   function renderSound(panel, data) {
