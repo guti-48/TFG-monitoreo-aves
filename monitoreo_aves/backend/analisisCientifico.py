@@ -1,11 +1,12 @@
 import sqlite3
 import numpy as np
 import pandas as pd
+from math import sqrt
 
 try:
-    from backend.analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db
+    from backend.analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
 except ModuleNotFoundError:
-    from analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db
+    from analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, ILTRO_RUIDO
 
 INDICES_ACUSTICOS = (
     ("aci", "ACI", "Complejidad acustica: variacion de la intensidad entre tramos de tiempo."),
@@ -22,6 +23,11 @@ _CLAVES = [clave for clave, _, _ in INDICES_ACUSTICOS]
 MUESTRAS_MINIMAS_DIA = 12
 #Lo mismo con menos detecciones de 10, se marcara como poco fiable
 DETECCIONES_MINIMAS_SEMANA = 10
+#tramos de confianza de birdnet para medir cuanto acierta
+LIMITES_CONFIANZA = [0.0, 0.7, 0.8, 0.9, 1.01]
+ETIQUETAS_CONFIANZA = ["<0.70", "0.70-0.80", "0.80-0.90", ">=0.90"]
+ESTADOS_DECIDIDOS = ["validated", "noise", "corrected"]
+MIN_REVISIONES_ESPECIES = 5
 
 def _vacio(motivo, legacy_excluidas=0):
     return {
@@ -145,6 +151,20 @@ def _shannon(conteos):
     p = conteos / conteos.sum()
     return max(0.0, float(-(p * np.log(p)).sum())) 
 
+def _chao1(conteos):
+    f1 = int((conteos==1).sum())
+    f2 = int((conteos==2).sum())
+    return len(conteos) + f1 * (f1-1) / (2 * (f2+1)), f1, f2
+
+def _acumulacion(df):
+    vistas = set()
+    curva = []
+    for n, (fecha, grupo) in enumerate(df.groupby(df["ts"].dt.date), start=1):
+        vistas |= set(grupo["species"])
+        curva.append({"day": n, "date": fecha.isoformat(), "species": len(vistas)})
+    return curva
+
+
 def diversidad_semanal(site_id = None, deployment_id = None, device_id = None):
     #riqueza por semana (shannon)
     df = _limpiar_detecciones(conectar_db(site_id, deployment_id, device_id))
@@ -164,6 +184,8 @@ def diversidad_semanal(site_id = None, deployment_id = None, device_id = None):
             "low_sample": bool(len(grupo) < DETECCIONES_MINIMAS_SEMANA),
         })
 
+    estimado, f1, f2 = _chao1(df["species"].value_counts())
+
     return {
         "available": True,
         "total": int(len(df)),
@@ -173,4 +195,89 @@ def diversidad_semanal(site_id = None, deployment_id = None, device_id = None):
         "period_end": df["ts"].max().isoformat(),
         "min_detections_per_week": DETECCIONES_MINIMAS_SEMANA,
         "weekly": semanal,
+        "chao1": round(estimado, 1),
+        "singletons": f1,
+        "doubletons": f2,
+        "accumulation": _acumulacion(df),
+    }
+
+def _wilson(aciertos, n, z=1.96):
+    if n == 0:
+        return None, None
+    p = aciertos / n
+    centro = (p + z * z / (2 * n)) / (1 + z * z / n)
+    margen = z * sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    return max(0.0, centro - margen), min(1.0, centro + margen)
+
+def _precision(decididas):
+    n = len(decididas)
+    aciertos = int((decididas["status"] == "validated").sum())
+    bajo, alto = _wilson(aciertos, n)
+    return {
+        "decided": n,
+        "validated": aciertos,
+        "precision": round(aciertos / n, 3) if n else None,
+        "ci_low": None if bajo is None else round(bajo, 3),
+        "ci_high": None if alto is None else round(alto, 3),
+    }
+
+def _revisiones(site_id = None, deployment_id = None, device_id = None):
+    # detecciones con el estado de su revision humana
+    consulta = """
+    SELECT d.species, d.confidence, r.status
+    FROM detections d
+    JOIN deployments p ON d.deployment_id = p.id
+    LEFT JOIN detection_reviews r ON r.detection_id = d.id
+    WHERE 1 = 1
+    """
+    params = []
+    if site_id is not None:
+        consulta += " AND p.site_id = ?"
+        params.append(int(site_id))
+    if deployment_id is not None:
+        consulta += " AND p.id = ?"
+        params.append(int(deployment_id))
+    if device_id is not None:
+        consulta += " AND d.device_id = ?"
+        params.append(int(device_id))
+    conexion = sqlite3.connect(DB_PATH)
+    try:
+        return pd.read_sql_query(consulta, conexion, params=params)
+    finally:
+        conexion.close()
+
+def fiablidad_birdnet(site_id = None, deployment_id = None, device_id = None):
+    # Cuanto acierta BirdNET segun tus revisiones: por tramo de confianza y por especie.
+    df = _revisiones(site_id, deployment_id, device_id)
+    df = df[~df["species"].str.contains(FILTRO_RUIDO, case=False, na=False)].copy()
+    if df.empty:
+        return {"available": False, "reason": "Sin detecciones de aves en este alcance", "bins": [], "species": []}
+
+    df["tramo"] = pd.cut(df["confidence"], bins=LIMITES_CONFIANZA, labels=ETIQUETAS_CONFIANZA, right=False)
+    decididas = df[df["status"].isin(ESTADOS_DECIDIDOS)]
+
+    tramos = []
+    for etiqueta in ETIQUETAS_CONFIANZA:
+        del_tramo = df[df["tramo"] == etiqueta]
+        tramos.append({
+            "label": etiqueta,
+            "detections": int(len(del_tramo)),
+            "reviewed": int(del_tramo["status"].isin(ESTADOS_DECIDIDOS + ["doubtful"]).sum()),
+            **_precision(decididas[decididas["tramo"] == etiqueta]),
+        })
+
+    especies = []
+    for especie, grupo in decididas.groupby("species"):
+        if len(grupo) >= MIN_REVISIONES_ESPECIES:
+            especies.append({"species": especie, **_precision(grupo)})
+    especies.sort(key=lambda fila: (fila["precision"], -fila["decided"]))
+
+    return {
+        "available": True,
+        "detections": int(len(df)),
+        "reviewed": int(df["status"].isin(ESTADOS_DECIDIDOS + ["doubtful"]).sum()),
+        "min_reviews_per_species": MIN_REVISIONES_ESPECIES,
+        **_precision(decididas),
+        "bins": tramos,
+        "species": especies,
     }

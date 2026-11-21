@@ -382,3 +382,27 @@
   .location-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .location-chip.is-static i:last-child { display: none; }
 }
+
+/* Pestanas del Analisis: una sola fila en la que caben todas (icono arriba, nombre debajo), sin deslizar. */
+@media (max-width: 767.98px) {
+  .science-tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 2px;
+    width: 100%;
+    overflow: visible;
+  }
+  .science-tab {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    min-height: 54px;
+    padding: 6px 2px;
+    font-size: .72rem;
+  }
+  .science-tab i { font-size: 1.2rem; line-height: 1; }
+  .science-tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .science-canvas { height: 300px; }
+}

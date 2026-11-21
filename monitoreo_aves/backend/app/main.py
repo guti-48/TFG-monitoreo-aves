@@ -38,6 +38,15 @@ app = FastAPI(title="BirdMonitor API", version="1.0", lifespan=replication_lifes
 app.middleware("http")(security_middleware)
 app.middleware("http")(network_middleware)
 
+
+@app.middleware("http")
+async def frontend_sin_cache(request, call_next):
+    # Revalida el frontend en cada carga (el ETag da un 304 casi gratis): el WebView del iPhone no se queda con un index.html viejo.
+    response = await call_next(request)
+    if request.url.path.endswith(("/", ".html", ".js", ".css")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),

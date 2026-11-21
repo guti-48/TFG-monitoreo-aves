@@ -120,3 +120,5 @@ def get_diversity(site_id: int | None = Query(default=None, ge=1,),
     except Exception:
         logger.exception("No se pudo generar el informe de diversidad semanal")
         return {"available": False, "reason": "No se pudo generar el informe de diversidad semanal", "weekly": []}
+
+

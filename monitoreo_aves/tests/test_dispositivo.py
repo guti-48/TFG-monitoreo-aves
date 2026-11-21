@@ -66,7 +66,11 @@ def test_deteccion_repetida_es_idempotente(client):
     assert second_response.status_code == 200
     assert second_response.json()["id"] == first_response.json()["id"]
 
-    detections_response = client.get("/detections/", params={"limit": 20})
+    # Solo las de su nodo: la base de pruebas es compartida y otros tests crean mas de 20 detecciones mas recientes.
+    detections_response = client.get(
+        "/detections/",
+        params={"limit": 20, "device_id": first_response.json()["device_id"]},
+    )
 
     assert detections_response.status_code == 200
 

@@ -198,6 +198,11 @@
           <div class="science-canvas"><canvas id="science-diversity-chart" role="img" aria-label="Índice de Shannon y riqueza de especies por semana"></canvas></div>
           <figcaption>Fig. 1 — Índice de Shannon H′ (eje izquierdo) y número de especies (eje derecho) por semana. Un punto hueco indica menos de ${data.min_detections_per_week} detecciones esa semana, por lo que el valor es poco fiable; la línea discontinua une semanas separadas por huecos sin datos.</figcaption>
         </figure>
+        <p class="science-index-note">Se han observado ${data.species} especies; el estimador Chao1 calcula unas ${number(data.chao1, 1)} en total, así que el muestreo recoge aproximadamente el ${Math.round((100 * data.species) / data.chao1)} % de las especies presentes. ${data.singletons} especies se detectaron una sola vez: pueden ser raras de verdad o falsos positivos del modelo, y ambas cosas elevan la estimación. Es un indicador del esfuerzo de muestreo, no un censo.</p>
+        <figure class="science-figure">
+          <div class="science-canvas"><canvas id="science-accumulation-chart" role="img" aria-label="Curva de acumulación de especies frente a la estimación Chao1"></canvas></div>
+          <figcaption>Fig. 2 — Especies distintas acumuladas según los días de muestreo con detecciones (no días de calendario). Si la curva se aplana, apenas quedan especies por descubrir; la línea discontinua es la estimación Chao1 del total.</figcaption>
+        </figure>
       </section>`;
 
     destroyCharts();
@@ -229,7 +234,7 @@
         maintainAspectRatio: false,
         animation,
         plugins: {
-          legend: { display: true, labels: { font } },
+          legend: { display: true, labels: { font, usePointStyle: true, pointStyle: 'line' } },
           tooltip: {
             callbacks: {
               title: (items) => `Semana del ${dayLabel(items[0].parsed.x)}`,
@@ -250,6 +255,52 @@
           },
           y: { beginAtZero: true, grid, title: { display: true, text: "Shannon H′", font }, ticks: { font } },
           y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Especies', font }, ticks: { font, precision: 0 } },
+        },
+      },
+    }));
+
+    const curve = data.accumulation.map((point) => ({ x: point.day, y: point.species, date: point.date }));
+    const lastDay = curve[curve.length - 1].x;
+    charts.push(new Chart(panel.querySelector('#science-accumulation-chart'), {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Especies observadas',
+            data: curve,
+            borderColor: GREEN,
+            backgroundColor: 'rgba(47, 111, 79, .14)',
+            fill: 'start',
+            borderWidth: 2,
+            pointRadius: 2,
+          },
+          {
+            label: `Estimación Chao1 (${number(data.chao1, 1)})`,
+            data: [{ x: 1, y: data.chao1 }, { x: lastDay, y: data.chao1 }],
+            borderColor: ORANGE,
+            borderDash: [6, 4],
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation,
+        plugins: {
+          legend: { display: true, labels: { font, usePointStyle: true, pointStyle: 'line' } },
+          tooltip: {
+            filter: (item) => item.datasetIndex === 0,
+            callbacks: {
+              title: (items) => `Día de muestreo ${items[0].parsed.x} (${items[0].raw.date})`,
+              label: (item) => `${item.parsed.y} especies acumuladas`,
+            },
+          },
+        },
+        scales: {
+          x: { type: 'linear', min: 1, max: lastDay, grid, title: { display: true, text: 'Días de muestreo con detecciones', font }, ticks: { font, precision: 0, maxTicksLimit: 8 } },
+          y: { beginAtZero: true, grid, title: { display: true, text: 'Especies acumuladas', font }, ticks: { font, precision: 0 } },
         },
       },
     }));

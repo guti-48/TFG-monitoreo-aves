@@ -200,3 +200,40 @@ def test_diversidad_semanal_sin_detecciones_devuelve_no_disponible(client):
     assert diversidad["available"] is False
     assert diversidad["weekly"] == []
     assert "reason" in diversidad
+
+
+def test_diversidad_acumulacion_y_chao1(client):
+    node = "raspberry-chao1"
+    _crear_nodo(client, node)
+    base = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)
+
+    # dia 1: A x3 y B x1; dia 2 (cinco dias despues): C x1 y D x2
+    # abundancias A=3, B=1, C=1, D=2 -> S=4, f1=2 (B y C), f2=1 (D) -> Chao1 = 4 + 2*1 / (2*2) = 4.5
+    detecciones = [(0, "Species A"), (1, "Species A"), (2, "Species A"), (3, "Species B"),
+                   (5 * 24 * 60, "Species C"), (5 * 24 * 60 + 1, "Species D"), (5 * 24 * 60 + 2, "Species D")]
+    for i, (minutos, especie) in enumerate(detecciones):
+        device_id = _detection(client, node, base + timedelta(minutes=minutos), especie, f"c-{i}.wav")["device_id"]
+
+    d = client.get("/analytics/diversity", params={"device_id": device_id}).json()
+
+    assert d["species"] == 4
+    assert (d["singletons"], d["doubletons"]) == (2, 1)
+    assert d["chao1"] == 4.5
+    # la curva cuenta dias con detecciones (no dias de calendario) y nunca baja
+    assert [(p["day"], p["species"]) for p in d["accumulation"]] == [(1, 2), (2, 4)]
+
+
+def test_chao1_sin_especies_raras_es_igual_a_las_observadas(client):
+    node = "raspberry-chao1-sin-raras"
+    _crear_nodo(client, node)
+    base = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)
+
+    # cada especie se ve 3 veces: f1 = 0, no hay nada que "descubrir" -> Chao1 = observadas
+    for i in range(6):
+        device_id = _detection(client, node, base + timedelta(minutes=i), f"Species {'AB'[i % 2]}", f"r-{i}.wav")["device_id"]
+
+    d = client.get("/analytics/diversity", params={"device_id": device_id}).json()
+
+    assert d["species"] == 2
+    assert d["singletons"] == 0
+    assert d["chao1"] == 2.0
