@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" href="assets/birdmonitor-ostrero.png?v=2">
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=1034">
+    <link rel="stylesheet" href="css/style.css?v=1035">
     <link rel="stylesheet" href="css/science.css?v=1">
     <link rel="stylesheet" href="css/mobile.css?v=12">
 </head>
@@ -56,6 +56,10 @@
                 <a href="#" id="btn-daily" class="nav-link" onclick="switchView('daily'); return false;">
                     <i class="bi bi-calendar-check"></i><span>Informe diario</span>
                 </a>
+                <span class="nav-section-label">Informes</span>
+                <button type="button" class="nav-link sidebar-action" onclick="downloadExcelReport(this)">
+                    <i class="bi bi-download"></i><span>Descargar informe Excel</span>
+                </button>
             </nav>
 
             <div class="sidebar-footer">
@@ -113,8 +117,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"></script>
-    <script src="js/dashboard.js?v=1056"></script>
-    <script src="js/science.js?v=2"></script>
+    <script src="js/dashboard.js?v=1057"></script>
+    <script src="js/science.js?v=3"></script>
     <script src="js/mobile.js?v=8"></script>
 </body>
 </html>

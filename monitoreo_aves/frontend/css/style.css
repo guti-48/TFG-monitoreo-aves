@@ -170,7 +170,8 @@ body {
   margin: 0;
 }
 
-.sidebar-logout {
+.sidebar-logout,
+.sidebar-action {
   width: 100%;
   border: 0;
   background: transparent;
@@ -2180,7 +2181,7 @@ code {
 .btn-outline-primary, .btn-outline-success { color: var(--green-strong); border-color: var(--border-medium); background: var(--bg-surface); }
 .btn-outline-primary:hover, .btn-outline-success:hover { color: var(--green-strong); border-color: var(--green); background: var(--green-soft); }
 :where(a, button, input, select, summary, [tabindex]):focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
-.sidebar-nav a:focus-visible, .sidebar-logout:focus-visible { outline-color: #d8e6d5; }
+.sidebar-nav a:focus-visible, .sidebar-logout:focus-visible, .sidebar-action:focus-visible { outline-color: #d8e6d5; }
 .skip-link { position: fixed; top: -100px; left: 16px; z-index: 2000; padding: 12px 20px; background: white; color: var(--green-strong); }
 .skip-link:focus { top: 12px; }
 .table-dark thead th { font-size: .72rem; color: var(--text-secondary); font-weight: 600; text-transform: none; letter-spacing: .015em; background: var(--bg-panel); }

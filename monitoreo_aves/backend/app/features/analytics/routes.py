@@ -16,9 +16,9 @@ except ModuleNotFoundError:
     )
 
 try:
-    from backend.analisisCientifico import serie_indices_acusticos, actividad_por_hora, diversidad_semanal
+    from backend.analisisCientifico import serie_indices_acusticos, actividad_por_hora, diversidad_semanal, fiabilidad_birdnet
 except ModuleNotFoundError:
-    from analisisCientifico import serie_indices_acusticos, actividad_por_hora, diversidad_semanal
+    from analisisCientifico import serie_indices_acusticos, actividad_por_hora, diversidad_semanal, fiabilidad_birdnet
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -122,3 +122,15 @@ def get_diversity(site_id: int | None = Query(default=None, ge=1,),
         return {"available": False, "reason": "No se pudo generar el informe de diversidad semanal", "weekly": []}
 
 
+@router.get("/analytics/reliability")
+def get_reliability(site_id: int | None = Query(default=None, ge=1),
+                    deployment_id: int | None = Query(default=None, ge=1),
+                    device_id: int | None = Query(default=None, ge=1)):
+
+    try:
+        return fiabilidad_birdnet(site_id=site_id, deployment_id=deployment_id, device_id=device_id)
+    except Exception:
+        logger.exception("No se pudo generar el informe de fiabilidad de BirdNET")
+        return {"available": False, "reason": "No se pudo generar el informe de fiabilidad de BirdNET", "reliability": []}
+
+    

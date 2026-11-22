@@ -20,10 +20,21 @@ from sqlalchemy.orm import Session, joinedload
 from ...core import database
 from ...domain import models
 
+try:
+    from backend.analisisCientifico import (
+        DETECCIONES_MINIMAS_SEMANA, ESTADOS_DECIDIDOS, ETIQUETAS_CONFIANZA, FILTRO_RUIDO,
+        LIMITES_CONFIANZA, MIN_REVISIONES_ESPECIES, _wilson,
+    )
+except ModuleNotFoundError:
+    from analisisCientifico import (
+        DETECCIONES_MINIMAS_SEMANA, ESTADOS_DECIDIDOS, ETIQUETAS_CONFIANZA, FILTRO_RUIDO,
+        LIMITES_CONFIANZA, MIN_REVISIONES_ESPECIES, _wilson,
+    )
+
 
 router = APIRouter(prefix="/exports", tags=["exports"])
 
-REPORT_VERSION = "1.0"
+REPORT_VERSION = "1.1"
 EXCEL_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
@@ -772,6 +783,223 @@ def _build_biodiversity_sheet(
     return worksheet
 
 
+def _small_table(worksheet, top: int, left: int, headers: list[str], rows: list[list[object]]) -> None:
+    # Tabla auxiliar junto a la principal (bloque de indicadores o datos de un grafico).
+    for column, header in enumerate(headers, start=left):
+        cell = worksheet.cell(top, column, value=header)
+        cell.font = Font(bold=True, color=COLOR_WHITE)
+        cell.fill = PatternFill("solid", fgColor=COLOR_GREEN)
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    for offset, row in enumerate(rows, start=1):
+        for column, value in enumerate(row, start=left):
+            worksheet.cell(top + offset, column, value=value).border = THIN_BORDER
+
+
+def _build_diversity_sheet(
+    workbook: Workbook,
+    valid_detections: list[models.Detection],
+) -> float | None:
+    """Diversidad por semana, riqueza estimada (Chao1) y curva de acumulacion."""
+    by_week: dict[date, list[models.Detection]] = defaultdict(list)
+    by_day: dict[date, set[str]] = defaultdict(set)
+    for detection in valid_detections:
+        day = detection.timestamp.date()
+        by_week[day - timedelta(days=day.weekday())].append(detection)
+        by_day[day].add(_effective_species(detection))
+
+    rows: list[list[object]] = []
+    for week in sorted(by_week):
+        events, species, shannon, simpson, pielou, _ = _biodiversity_indices(by_week[week])
+        rows.append([
+            week, events, species, shannon, simpson, pielou,
+            "Sí" if events >= DETECCIONES_MINIMAS_SEMANA else "No: valor poco fiable",
+        ])
+
+    headers = ["Semana (lunes)", "Detecciones N", "Especies S", "Shannon H'", "Simpson 1-D", "Pielou J'", "Muestra suficiente"]
+    worksheet = _create_table_sheet(
+        workbook,
+        "Diversidad",
+        "Diversidad de aves: evolución semanal y riqueza estimada",
+        (
+            f"Índices por semana con detecciones válidas. Con menos de {DETECCIONES_MINIMAS_SEMANA} "
+            "detecciones en una semana el índice es poco fiable. Chao1 estima cuántas especies hay "
+            "en total a partir de las vistas una y dos veces; la curva de acumulación muestra si el "
+            "muestreo se acerca a ese total. N son eventos de detección, no individuos."
+        ),
+        headers,
+        rows,
+        "TablaDiversidadSemanal",
+        {1: 16, 2: 15, 3: 12, 4: 12, 5: 12, 6: 12, 7: 22},
+    )
+    if not rows:
+        return None
+
+    last_row = 4 + len(rows)
+    _apply_row_borders(worksheet, 5, last_row, len(headers))
+    for row_number in range(5, last_row + 1):
+        worksheet.cell(row_number, 1).number_format = "dd/mm/yyyy"
+        for column in (4, 5, 6):
+            worksheet.cell(row_number, column).number_format = "0.000"
+
+    counts = Counter(_effective_species(item) for item in valid_detections)
+    observed = len(counts)
+    singletons = sum(1 for count in counts.values() if count == 1)
+    doubletons = sum(1 for count in counts.values() if count == 2)
+    chao1 = observed + singletons * (singletons - 1) / (2 * (doubletons + 1))  # Chao1 corregido por sesgo
+
+    _small_table(worksheet, 4, 9, ["Riqueza de especies", "Valor"], [
+        ["Especies observadas", observed],
+        ["Especies estimadas (Chao1)", round(chao1, 1)],
+        ["Completitud del muestreo", observed / chao1],
+        ["Especies vistas 1 vez (f1)", singletons],
+        ["Especies vistas 2 veces (f2)", doubletons],
+        ["Días con detecciones", len(by_day)],
+    ])
+    worksheet.cell(7, 10).number_format = "0.0%"
+
+    seen: set[str] = set()
+    curve = []
+    for number, day in enumerate(sorted(by_day), start=1):
+        seen |= by_day[day]
+        curve.append([number, day, len(seen), round(chao1, 1)])
+    curve_top = 13
+    _small_table(worksheet, curve_top, 9, ["Día de muestreo", "Fecha", "Especies acumuladas", "Chao1"], curve)
+    for row_number in range(curve_top + 1, curve_top + len(curve) + 1):
+        worksheet.cell(row_number, 10).number_format = "dd/mm/yyyy"
+    for column, width in zip("IJKL", (28, 13, 13, 10)):
+        worksheet.column_dimensions[column].width = width
+
+    shannon_chart = LineChart()
+    shannon_chart.style = 13
+    shannon_chart.title = "Shannon H' por semana"
+    shannon_chart.y_axis.title = "Shannon H'"
+    shannon_chart.x_axis.title = "Semana"
+    shannon_chart.x_axis.number_format = "dd/mm"
+    shannon_chart.height = 7.5
+    shannon_chart.width = 15
+    shannon_chart.add_data(Reference(worksheet, min_col=4, min_row=4, max_row=last_row), titles_from_data=True)
+    shannon_chart.set_categories(Reference(worksheet, min_col=1, min_row=5, max_row=last_row))
+    shannon_chart.legend = None
+    worksheet.add_chart(shannon_chart, "N4")
+
+    curve_chart = LineChart()
+    curve_chart.style = 12
+    curve_chart.title = "Curva de acumulación de especies"
+    curve_chart.y_axis.title = "Especies"
+    curve_chart.x_axis.title = "Días de muestreo con detecciones"
+    curve_chart.height = 7.5
+    curve_chart.width = 15
+    curve_chart.add_data(
+        Reference(worksheet, min_col=11, max_col=12, min_row=curve_top, max_row=curve_top + len(curve)),
+        titles_from_data=True,
+    )
+    curve_chart.set_categories(Reference(worksheet, min_col=9, min_row=curve_top + 1, max_row=curve_top + len(curve)))
+    curve_chart.series[1].graphicalProperties.line.dashStyle = "dash"
+    worksheet.add_chart(curve_chart, "N21")
+    return round(chao1, 1)
+
+
+def _precision_cells(items: list[models.Detection]) -> list[object]:
+    decided = [item for item in items if _review_status(item) in ESTADOS_DECIDIDOS]
+    correct = sum(_review_status(item) == "validated" for item in decided)
+    low, high = _wilson(correct, len(decided))
+    return [len(decided), correct, correct / len(decided) if decided else None, low, high]
+
+
+def _build_reliability_sheet(
+    workbook: Workbook,
+    detections: list[models.Detection],
+) -> float | None:
+    """Precision de BirdNET segun las revisiones humanas (mismo calculo que la pestaña Fiabilidad)."""
+    birds = [item for item in detections if not re.search(FILTRO_RUIDO, item.species or "", re.IGNORECASE)]
+    reviewed_states = set(ESTADOS_DECIDIDOS) | {"doubtful"}
+
+    def bin_row(label: str, items: list[models.Detection]) -> list[object]:
+        reviewed = sum(_review_status(item) in reviewed_states for item in items)
+        return [label, len(items), reviewed, *_precision_cells(items)]
+
+    rows = []
+    for label, low, high in zip(ETIQUETAS_CONFIANZA, LIMITES_CONFIANZA, LIMITES_CONFIANZA[1:]):
+        rows.append(bin_row(label, [item for item in birds if low <= item.confidence < high]))
+    if birds:
+        rows.append(bin_row("Total", birds))
+    else:
+        rows = []
+
+    headers = ["Confianza BirdNET", "Detecciones", "Revisadas", "Decididas", "Correctas", "Precisión", "IC 95 % inferior", "IC 95 % superior"]
+    worksheet = _create_table_sheet(
+        workbook,
+        "Fiabilidad BirdNET",
+        "Fiabilidad de BirdNET según la revisión humana",
+        (
+            "Precisión = validadas / (validadas + ruido + corregidas); las dudosas y las no revisadas "
+            "no cuentan. El intervalo de confianza del 95 % (Wilson) es más ancho cuantas menos "
+            "revisiones hay detrás."
+        ),
+        headers,
+        rows,
+        "TablaFiabilidadTramos",
+        {1: 22, **{column: 13 for column in range(2, 9)}},
+    )
+    if not rows:
+        return None
+
+    last_row = 4 + len(rows)
+    _apply_row_borders(worksheet, 5, last_row, len(headers))
+    for row_number in range(5, last_row + 1):
+        for column in (6, 7, 8):
+            worksheet.cell(row_number, column).number_format = "0.0%"
+    for column in range(1, len(headers) + 1):
+        worksheet.cell(last_row, column).font = Font(bold=True)
+
+    by_species: dict[str, list[models.Detection]] = defaultdict(list)
+    for item in birds:
+        by_species[_clean_species_name(item.species)].append(item)
+    species_rows = [
+        [name, *cells]
+        for name, items in by_species.items()
+        if (cells := _precision_cells(items))[0] >= MIN_REVISIONES_ESPECIES
+    ]
+    species_rows.sort(key=lambda row: (row[3], -row[1]))
+
+    title_row = last_row + 3
+    worksheet.cell(title_row, 1, value=f"Precisión por especie (mínimo {MIN_REVISIONES_ESPECIES} revisiones decididas), de peor a mejor")
+    worksheet.cell(title_row, 1).font = Font(size=13, bold=True, color=COLOR_DARK)
+    species_headers = ["Especie (según BirdNET)", "Decididas", "Correctas", "Precisión", "IC 95 % inferior", "IC 95 % superior"]
+    _small_table(worksheet, title_row + 1, 1, species_headers, species_rows)
+    for row_number in range(title_row + 2, title_row + 2 + len(species_rows)):
+        for column in (4, 5, 6):
+            worksheet.cell(row_number, column).number_format = "0.0%"
+    if not species_rows:
+        worksheet.cell(title_row + 2, 1, value="Ninguna especie alcanza todavía el mínimo de revisiones.").font = Font(italic=True, color=COLOR_MUTED)
+
+    note_row = title_row + 3 + max(len(species_rows), 1)
+    worksheet.cell(note_row, 1, value=(
+        "Limitaciones: el nodo descarta lo que BirdNET puntúa por debajo de 0,65, así que esto mide "
+        "cuántos aciertos hay entre lo guardado, no cuántas aves se escapan. Las revisiones no son una "
+        "muestra aleatoria (se revisa lo que llama la atención) y las hace una sola persona."
+    ))
+    worksheet.cell(note_row, 1).alignment = Alignment(wrap_text=True, vertical="top")
+    worksheet.cell(note_row, 1).font = Font(color=COLOR_MUTED)
+    worksheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row + 3, end_column=8)
+
+    chart = BarChart()
+    chart.style = 10
+    chart.title = "Precisión por tramo de confianza"
+    chart.y_axis.title = "Precisión"
+    chart.x_axis.title = "Confianza BirdNET"
+    chart.y_axis.scaling.min = 0
+    chart.y_axis.scaling.max = 1
+    chart.y_axis.number_format = "0%"
+    chart.height = 7.5
+    chart.width = 14
+    chart.add_data(Reference(worksheet, min_col=6, min_row=4, max_row=last_row - 1), titles_from_data=True)
+    chart.set_categories(Reference(worksheet, min_col=1, min_row=5, max_row=last_row - 1))
+    chart.legend = None
+    worksheet.add_chart(chart, "J4")
+    return rows[-1][5]
+
+
 def _build_audio_quality_sheet(
     workbook: Workbook,
     audio_metrics: list[models.AudioMetric],
@@ -1325,6 +1553,8 @@ def _build_summary_sheet(
     species_sheet,
     species_rows: list[list[object]],
     activity_sheet,
+    chao1: float | None = None,
+    precision: float | None = None,
 ):
     worksheet = workbook.active
     worksheet.title = "Resumen"
@@ -1359,6 +1589,8 @@ def _build_summary_sheet(
         ["Ciclos de grabación", len(audio_metrics)],
         ["Alertas de calidad", alerts],
         ["Nodos incluidos", len(devices)],
+        ["Especies estimadas (Chao1)", chao1 if chao1 is not None else "Sin datos"],
+        ["Precisión de BirdNET revisada", precision if precision is not None else "Sin revisiones"],
     ]
     for row_index, row in enumerate(kpis, start=4):
         for column_index, value in enumerate(row, start=1):
@@ -1380,6 +1612,7 @@ def _build_summary_sheet(
         worksheet.cell(row_number, 1).border = THIN_BORDER
         worksheet.cell(row_number, 2).border = THIN_BORDER
     worksheet.cell(8, 2).number_format = "0.0%"
+    worksheet.cell(3 + len(kpis), 2).number_format = "0.0%"  # precision de BirdNET, ultima fila
 
     if species_rows:
         max_row = min(4 + len(species_rows), 14)
@@ -1429,11 +1662,13 @@ def _build_summary_sheet(
         "marcadas como ruido, dudosas o descartadas se conservan en Detecciones, "
         "pero no cuentan en actividad ni en los índices. N representa eventos de "
         "detección, no individuos. Los resultados son descriptivos y solo se "
-        "comparan bajo el mismo nodo, micrófono, configuración y esfuerzo."
+        "comparan bajo el mismo nodo, micrófono, configuración y esfuerzo. "
+        "La hoja Diversidad recoge la evolución semanal y la riqueza estimada; "
+        "Fiabilidad BirdNET indica cuánto acierta el modelo según las revisiones."
     )
     worksheet["A18"].alignment = Alignment(wrap_text=True, vertical="top")
     worksheet["A18"].font = Font(color=COLOR_MUTED)
-    worksheet.merge_cells("A18:B22")
+    worksheet.merge_cells("A18:B26")
 
     worksheet.column_dimensions["A"].width = 31
     worksheet.column_dimensions["B"].width = 18
@@ -1464,7 +1699,7 @@ def build_monitoring_workbook(
     workbook.calculation.calcMode = "auto"
     workbook.properties.creator = "BirdMonitor"
     workbook.properties.title = "Informe de monitorización de aves"
-    workbook.properties.subject = "Detecciones, calidad acústica e índices ecológicos"
+    workbook.properties.subject = "Detecciones, diversidad, fiabilidad de BirdNET, calidad acústica e índices ecológicos"
     workbook.properties.description = (
         "Informe Excel generado por BirdMonitor con trazabilidad de BirdNET "
         "y revisión humana."
@@ -1492,6 +1727,8 @@ def build_monitoring_workbook(
     )
     activity_sheet, _ = _build_activity_sheet(workbook, valid_detections)
     _build_biodiversity_sheet(workbook, valid_detections, audio_metrics)
+    chao1 = _build_diversity_sheet(workbook, valid_detections)
+    precision = _build_reliability_sheet(workbook, detections)
     _build_audio_quality_sheet(workbook, audio_metrics)
     _build_reviews_sheet(workbook, detections)
     _build_metadata_sheet(
@@ -1525,6 +1762,8 @@ def build_monitoring_workbook(
         species_sheet,
         species_rows,
         activity_sheet,
+        chao1,
+        precision,
     )
 
     workbook.active = workbook.sheetnames.index("Resumen")

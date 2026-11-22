@@ -93,12 +93,12 @@ def test_serie_acustica_sin_datos_del_metodo_actual_devuelve_no_disponible(clien
     assert serie["daily"] == [] and serie["hourly"] == []
 
 
-def _detection(client, node, timestamp, species, filename):
+def _detection(client, node, timestamp, species, filename, confidence=0.9):
     response = client.post(
         "/detections/",
         json={
             "species": species,
-            "confidence": 0.9,
+            "confidence": confidence,
             "timestamp": timestamp.isoformat(),
             "filename": filename,
             "device_name": node,
@@ -237,3 +237,75 @@ def test_chao1_sin_especies_raras_es_igual_a_las_observadas(client):
     assert d["species"] == 2
     assert d["singletons"] == 0
     assert d["chao1"] == 2.0
+
+
+def _revisar(client, detection_id, status, corrected_species=None):
+    response = client.patch(
+        f"/detections/{detection_id}/review",
+        json={"status": status, "corrected_species": corrected_species, "reviewer": "pytest"},
+    )
+    assert response.status_code == 200
+
+
+def test_fiabilidad_cuenta_solo_revisiones_decididas_por_tramo_y_especie(client):
+    node = "raspberry-fiabilidad"
+    _crear_nodo(client, node)
+    base = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)
+
+    # Species A, confianza 0.9: 5 validadas y 1 marcada como ruido -> 5/6
+    for i in range(6):
+        d = _detection(client, node, base + timedelta(minutes=i), "Species A", f"f-a{i}.wav", confidence=0.9)
+        _revisar(client, d["id"], "validated" if i < 5 else "noise")
+    # Species B, confianza 0.75: una corregida (fallo), una dudosa y una sin revisar (no cuentan)
+    b1 = _detection(client, node, base + timedelta(minutes=10), "Species B", "f-b1.wav", confidence=0.75)
+    _revisar(client, b1["id"], "corrected", corrected_species="Species C")
+    b2 = _detection(client, node, base + timedelta(minutes=11), "Species B", "f-b2.wav", confidence=0.75)
+    _revisar(client, b2["id"], "doubtful")
+    _detection(client, node, base + timedelta(minutes=12), "Species B", "f-b3.wav", confidence=0.75)
+    # el ruido de BirdNET no es una deteccion de ave
+    device_id = _detection(client, node, base + timedelta(minutes=13), "Noise_Ruido Ambiente", "f-r.wav")["device_id"]
+
+    f = client.get("/analytics/reliability", params={"device_id": device_id}).json()
+
+    assert f["available"] is True
+    assert f["detections"] == 9
+    assert f["reviewed"] == 8  # la dudosa cuenta como revisada...
+    assert (f["decided"], f["validated"]) == (7, 5)  # ...pero no entra en la precision
+    assert f["precision"] == pytest.approx(5 / 7, abs=0.001)
+    assert f["ci_low"] < f["precision"] < f["ci_high"]
+
+    # tramos en orden: <0.70, 0.70-0.80, 0.80-0.90, >=0.90 (las etiquetas de texto pueden cambiar)
+    bajo, medio, _, alto = f["bins"]
+    assert len(f["bins"]) == 4
+    assert (alto["decided"], alto["validated"]) == (6, 5)
+    assert (medio["detections"], medio["reviewed"], medio["decided"]) == (3, 2, 1)
+    assert medio["precision"] == 0
+    assert bajo["precision"] is None  # sin revisiones no se inventa un valor
+
+    # solo Species A llega al minimo de revisiones decididas por especie
+    assert [e["species"] for e in f["species"]] == ["Species A"]
+    assert f["species"][0]["precision"] == pytest.approx(5 / 6, abs=0.001)
+
+
+def test_fiabilidad_sin_detecciones_devuelve_no_disponible(client):
+    node = "raspberry-fiabilidad-vacia"
+    _crear_nodo(client, node)
+    metrica = client.post(
+        "/audio-metrics/",
+        json=_metric(node, datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc), "fiab-metrica.wav", "maad-v2"),
+    )
+    assert metrica.status_code == 200
+
+    f = client.get("/analytics/reliability", params={"device_id": metrica.json()["device_id"]}).json()
+
+    assert f["available"] is False
+    assert "reason" in f
+
+
+def test_wilson_es_honesto_con_cero_aciertos():
+    from backend.analisisCientifico import _wilson
+
+    bajo, alto = _wilson(0, 15)
+    assert bajo == 0.0
+    assert alto == pytest.approx(0.204, abs=0.001)  # la aproximacion normal daria [0, 0]
+    assert _wilson(0, 0) == (None, None)

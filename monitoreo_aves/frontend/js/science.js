@@ -1,4 +1,4 @@
-// Pestanas del Analisis cientifico (compartido por la web y el movil).
+// Pestañas del Analisis cientifico (compartido por la web y el movil).
 // Envuelve renderScienceView sin reescribirla: "Resumen" es la vista de siempre y "Sonido" muestra
 // como evolucionan los indices acusticos en el tiempo (datos de /analytics/acoustic-series).
 (() => {
@@ -9,7 +9,8 @@
     ['resumen', 'Resumen', 'bi-speedometer2'],
     ['sonido', 'Sonido', 'bi-soundwave'],
     ['actividad', 'Actividad', 'bi-bar-chart'],
-    ['diversidad', 'Diversidad', 'bi-flower1']
+    ['diversidad', 'Diversidad', 'bi-flower1'],
+    ['fiabilidad', 'Fiabilidad', 'bi-patch-check']
   ];
   const GREEN = '#2f6f4f';
   let activeTab = 'resumen';
@@ -32,16 +33,19 @@
       <div id="science-panel-resumen" class="science-panel" role="tabpanel"></div>
       <div id="science-panel-sonido" class="science-panel" role="tabpanel" hidden></div>
       <div id="science-panel-actividad" class="science-panel" role="tabpanel" hidden></div>
-      <div id="science-panel-diversidad" class="science-panel" role="tabpanel" hidden></div>`;
+      <div id="science-panel-diversidad" class="science-panel" role="tabpanel" hidden></div>
+      <div id="science-panel-fiabilidad" class="science-panel" role="tabpanel" hidden></div>`;
     const panels = {
       resumen: container.querySelector('#science-panel-resumen'),
       sonido: container.querySelector('#science-panel-sonido'),
       actividad: container.querySelector('#science-panel-actividad'),
-      diversidad: container.querySelector('#science-panel-diversidad')
+      diversidad: container.querySelector('#science-panel-diversidad'),
+      fiabilidad: container.querySelector('#science-panel-fiabilidad')
     };
     let soundLoaded = false;
     let activityLoaded = false;
     let diversityLoaded = false;
+    let reliabilityLoaded = false;
 
     const show = (tab) => {
       activeTab = tab;
@@ -50,6 +54,7 @@
       if (tab === 'sonido' && !soundLoaded) { soundLoaded = true; loadSound(panels.sonido); }
       if (tab === 'actividad' && !activityLoaded) { activityLoaded = true; loadActivity(panels.actividad); }
       if (tab === 'diversidad' && !diversityLoaded) { diversityLoaded = true; loadDiversity(panels.diversidad); }
+      if (tab === 'fiabilidad' && !reliabilityLoaded) { reliabilityLoaded = true; loadReliability(panels.fiabilidad); }
       window.dispatchEvent(new Event('resize')); // graficos y mapa se reajustan al volver a mostrarse
     };
     container.querySelector('.science-tabs').addEventListener('click', (event) => {
@@ -304,6 +309,108 @@
         },
       },
     }));
+  }
+
+  async function loadReliability(panel) {
+    const ticket = ++request;
+    panel.innerHTML = '<div class="science-loading"><div class="spinner-border spinner-border-sm" role="status"></div><span>Cargando la fiabilidad de BirdNET...</span></div>';
+    let data;
+    try {
+      const params = selectedScienceDeviceId ? { device_id: selectedScienceDeviceId } : {};
+      const response = await fetch(locationAwareUrl('/analytics/reliability', params), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      data = await response.json();
+    } catch (error) {
+      if (ticket === request && panel.isConnected) panel.innerHTML = `<div class="alert alert-warning">No se pudo cargar la fiabilidad: ${escapeHtml(error.message)}</div>`;
+      return;
+    }
+    if (ticket !== request || !panel.isConnected) return;
+    if (!data.available) {
+      panel.innerHTML = `<div class="alert alert-secondary">${escapeHtml(data.reason || 'Sin datos')}.</div>`;
+      return;
+    }
+    if (!data.decided) {
+      panel.innerHTML = '<div class="alert alert-secondary">Aún no hay detecciones revisadas en este alcance: valida o descarta detecciones para medir la fiabilidad.</div>';
+      return;
+    }
+    renderReliability(panel, data);
+  }
+
+  function renderReliability(panel, data) {
+    const pct = (value) => (value === null || value === undefined ? '–' : `${Math.round(value * 100)} %`);
+    panel.innerHTML = `
+      <section class="science-sound">
+        <header class="science-sound-head">
+          <h4>Fiabilidad de BirdNET</h4>
+          <p>${number(data.reviewed, 0)} de ${number(data.detections, 0)} detecciones revisadas · precisión ${pct(data.precision)} (IC 95 %: ${pct(data.ci_low)}–${pct(data.ci_high)})</p>
+        </header>
+        <figure class="science-figure">
+          <div class="science-canvas"><canvas id="science-reliability-bins" role="img" aria-label="Precisión de BirdNET por tramo de confianza"></canvas></div>
+          <figcaption>Fig. 1 — Porcentaje de detecciones que resultaron correctas según la confianza que dio BirdNET. La barra fina es el intervalo de confianza del 95 % (Wilson): cuanto más larga, menos revisiones hay detrás.</figcaption>
+        </figure>
+        ${data.species.length ? `
+        <figure class="science-figure">
+          <div class="science-canvas" style="height: ${Math.max(220, 34 * data.species.length + 80)}px"><canvas id="science-reliability-species" role="img" aria-label="Precisión de BirdNET por especie"></canvas></div>
+          <figcaption>Fig. 2 — Precisión por especie, de peor a mejor. Solo especies con al menos ${data.min_reviews_per_species} revisiones decididas.</figcaption>
+        </figure>` : `<p class="science-index-note">Ninguna especie tiene todavía ${data.min_reviews_per_species} revisiones decididas, así que no se muestra la precisión por especie.</p>`}
+        <p class="science-index-note">Precisión = validadas ÷ (validadas + ruido + corregidas); las dudosas y las no revisadas no cuentan. Ten en cuenta: el nodo descarta todo lo que BirdNET puntúa por debajo de 0,65, así que esto mide cuántos aciertos hay entre lo que se guarda, no cuántas aves se escapan; las revisiones no son una muestra aleatoria (se revisa lo que llama la atención), y las hace una sola persona.</p>
+      </section>`;
+
+    destroyCharts();
+    const animation = reducedMotion() ? false : { duration: 300 };
+    const grid = { color: 'rgba(95, 111, 101, .15)' };
+    const font = { family: "'DM Sans', system-ui, sans-serif" };
+    const ORANGE = '#b5651d';
+
+    // Barra ancha = precision; barra fina superpuesta [ci_low, ci_high] = intervalo de confianza.
+    const precisionChart = (canvas, rows, labelKey, horizontal) => new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: rows.map((row) => row[labelKey]),
+        datasets: [
+          {
+            label: 'Precisión',
+            data: rows.map((row) => (row.precision === null ? null : row.precision * 100)),
+            backgroundColor: 'rgba(47, 111, 79, .65)',
+            grouped: false,
+            order: 2,
+          },
+          {
+            label: 'IC 95 %',
+            data: rows.map((row) => (row.ci_low === null ? null : [row.ci_low * 100, row.ci_high * 100])),
+            backgroundColor: ORANGE,
+            grouped: false,
+            barPercentage: 0.12,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        indexAxis: horizontal ? 'y' : 'x',
+        responsive: true,
+        maintainAspectRatio: false,
+        animation,
+        plugins: {
+          legend: { display: true, labels: { font } },
+          tooltip: {
+            filter: (item) => item.datasetIndex === 0,
+            callbacks: {
+              label: (item) => {
+                const row = rows[item.dataIndex];
+                return `${pct(row.precision)} correctas (IC ${pct(row.ci_low)}–${pct(row.ci_high)}) · ${row.validated} de ${row.decided} revisiones`;
+              },
+            },
+          },
+        },
+        scales: {
+          [horizontal ? 'y' : 'x']: { grid: { display: false }, ticks: { font, autoSkip: false } },
+          [horizontal ? 'x' : 'y']: { min: 0, max: 100, grid, title: { display: true, text: 'Precisión (%)', font }, ticks: { font, callback: (value) => `${value} %` } },
+        },
+      },
+    });
+
+    charts.push(precisionChart(panel.querySelector('#science-reliability-bins'), data.bins, 'label', false));
+    if (data.species.length) charts.push(precisionChart(panel.querySelector('#science-reliability-species'), data.species, 'species', true));
   }
 
   function renderSound(panel, data) {

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -99,6 +99,8 @@ def test_informe_excel_contiene_datos_graficos_y_trazabilidad(client):
         "Especies",
         "Actividad horaria",
         "Índices ecológicos",
+        "Diversidad",
+        "Fiabilidad BirdNET",
         "Calidad del audio",
         "Revisiones humanas",
         "Metadatos",
@@ -232,3 +234,45 @@ def test_excel_no_mezcla_nodos_con_la_misma_ubicacion(client):
     assert all(row[1] == "Zona compartida" for row in shared_rows)
     assert all(row[3] == 1 for row in shared_rows)
     assert all(row[8] is None for row in shared_rows)
+
+
+def test_informe_excel_incluye_diversidad_y_fiabilidad(client):
+    node = "raspberry-informe-biologico"
+    device = client.post("/devices/", json={"name": node, "location": "Charca", "lat": 37.0, "lon": -6.0})
+    assert device.status_code == 200
+    base = datetime(2026, 8, 3, 7, 0, tzinfo=timezone.utc)  # lunes
+
+    # A x3 (dos validadas y una ruido), B x1, C x2 -> validas: A x2, B x1, C x2 -> S=3, f1=1, f2=2 -> Chao1 = 3
+    plan = [("Species A", "validated"), ("Species A", "validated"), ("Species A", "noise"),
+            ("Species B", None), ("Species C", None), ("Species C", None)]
+    for i, (species, status) in enumerate(plan):
+        created = client.post("/detections/", json={
+            "species": species, "confidence": 0.85, "timestamp": (base + timedelta(days=i)).isoformat(),
+            "filename": f"informe-{i}.wav", "device_name": node, "amplitude": 0.02,
+        })
+        assert created.status_code == 200
+        if status:
+            reviewed = client.patch(f"/detections/{created.json()['id']}/review", json={"status": status, "reviewer": "pytest"})
+            assert reviewed.status_code == 200
+    device_id = created.json()["device_id"]
+
+    response = client.get("/exports/report.xlsx", params={"device_id": device_id})
+    assert response.status_code == 200
+    workbook = load_workbook(BytesIO(response.content))
+
+    diversidad = workbook["Diversidad"]
+    semanas = list(diversidad.iter_rows(min_row=5, max_col=7, values_only=True))
+    assert [fila[1] for fila in semanas if fila[0]] == [5]  # una semana, el ruido no cuenta
+    riqueza = {fila[0]: fila[1] for fila in diversidad.iter_rows(min_row=5, max_row=10, min_col=9, max_col=10, values_only=True)}
+    assert riqueza["Especies observadas"] == 3
+    assert riqueza["Especies estimadas (Chao1)"] == 3.0
+    assert len(diversidad._charts) == 2
+
+    fiabilidad = workbook["Fiabilidad BirdNET"]
+    total = next(fila for fila in fiabilidad.iter_rows(min_row=5, values_only=True) if fila[0] == "Total")
+    assert total[1:5] == (6, 3, 3, 2)  # detecciones, revisadas, decididas, correctas
+    assert abs(total[5] - 2 / 3) < 1e-9
+
+    resumen = {fila[0]: fila[1] for fila in workbook["Resumen"].iter_rows(min_row=5, max_row=16, max_col=2, values_only=True)}
+    assert resumen["Especies estimadas (Chao1)"] == 3.0
+    assert abs(resumen["Precisión de BirdNET revisada"] - 2 / 3) < 1e-9

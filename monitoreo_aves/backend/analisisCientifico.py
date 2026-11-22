@@ -6,7 +6,7 @@ from math import sqrt
 try:
     from backend.analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
 except ModuleNotFoundError:
-    from analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, ILTRO_RUIDO
+    from analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
 
 INDICES_ACUSTICOS = (
     ("aci", "ACI", "Complejidad acustica: variacion de la intensidad entre tramos de tiempo."),
@@ -25,7 +25,7 @@ MUESTRAS_MINIMAS_DIA = 12
 DETECCIONES_MINIMAS_SEMANA = 10
 #tramos de confianza de birdnet para medir cuanto acierta
 LIMITES_CONFIANZA = [0.0, 0.7, 0.8, 0.9, 1.01]
-ETIQUETAS_CONFIANZA = ["<0.70", "0.70-0.80", "0.80-0.90", ">=0.90"]
+ETIQUETAS_CONFIANZA = ["<70%", "70%-80%", "80%-90%", ">=90%"]
 ESTADOS_DECIDIDOS = ["validated", "noise", "corrected"]
 MIN_REVISIONES_ESPECIES = 5
 
@@ -246,7 +246,7 @@ def _revisiones(site_id = None, deployment_id = None, device_id = None):
     finally:
         conexion.close()
 
-def fiablidad_birdnet(site_id = None, deployment_id = None, device_id = None):
+def fiabilidad_birdnet(site_id = None, deployment_id = None, device_id = None):
     # Cuanto acierta BirdNET segun tus revisiones: por tramo de confianza y por especie.
     df = _revisiones(site_id, deployment_id, device_id)
     df = df[~df["species"].str.contains(FILTRO_RUIDO, case=False, na=False)].copy()

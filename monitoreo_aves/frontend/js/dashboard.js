@@ -46,7 +46,6 @@ let currentView = 'dashboard';
 let myChart = null;
 let streamStatusTimer = null;
 let lastStreamData = null;
-let currentScienceReport = [];
 let selectedScienceDeviceId = null;
 const detectionCache = new Map();
 const speciesPreviewCache = new Map();
@@ -586,7 +585,6 @@ async function cancelPhysicalLocationCommand(deviceId, commandId) {
 
 function resetLocationScopedState() {
     selectedScienceDeviceId = null;
-    currentScienceReport = [];
     currentDailyData = [];
     detectionCache.clear();
     latestSpeciesCounts = {};
@@ -2590,9 +2588,6 @@ async function renderHistoryView(container) {
                         <button class="btn btn-outline-success" onclick="downloadCSV()">
                             <i class="bi bi-filetype-csv me-2"></i>Exportar CSV
                         </button>
-                        <button class="btn btn-success" onclick="downloadExcelReport(this)">
-                            <i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar informe Excel
-                        </button>
                     </div>
                 </div>
             </div>
@@ -2994,7 +2989,7 @@ async function downloadExcelReport(button) {
 
     if (button) {
         button.disabled = true;
-        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Generando informe...';
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Generando informe...</span>';
     }
 
     try {
@@ -3017,6 +3012,25 @@ async function downloadExcelReport(button) {
         const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
         const filename = filenameMatch?.[1]
             || `birdmonitor_informe_${locationFileToken()}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+        // En la app de iOS el WebView ignora los enlaces de descarga: se guarda en la cache y se abre "Compartir".
+        const { Filesystem, Share } = window.Capacitor?.Plugins || {};
+        if (window.Capacitor?.isNativePlatform?.() && Filesystem && Share) {
+            const data = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result).split(',')[1]);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+            });
+            const { uri } = await Filesystem.writeFile({ path: filename, data, directory: 'CACHE' });
+            try {
+                await Share.share({ title: filename, files: [uri] });
+            } catch (shareError) {
+                if (!/cancel/i.test(shareError?.message || '')) throw shareError; // cerrar la hoja no es un error
+            }
+            return;
+        }
+
         const objectUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
 
@@ -3616,7 +3630,6 @@ async function renderScienceView(container) {
         });
         const report = await response.json();
         if (requestedScope !== locationScopeKey() || currentView !== 'science') return;
-        currentScienceReport = report || [];
         if (!report || report.length === 0) {
             container.innerHTML = `
                 <div class="alert alert-warning text-center mt-4">
@@ -3811,9 +3824,6 @@ async function renderScienceView(container) {
             </div>
             <div class="d-flex align-items-center gap-2 align-self-center">
                 ${nodeSelectorHTML}
-                <button class="btn btn-success btn-sm" onclick="downloadScienceCSV()">
-                    <i class="bi bi-filetype-csv me-2"></i>Exportar índices
-                </button>
                 <span class="badge bg-secondary px-3 py-2 fs-6"
                       title="Lectura orientativa de los registros, no una calificación del ecosistema">
                     <i class="bi bi-info-circle me-1"></i>${escapeHtml(interpretacion)}
@@ -4099,69 +4109,6 @@ async function renderScienceView(container) {
     } catch (e) {
         container.innerHTML = `<div class="alert alert-danger mt-4">Error al cargar el análisis: ${e.message}</div>`;
     }
-}
-
-function downloadScienceCSV() {
-    if (!currentScienceReport || currentScienceReport.length === 0) {
-        alert("No hay índices ecológicos para exportar");
-        return;
-    }
-
-    const rows = currentScienceReport.map(r => [
-        r.device_id ?? '',
-        r.node_name || '',
-        r.zona || 'Zona desconocida',
-        'DESCRIPTIVO',
-        r.abundancia ?? 0,
-        r.riqueza ?? 0,
-        r.shannon ?? 0,
-        r.simpson ?? 0,
-        r.pielou ?? '',
-        r.detection_period_start ?? '',
-        r.detection_period_end ?? '',
-        r.metrics_version ?? '',
-        r.metric_samples ?? 0,
-        r.metric_duration_seconds ?? 0,
-        r.rms_avg ?? '',
-        r.aci_avg ?? '',
-        r.adi_avg ?? '',
-        r.aei_avg ?? '',
-        r.bio_avg ?? '',
-        r.ndsi_avg ?? '',
-        r.ht_avg ?? '',
-        r.hf_avg ?? '',
-        r.h_avg ?? ''
-    ]);
-
-    downloadTableCSV(
-        `birdmonitor_indices_${locationFileToken()}_${new Date().toISOString().slice(0, 10)}.csv`,
-        [
-            'ID_Nodo',
-            'Nodo',
-            'Zona',
-            'Alcance_Interpretacion',
-            'Eventos_Deteccion_N',
-            'Especies_Detectadas_S',
-            'Shannon_H',
-            'Simpson_1-D',
-            'Pielou_J',
-            'Inicio_Periodo_Detecciones',
-            'Fin_Periodo_Detecciones',
-            'Version_Metricas_Acusticas',
-            'Muestras_Acusticas',
-            'Duracion_Acustica_Segundos',
-            'RMS_Medio',
-            'ACI_Medio',
-            'ADI_Medio',
-            'AEI_Medio',
-            'BIO_Medio',
-            'NDSI_Medio',
-            'Entropia_Temporal_Ht',
-            'Entropia_Frecuencial_Hf',
-            'Entropia_Acustica_H'
-        ],
-        rows
-    );
 }
 
 // NODOS Y UBICACIONES HISTÓRICAS
