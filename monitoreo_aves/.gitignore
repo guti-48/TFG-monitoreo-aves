@@ -43,4 +43,4 @@ AGENTS.MD
 graphify-out/
 stream-private/
 *.before-independent
-.claude/
+.claude/.gradle/
