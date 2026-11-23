@@ -4,9 +4,9 @@ import pandas as pd
 from math import sqrt
 
 try:
-    from backend.analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
+    from backend.analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, DETECCIONES_UNICAS, METRICAS_UNICAS, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
 except ModuleNotFoundError:
-    from analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
+    from analisisBiodiversidad import ACOUSTIC_METRICS_VERSION, DB_PATH, DETECCIONES_UNICAS, METRICAS_UNICAS, _limpiar_detecciones, conectar_db, FILTRO_RUIDO
 
 INDICES_ACUSTICOS = (
     ("aci", "ACI", "Complejidad acustica: variacion de la intensidad entre tramos de tiempo."),
@@ -50,7 +50,7 @@ def serie_indices_acusticos(
     Media diaria y perfil por hora de cada indice acustico (solo ``maad-v2``).
     Las horas son las del nodo tal como las guarda (hora local de la Raspberry).
     """
-    filtros, params = [], []
+    filtros, params = [METRICAS_UNICAS], []
     if site_id is not None:
         filtros.append("p.site_id = ?")
         params.append(int(site_id))
@@ -119,6 +119,30 @@ def serie_indices_acusticos(
     }
 
 
+def _ciclos_por_hora(site_id=None, deployment_id=None, device_id=None):
+    # Ch de la ecuacion 6.1: audio_metrics guarda una fila por ciclo aunque no haya detecciones,
+    # asi que cuenta todas las versiones (legacy-v1 tambien fue un ciclo grabado).
+    filtros, params = [METRICAS_UNICAS], []
+    if site_id is not None:
+        filtros.append("p.site_id = ?")
+        params.append(int(site_id))
+    if deployment_id is not None:
+        filtros.append("am.deployment_id = ?")
+        params.append(int(deployment_id))
+    if device_id is not None:
+        filtros.append("am.device_id = ?")
+        params.append(int(device_id))
+    donde = (" WHERE " + " AND ".join(filtros)) if filtros else ""
+    with sqlite3.connect(DB_PATH) as conexion:
+        df = pd.read_sql_query(
+            f"SELECT am.timestamp FROM audio_metrics am JOIN deployments p ON am.deployment_id = p.id{donde}",
+            conexion,
+            params=params,
+        )
+    horas = pd.to_datetime(df["timestamp"], errors="coerce").dropna().dt.hour
+    return horas.value_counts().to_dict()
+
+
 def actividad_por_hora(site_id=None, deployment_id=None, device_id=None):
     #deteccion de aves y especies distintas por hora del dia
     df = _limpiar_detecciones(conectar_db(site_id, deployment_id, device_id))
@@ -129,20 +153,26 @@ def actividad_por_hora(site_id=None, deployment_id=None, device_id=None):
 
     df["hora"] = df["ts"].dt.hour
     porHora = df.groupby("hora").agg(detections=("species", "size"), species=("species", "nunique"))
-    horas = [
-        {
+    ciclos = _ciclos_por_hora(site_id, deployment_id, device_id)
+    horas = []
+    for hora in range(24):
+        detecciones = int(porHora.loc[hora, "detections"]) if hora in porHora.index else 0
+        ch = int(ciclos.get(hora, 0))
+        horas.append({
             "hour": hora,
-            "detections": int(porHora.loc[hora, "detections"]) if hora in porHora.index else 0,
+            "detections": detecciones,
             "species": int(porHora.loc[hora, "species"]) if hora in porHora.index else 0,
-        }
-        for hora in range(24)
-    ]
+            "cycles": ch,
+            # Rh = Nh / Ch (detecciones por minuto grabado). Sin ciclos no hay informacion: None, no 0.
+            "rate": round(detecciones / ch, 3) if ch else None,
+        })
     return {
         "available": True,
         "total": int(len(df)),
-        "days": int(df["ts"].dt.date.nunique()), 
+        "days": int(df["ts"].dt.date.nunique()),
         "period_start": df["ts"].min().isoformat(),
         "period_end": df["ts"].max().isoformat(),
+        "cycles": int(sum(ciclos.values())),
         "hourly": horas,
     }
 
@@ -228,7 +258,7 @@ def _revisiones(site_id = None, deployment_id = None, device_id = None):
     FROM detections d
     JOIN deployments p ON d.deployment_id = p.id
     LEFT JOIN detection_reviews r ON r.detection_id = d.id
-    WHERE 1 = 1
+    WHERE """ + DETECCIONES_UNICAS + """
     """
     params = []
     if site_id is not None:

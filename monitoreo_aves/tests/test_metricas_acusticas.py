@@ -38,7 +38,10 @@ def test_metrica_acustica_repetida_es_idempotente(client):
     assert second_response.status_code == 200
     assert second_response.json()["id"] == first_response.json()["id"]
 
-    metrics_response = client.get("/audio-metrics/", params={"limit": 20})
+    # Filtrar por el nodo del test: la base de pruebas es compartida y otras pruebas añaden métricas más recientes.
+    metrics_response = client.get(
+        "/audio-metrics/", params={"limit": 20, "device_id": first_response.json()["device_id"]}
+    )
 
     assert metrics_response.status_code == 200
 

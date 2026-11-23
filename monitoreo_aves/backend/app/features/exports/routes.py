@@ -15,6 +15,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from ...core import database
@@ -177,7 +178,12 @@ def _apply_filters(
         )
     if deployment_id is not None:
         query = query.filter(model.deployment_id == deployment_id)
-    return query
+    # Mismo criterio que el analisis (analisisBiodiversidad.DETECCIONES_UNICAS): un evento heredado
+    # guardado dos veces (con y sin ".wav") cuenta una sola vez; la base de datos no se modifica.
+    claves = [model.deployment_id, model.timestamp, func.replace(model.filename, ".wav", "")]
+    if model is models.Detection:
+        claves.insert(2, model.species)
+    return query.filter(model.id.in_(select(func.min(model.id)).group_by(*claves)))
 
 
 def _style_title(

@@ -130,9 +130,34 @@ def test_actividad_por_hora_devuelve_24_horas_y_no_cuenta_el_ruido(client):
 
     horas = {fila["hour"]: fila for fila in actividad["hourly"]}
     # a las 06 h: dos detecciones del dia 1 y una del dia 2, de dos especies distintas
-    assert horas[6] == {"hour": 6, "detections": 3, "species": 2}
-    assert horas[18] == {"hour": 18, "detections": 1, "species": 1}
-    assert horas[12] == {"hour": 12, "detections": 0, "species": 0}  # solo habia ruido
+    # (sin metricas en este nodo no hay ciclos: la tasa es None, no 0)
+    assert horas[6] == {"hour": 6, "detections": 3, "species": 2, "cycles": 0, "rate": None}
+    assert horas[18] == {"hour": 18, "detections": 1, "species": 1, "cycles": 0, "rate": None}
+    assert horas[12] == {"hour": 12, "detections": 0, "species": 0, "cycles": 0, "rate": None}  # solo habia ruido
+
+
+def test_actividad_normaliza_por_ciclos_validos_de_cualquier_version(client):
+    node = "raspberry-rh"
+    _crear_nodo(client, node)
+    base = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)
+
+    # 06 h: 4 ciclos (uno del metodo antiguo, que tambien es un ciclo grabado) y 2 detecciones
+    for minuto, version in ((0, "maad-v2"), (5, "maad-v2"), (10, "maad-v2"), (15, "legacy-v1")):
+        assert client.post("/audio-metrics/", json=_metric(
+            node, base + timedelta(minutes=minuto), f"c{minuto}.wav", version)).status_code == 200
+    # 07 h: 1 ciclo y ninguna deteccion -> tasa 0 (hubo escucha y no se oyo nada)
+    assert client.post("/audio-metrics/", json=_metric(
+        node, base + timedelta(hours=1), "c60.wav", "maad-v2")).status_code == 200
+    _detection(client, node, base, "Species one", "a.wav")
+    device_id = _detection(client, node, base + timedelta(minutes=5), "Species two", "b.wav")["device_id"]
+
+    actividad = client.get("/analytics/activity", params={"device_id": device_id}).json()
+    horas = {fila["hour"]: fila for fila in actividad["hourly"]}
+
+    assert actividad["cycles"] == 5
+    assert (horas[6]["cycles"], horas[6]["rate"]) == (4, 0.5)
+    assert (horas[7]["cycles"], horas[7]["rate"]) == (1, 0.0)
+    assert (horas[8]["cycles"], horas[8]["rate"]) == (0, None)  # sin ciclos: sin informacion
 
 
 def test_actividad_por_hora_sin_detecciones_devuelve_no_disponible(client):
@@ -300,6 +325,28 @@ def test_fiabilidad_sin_detecciones_devuelve_no_disponible(client):
 
     assert f["available"] is False
     assert "reason" in f
+
+
+def test_duplicados_heredados_cuentan_una_vez_en_el_analisis(client):
+    # Datos heredados: el mismo evento guardado dos veces, con y sin ".wav" en el nombre.
+    node = "raspberry-duplicados"
+    _crear_nodo(client, node)
+    base = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)
+    primera = _detection(client, node, base, "Species one", "rec.wav")
+    segunda = _detection(client, node, base, "Species one", "rec")
+    assert primera["id"] != segunda["id"]  # las dos filas siguen en la base de datos
+    for nombre in ("rec.wav", "rec"):
+        assert client.post("/audio-metrics/", json=_metric(node, base, nombre, "maad-v2")).status_code == 200
+    _revisar(client, primera["id"], "validated")
+    _revisar(client, segunda["id"], "validated")
+    device_id = primera["device_id"]
+
+    actividad = client.get("/analytics/activity", params={"device_id": device_id}).json()
+    assert actividad["total"] == 1
+    assert actividad["cycles"] == 1
+    assert client.get("/analytics/acoustic-series", params={"device_id": device_id}).json()["samples"] == 1
+    fiabilidad = client.get("/analytics/reliability", params={"device_id": device_id}).json()
+    assert (fiabilidad["detections"], fiabilidad["decided"]) == (1, 1)
 
 
 def test_wilson_es_honesto_con_cero_aciertos():

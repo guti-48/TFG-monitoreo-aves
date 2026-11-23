@@ -12,6 +12,17 @@ UMBRA_CONFIANZA = 0.0
 FILTRO_RUIDO = r"Noise|Ruido|Human|Motor|Ambiente"
 ACOUSTIC_METRICS_VERSION = "maad-v2"
 
+# Duplicados heredados (anteriores a la restriccion de unicidad): el mismo evento guardado dos veces,
+# con y sin ".wav" en el nombre. El analisis cuenta cada evento una vez (la fila de menor id) sin borrar nada.
+DETECCIONES_UNICAS = (
+    "d.id IN (SELECT MIN(id) FROM detections "
+    "GROUP BY deployment_id, timestamp, species, REPLACE(filename, '.wav', ''))"
+)
+METRICAS_UNICAS = (
+    "am.id IN (SELECT MIN(id) FROM audio_metrics "
+    "GROUP BY deployment_id, timestamp, REPLACE(filename, '.wav', ''))"
+)
+
 
 def _radio_referencia_m():
     """Radio visual local; no representa una distancia efectiva calibrada."""
@@ -53,7 +64,7 @@ def conectar_db(site_id=None, deployment_id=None, device_id=None):
     JOIN deployments p ON d.deployment_id = p.id
     JOIN sites s ON p.site_id = s.id
     LEFT JOIN detection_reviews r ON r.detection_id = d.id
-    WHERE 1 = 1
+    WHERE """ + DETECCIONES_UNICAS + """
     """
     params = []
     if site_id is not None:
@@ -174,7 +185,7 @@ def calcular_indices_acusticos_desde_db(
     """
     try:
         with sqlite3.connect(DB_PATH) as conexion:
-            filters = ["am.device_id = ?"]
+            filters = ["am.device_id = ?", METRICAS_UNICAS]
             params = [int(device_id)]
             if site_id is not None:
                 filters.append("p.site_id = ?")
